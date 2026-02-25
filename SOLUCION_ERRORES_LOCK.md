@@ -1,14 +1,33 @@
-# 🔧 Solución de Errores de Lock - Supabase
+# 🔧 Solución de Errores - Sistema GYM Lagunetica
 
-## ❌ Error: "Acquiring an exclusive Navigator LockManager lock timed out"
+## ❌ Errores Comunes de Supabase
 
-Este error ocurre cuando hay conflictos con el sistema de bloqueo de Supabase en el navegador.
+### Error 1: "this.lock is not a function"
+
+**Causa:** Configuración incorrecta del cliente de Supabase con opciones de lock no soportadas.
+
+**Solución:** Ya está corregido en `/src/app/lib/supabase.ts`. El cliente ahora usa la configuración estándar:
+
+```typescript
+export const supabase = createClient(supabaseUrl, publicAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+  },
+});
+```
+
+### Error 2: "Acquiring an exclusive Navigator LockManager lock timed out"
+
+Este error puede ocurrir cuando hay conflictos con el sistema de bloqueo de Supabase en el navegador.
 
 ---
 
 ## 🛠️ Soluciones Inmediatas
 
-### Solución 1: Limpiar localStorage (Más Rápida)
+### Solución 1: Limpiar localStorage (Más Rápida) - 30 segundos
 
 1. Abre las **DevTools** del navegador (F12)
 2. Ve a la pestaña **Application** (o Aplicación)
@@ -70,10 +89,6 @@ export const supabase = createClient(supabaseUrl, publicAnonKey, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
-    lock: {
-      retryInterval: 100,
-      acquireTimeout: 10000,
-    },
   },
 });
 ```

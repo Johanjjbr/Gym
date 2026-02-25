@@ -59,12 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(userProfile);
     } catch (error) {
       console.error('Error cargando perfil:', error);
-      // Si hay error, intentar recargar la página después de limpiar
-      if (error instanceof Error && error.message.includes('lock')) {
-        console.warn('Problema de lock detectado, limpiando localStorage...');
-        localStorage.clear();
-        window.location.reload();
-      }
+      setProfile(null);
     } finally {
       setLoading(false);
       loadingProfile.current = false;
@@ -76,8 +71,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await supabase.auth.signOut();
       setUser(null);
       setProfile(null);
-      // Limpiar localStorage para evitar problemas
-      localStorage.clear();
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
     }

@@ -1,190 +1,37 @@
 # 🚀 Guía Rápida de Configuración - GYM Lagunetica
 
-## ✅ Lista de Verificación
+## ⚡ Setup en 5 Minutos
 
-### 1. Configurar Base de Datos en Supabase (15 min)
+### Paso 1: Conectar Supabase (1 minuto)
+1. Abre tu aplicación
+2. Conecta tu proyecto de Supabase cuando se solicite
+3. Copia el Project ID y API Key
 
-#### Paso 1.1: Ejecutar SQL
-1. Ve a https://app.supabase.com
-2. Abre tu proyecto
-3. Click en **SQL Editor** (menú lateral)
-4. Click en **New Query**
-5. Abre el archivo `SQL_PARA_SUPABASE.sql` de este proyecto
-6. **Copia TODO el contenido** y pégalo en el editor
-7. Click en **Run** (o Cmd/Ctrl + Enter)
-8. Espera a que termine (puede tardar 10-15 segundos)
+### Paso 2: Crear Schema de Base de Datos (2 minutos)
+1. Ve a Supabase Dashboard > **SQL Editor**
+2. Abre el archivo **`SQL_PARA_SUPABASE.sql`** de este proyecto
+3. Copia TODO el contenido
+4. Pégalo en el SQL Editor
+5. Click en **RUN** (o Ctrl+Enter)
+6. Espera a que termine (verás "Success")
 
-#### Paso 1.2: Verificar Tablas Creadas
-1. Ve a **Table Editor** en el menú lateral
-2. Deberías ver 12 tablas:
-   - ✅ user_profiles
-   - ✅ payments
-   - ✅ invoices
-   - ✅ attendance
-   - ✅ physical_progress
-   - ✅ routine_templates
-   - ✅ routine_exercises
-   - ✅ user_routine_assignments
-   - ✅ workout_sessions
-   - ✅ workout_exercise_logs
-   - ✅ workout_set_logs
-   - ✅ staff_shifts
+### Paso 3: Crear Usuarios de Prueba (2 minutos)
+1. En el mismo SQL Editor, crea una **New Query**
+2. Abre el archivo **`CREAR_USUARIOS_PRUEBA.sql`** de este proyecto
+3. Copia TODO el contenido
+4. Pégalo en el SQL Editor
+5. Click en **RUN**
+6. Verás una tabla con los 3 usuarios creados
 
----
+📖 **Guía detallada:** Ver `INSTRUCCIONES_CREAR_USUARIOS.md`
 
-### 2. Configurar Autenticación (5 min)
-
-#### Paso 2.1: Deshabilitar Confirmación de Email (Solo Desarrollo)
+### Paso 4: Configurar Autenticación (30 segundos)
 1. Ve a **Authentication** > **Providers**
 2. Click en **Email**
 3. **Desactiva** "Enable email confirmations"
 4. Click en **Save**
 
 ⚠️ **IMPORTANTE:** En producción, vuelve a activar esto por seguridad.
-
-#### Paso 2.2: Configurar URL de Redirección
-1. Ve a **Authentication** > **URL Configuration**
-2. Agrega tu URL local:
-   ```
-   http://localhost:5173
-   ```
-3. Click en **Save**
-
----
-
-### 3. Crear Usuarios de Prueba (10 min)
-
-#### Paso 3.1: Crear Administrador
-1. Ve a **Authentication** > **Users**
-2. Click en **Add user** > **Create new user**
-3. Completa:
-   ```
-   Email: admin@gymlagunetica.com
-   Password: Admin123!
-   Auto Confirm User: ✓ (activado)
-   ```
-4. En **User Metadata** (abajo), agrega:
-   ```json
-   {
-     "full_name": "Administrador Principal",
-     "role": "administrador"
-   }
-   ```
-5. Click en **Create user**
-
-#### Paso 3.2: Crear Entrenador
-1. Click en **Add user** > **Create new user**
-2. Completa:
-   ```
-   Email: laura.perez@gymlagunetica.com
-   Password: Trainer123!
-   Auto Confirm User: ✓
-   ```
-3. User Metadata:
-   ```json
-   {
-     "full_name": "Laura Pérez",
-     "role": "entrenador"
-   }
-   ```
-4. Click en **Create user**
-
-#### Paso 3.3: Crear Usuario Normal
-1. Click en **Add user** > **Create new user**
-2. Completa:
-   ```
-   Email: carlos.mendoza@email.com
-   Password: User123!
-   Auto Confirm User: ✓
-   ```
-3. User Metadata:
-   ```json
-   {
-     "full_name": "Carlos Mendoza",
-     "role": "usuario"
-   }
-   ```
-4. Click en **Create user**
-
-#### Paso 3.4: Completar Perfil del Usuario
-1. Ve a **SQL Editor**
-2. Crea una nueva query
-3. Pega y ejecuta:
-   ```sql
-   -- Actualizar usuario con datos completos
-   UPDATE public.user_profiles 
-   SET 
-     member_number = 'USR-001',
-     membership_type = 'Premium',
-     membership_status = 'Activo',
-     phone = '+58 424-1234567',
-     join_date = CURRENT_DATE
-   WHERE email = 'carlos.mendoza@email.com';
-   ```
-
----
-
-### 4. Actualizar Rutinas de Ejemplo (2 min)
-
-1. Ve a **SQL Editor**
-2. Ejecuta esta query para asignar las rutinas al entrenador:
-   ```sql
-   -- Actualizar created_by en rutinas con el ID del entrenador
-   UPDATE public.routine_templates
-   SET created_by = (
-     SELECT id FROM public.user_profiles 
-     WHERE role = 'entrenador' 
-     LIMIT 1
-   )
-   WHERE created_by IS NULL;
-   ```
-
----
-
-### 5. Probar el Sistema (5 min)
-
-#### Paso 5.1: Iniciar la Aplicación
-1. Abre tu terminal en el proyecto
-2. Si no está corriendo, ejecuta:
-   ```bash
-   npm run dev
-   # o
-   pnpm dev
-   ```
-3. Abre http://localhost:5173
-
-#### Paso 5.2: Probar Login como Administrador
-1. En la página de login, verás botones de acceso rápido
-2. Click en **"Administrador"**
-3. Click en **"Iniciar Sesión"**
-4. Deberías ver el Dashboard completo
-5. Verifica que ves TODAS las secciones en el sidebar:
-   - ✅ Dashboard
-   - ✅ Usuarios
-   - ✅ Pagos
-   - ✅ Personal
-   - ✅ Asistencia
-   - ✅ Rutinas
-   - ✅ Reportes
-
-#### Paso 5.3: Probar Login como Entrenador
-1. Click en el botón de Logout (abajo en sidebar)
-2. En login, click en **"Entrenador"**
-3. Click en **"Iniciar Sesión"**
-4. Deberías ver solo:
-   - ✅ Dashboard
-   - ✅ Usuarios (solo lectura)
-   - ✅ Asistencia
-   - ✅ Rutinas
-
-#### Paso 5.4: Probar Login como Usuario
-1. Logout nuevamente
-2. Click en **"Usuario"**
-3. Click en **"Iniciar Sesión"**
-4. Deberías ver solo:
-   - ✅ Dashboard
-   - ✅ Mi Entrenamiento
-   - ✅ Mi Perfil
 
 ---
 
@@ -193,8 +40,8 @@
 | Rol | Email | Contraseña |
 |-----|-------|------------|
 | **Administrador** | admin@gymlagunetica.com | Admin123! |
-| **Entrenador** | laura.perez@gymlagunetica.com | Trainer123! |
-| **Usuario** | carlos.mendoza@email.com | User123! |
+| **Entrenador** | entrenador@gymlagunetica.com | Trainer123! |
+| **Usuario** | usuario@gymlagunetica.com | User123! |
 
 ---
 

@@ -4,6 +4,71 @@
 
 Sistema web administrativo moderno para gestión integral de gimnasio con autenticación multi-rol, control de membresías, seguimiento de entrenamientos y administración de personal.
 
+**📍 Ubicación:** Los Teques, Sector Lagunetica  
+**🔧 Stack:** React + TypeScript + Supabase + Tailwind CSS  
+**🎨 Diseño:** Tema fitness oscuro con acentos neón (#10f94e verde, #ff3b5c rojo)
+
+---
+
+## 🚀 INICIO RÁPIDO (5 MINUTOS)
+
+### ⚡ Para empezar inmediatamente:
+
+1. **Lee primero:** [`GUIA_RAPIDA_SETUP.md`](GUIA_RAPIDA_SETUP.md)
+2. **Crea usuarios:** [`CREAR_USUARIOS_PRUEBA.sql`](CREAR_USUARIOS_PRUEBA.sql)
+3. **Verifica todo:** [`CHECKLIST_VERIFICACION.md`](CHECKLIST_VERIFICACION.md)
+
+---
+
+## 📚 ÍNDICE DE DOCUMENTACIÓN
+
+### 🔰 Para Comenzar
+
+| Documento | Descripción | Cuándo Usar |
+|-----------|-------------|-------------|
+| **[GUIA_RAPIDA_SETUP.md](GUIA_RAPIDA_SETUP.md)** | Setup completo en 5 min | ⭐ **EMPIEZA AQUÍ** |
+| **[README_USUARIOS.md](README_USUARIOS.md)** | Creación de usuarios paso a paso | Si no sabes cómo crear usuarios |
+| **[CHECKLIST_VERIFICACION.md](CHECKLIST_VERIFICACION.md)** | Verificar que todo funciona | Después del setup |
+
+### 🔐 Usuarios y Autenticación
+
+| Documento | Descripción | Cuándo Usar |
+|-----------|-------------|-------------|
+| **[CREAR_USUARIOS_PRUEBA.sql](CREAR_USUARIOS_PRUEBA.sql)** | SQL para crear 3 usuarios | ⭐ **EJECUTA ESTO en Supabase** |
+| **[INSTRUCCIONES_CREAR_USUARIOS.md](INSTRUCCIONES_CREAR_USUARIOS.md)** | Guía completa de usuarios | Si tienes problemas con usuarios |
+| **[SISTEMA_DE_ROLES.md](SISTEMA_DE_ROLES.md)** | Permisos por rol | Ver qué puede hacer cada rol |
+
+### 🗄️ Base de Datos
+
+| Documento | Descripción | Cuándo Usar |
+|-----------|-------------|-------------|
+| **[SQL_PARA_SUPABASE.sql](SQL_PARA_SUPABASE.sql)** | Schema completo de BD | ⭐ **EJECUTA PRIMERO en Supabase** |
+| **[CONFIGURACION_SUPABASE.md](CONFIGURACION_SUPABASE.md)** | Configuración detallada | Configuración avanzada |
+
+### 🛠️ Desarrollo y API
+
+| Documento | Descripción | Cuándo Usar |
+|-----------|-------------|-------------|
+| **[CRUD_DOCUMENTATION.md](CRUD_DOCUMENTATION.md)** | Funciones CRUD disponibles | Para desarrollar nuevas features |
+
+### 🚨 Solución de Problemas
+
+| Documento | Descripción | Cuándo Usar |
+|-----------|-------------|-------------|
+| **[SOLUCION_ERRORES_LOCK.md](SOLUCION_ERRORES_LOCK.md)** | Fix errores de Supabase lock | Si ves "lock timed out" |
+
+---
+
+## 🔑 CREDENCIALES DE PRUEBA
+
+Después de ejecutar `CREAR_USUARIOS_PRUEBA.sql`:
+
+| Rol | Email | Password | Acceso |
+|-----|-------|----------|--------|
+| 👤 **Administrador** | admin@gymlagunetica.com | Admin123! | Total |
+| 🏋️ **Entrenador** | entrenador@gymlagunetica.com | Trainer123! | Limitado |
+| 💪 **Usuario** | usuario@gymlagunetica.com | User123! | Básico |
+
 ---
 
 ## 🎯 Características Principales

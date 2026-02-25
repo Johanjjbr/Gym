@@ -39,8 +39,8 @@ export function Login() {
   // Credenciales de prueba para desarrollo
   const testCredentials = [
     { email: 'admin@gymlagunetica.com', password: 'Admin123!', role: 'Administrador' },
-    { email: 'laura.perez@gymlagunetica.com', password: 'Trainer123!', role: 'Entrenador' },
-    { email: 'carlos.mendoza@email.com', password: 'User123!', role: 'Usuario' },
+    { email: 'entrenador@gymlagunetica.com', password: 'Trainer123!', role: 'Entrenador' },
+    { email: 'usuario@gymlagunetica.com', password: 'User123!', role: 'Usuario' },
   ];
 
   const quickLogin = (email: string, password: string) => {

@@ -3,23 +3,13 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 const supabaseUrl = `https://${projectId}.supabase.co`;
 
-// Configurar cliente con opciones para evitar problemas de lock
+// Configurar cliente de Supabase
 export const supabase = createClient(supabaseUrl, publicAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
-    // Desactivar lock para evitar problemas en desarrollo
-    lock: {
-      retryInterval: 100,
-      acquireTimeout: 10000,
-    },
-  },
-  global: {
-    headers: {
-      'x-application-name': 'gym-lagunetica',
-    },
   },
 });
 
