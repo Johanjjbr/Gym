@@ -9,13 +9,8 @@ import { Attendance } from './pages/Attendance';
 import { Reports } from './pages/Reports';
 import { Routines } from './pages/Routines';
 import { MyWorkout } from './pages/MyWorkout';
-import { Login } from './pages/Login';
 
 export const router = createBrowserRouter([
-  {
-    path: '/login',
-    Component: Login,
-  },
   {
     path: '/',
     Component: Layout,
@@ -28,7 +23,6 @@ export const router = createBrowserRouter([
       { path: 'asistencia', Component: Attendance },
       { path: 'rutinas', Component: Routines },
       { path: 'mi-entrenamiento', Component: MyWorkout },
-      { path: 'mi-perfil', Component: Dashboard }, // TODO: Crear página Mi Perfil
       { path: 'reportes', Component: Reports },
     ],
   },
