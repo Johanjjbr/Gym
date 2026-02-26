@@ -3,8 +3,13 @@ import { StatCard } from '../components/StatCard';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { mockDashboardStats, monthlyRevenueData, attendanceData, userStatusData, mockAttendance } from '../lib/mockData';
+import { useAuth } from '../contexts/AuthContext';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Database, ExternalLink } from 'lucide-react';
 
 export function Dashboard() {
+  const { user } = useAuth();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -12,6 +17,26 @@ export function Dashboard() {
         <h1 className="text-4xl mb-2">Dashboard</h1>
         <p className="text-muted-foreground">Resumen general del gimnasio</p>
       </div>
+
+      {/* Bienvenida y Alerta de Configuración */}
+      <Alert className="border-[#10f94e]/30 bg-[#10f94e]/5">
+        <Database className="h-5 w-5 text-[#10f94e]" />
+        <AlertDescription className="text-gray-300 ml-2">
+          <div className="space-y-2">
+            <p className="font-semibold text-white">
+              ¡Bienvenido, {user?.name}! 👋
+            </p>
+            <p className="text-sm">
+              El sistema está mostrando <strong>datos de demostración</strong>. Para conectar con tu base de datos real de Supabase:
+            </p>
+            <ol className="text-sm list-decimal list-inside space-y-1 ml-2">
+              <li>Visita la <a href="/test-supabase" className="text-[#10f94e] hover:underline inline-flex items-center gap-1">página de pruebas <ExternalLink className="h-3 w-3 inline" /></a> para verificar la conexión</li>
+              <li>Revisa el archivo <code className="bg-gray-800 px-1 py-0.5 rounded">CHECKLIST_SETUP.md</code> para los pasos de configuración</li>
+              <li>Ejecuta el schema SQL y el seed de datos según las instrucciones</li>
+            </ol>
+          </div>
+        </AlertDescription>
+      </Alert>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

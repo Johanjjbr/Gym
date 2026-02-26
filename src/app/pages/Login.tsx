@@ -183,6 +183,12 @@ export function Login() {
             <p className="text-xs text-gray-500">
               Sistema de gestión v1.0 - Febrero 2026
             </p>
+            <a 
+              href="/test-supabase" 
+              className="text-xs text-gray-500 hover:text-[#10f94e] transition-colors mt-2 inline-block"
+            >
+              Test de Conexión Supabase →
+            </a>
           </div>
         </CardContent>
       </Card>
