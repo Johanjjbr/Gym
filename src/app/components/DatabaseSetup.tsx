@@ -10,7 +10,7 @@ export function DatabaseSetup() {
   const [message, setMessage] = useState('');
   const [details, setDetails] = useState<any>(null);
 
-  const runSeed = async () => {
+const runSeed = async () => {
     setStatus('running');
     setMessage('Creando usuarios de prueba...');
     
@@ -26,12 +26,25 @@ export function DatabaseSetup() {
         }
       );
 
-      const data = await response.json();
+      // 1. Primero atrapamos el texto crudo en lugar de forzar JSON
+      const rawText = await response.text();
+      console.log("🔎 Respuesta cruda del servidor:", rawText);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al ejecutar seed');
+      let data;
+      try {
+        // 2. Intentamos convertirlo a JSON a ver si podemos
+        data = JSON.parse(rawText);
+      } catch (parseError) {
+        // 3. Si no es JSON, lanzamos un error mostrando lo que realmente mandó el servidor
+        throw new Error(`El servidor respondió con texto plano: ${rawText.substring(0, 100)}...`);
       }
 
+      // Validamos si la petición falló (Status 400 o 500)
+      if (!response.ok) {
+        throw new Error(data.error || `Error del servidor (${response.status})`);
+      }
+
+      // Si todo salió bien, actualizamos el estado
       setStatus('success');
       setMessage('¡Base de datos inicializada correctamente!');
       setDetails(data);
