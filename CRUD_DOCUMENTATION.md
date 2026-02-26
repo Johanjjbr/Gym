@@ -135,12 +135,4 @@ El módulo de personal permite administrar el equipo del gimnasio con las siguie
 
 ---
 
-## Próximos Pasos Sugeridos
 
-- [ ] Integrar con backend/base de datos (Supabase)
-- [ ] Añadir paginación para listas grandes
-- [ ] Exportar reportes PDF/Excel
-- [ ] Subir fotos de perfil para usuarios y personal
-- [ ] Historial de cambios/auditoría
-- [ ] Filtros avanzados por plan, estado, etc.
-- [ ] Ordenamiento de tablas por columnas

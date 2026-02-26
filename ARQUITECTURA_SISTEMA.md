@@ -512,29 +512,6 @@ app.use('/*', cors({ ... }));
 apiRequest('/users', { method: 'GET' })
 ```
 
----
-
-## 🔮 FUTURAS MEJORAS SUGERIDAS
-
-### Corto Plazo
-- [ ] Implementar refresh tokens para sesiones largas
-- [ ] Agregar paginación en listados grandes
-- [ ] Implementar caché en frontend con React Query
-- [ ] Agregar validación de formularios con Zod
-
-### Mediano Plazo
-- [ ] Implementar notificaciones push
-- [ ] Agregar generación de reportes en PDF
-- [ ] Implementar sistema de QR para asistencia
-- [ ] Dashboard con gráficas avanzadas (Recharts)
-
-### Largo Plazo
-- [ ] App móvil con React Native
-- [ ] Sistema de mensajería interno
-- [ ] Integración con wearables (smartwatch)
-- [ ] IA para recomendación de rutinas personalizadas
-
----
 
 **Creado para:** Gimnasio Los Teques, Sector Lagunetica  
 **Arquitectura diseñada:** Febrero 2026  
