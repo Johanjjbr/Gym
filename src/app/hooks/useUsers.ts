@@ -52,7 +52,18 @@ export function useCreateUser() {
       toast.success('Usuario creado exitosamente');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Error al crear usuario');
+      console.error('Error creando usuario:', error);
+      const message = error.message || 'Error al crear usuario';
+      
+      if (message.includes('fetch') || message.includes('Failed to fetch')) {
+        toast.error('No se pudo conectar con Supabase', {
+          description: 'Verifica que tu backend esté funcionando. Ve a /test-supabase para más detalles.'
+        });
+      } else {
+        toast.error('Error al crear usuario', {
+          description: message
+        });
+      }
     },
   });
 }
@@ -73,7 +84,18 @@ export function useUpdateUser() {
       toast.success('Usuario actualizado exitosamente');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Error al actualizar usuario');
+      console.error('Error actualizando usuario:', error);
+      const message = error.message || 'Error al actualizar usuario';
+      
+      if (message.includes('fetch') || message.includes('Failed to fetch')) {
+        toast.error('No se pudo conectar con Supabase', {
+          description: 'Verifica que tu backend esté funcionando. Ve a /test-supabase para más detalles.'
+        });
+      } else {
+        toast.error('Error al actualizar usuario', {
+          description: message
+        });
+      }
     },
   });
 }
@@ -91,7 +113,18 @@ export function useDeleteUser() {
       toast.success('Usuario eliminado exitosamente');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Error al eliminar usuario');
+      console.error('Error eliminando usuario:', error);
+      const message = error.message || 'Error al eliminar usuario';
+      
+      if (message.includes('fetch') || message.includes('Failed to fetch')) {
+        toast.error('No se pudo conectar con Supabase', {
+          description: 'Verifica que tu backend esté funcionando. Ve a /test-supabase para más detalles.'
+        });
+      } else {
+        toast.error('Error al eliminar usuario', {
+          description: message
+        });
+      }
     },
   });
 }

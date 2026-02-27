@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText } from 'lucide-react';
+import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -9,35 +9,80 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
-import { mockUsers, mockAttendance, mockPayments, mockPhysicalProgress, mockRoutines, mockInvoices, mockStaff } from '../lib/mockData';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { mockAttendance, mockPhysicalProgress, mockInvoices } from '../lib/mockData';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
+import { useUser } from '../hooks/useUsers';
+import { useUserPayments } from '../hooks/usePayments';
+import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
+import { PrintPayment } from '../components/PrintPayment';
+import { auth } from '../lib/api';
 
 export function UserDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
+  const [isAssignRoutineDialogOpen, setIsAssignRoutineDialogOpen] = useState(false);
+  const [selectedRoutineId, setSelectedRoutineId] = useState('');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState('');
+  const [assignmentNotes, setAssignmentNotes] = useState('');
   
-  const user = mockUsers.find(u => u.id === id);
+  // Usar React Query en lugar de mockData
+  const { data: user, isLoading, error } = useUser(id || '');
   
-  if (!user) {
+  // Obtener pagos reales del usuario
+  const { data: userPayments, isLoading: loadingPayments } = useUserPayments(id || '');
+  
+  // Obtener rutinas disponibles y asignaciones del usuario
+  const { data: availableRoutines, isLoading: loadingRoutines } = useRoutines();
+  const { data: userRoutineAssignments, isLoading: loadingAssignments } = useRoutineAssignments(id);
+  const assignRoutineMutation = useAssignRoutine();
+  
+  // Obtener usuario actual del staff
+  const currentStaff = auth.getCurrentUser();
+
+  // Loading state
+  if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <h2 className="text-2xl mb-4">Usuario no encontrado</h2>
-        <Button onClick={() => navigate('/usuarios')}>Volver a Usuarios</Button>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
+          <p className="text-gray-400">Cargando datos del usuario...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error o usuario no encontrado
+  if (error || !user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <AlertCircle className="h-16 w-16 text-[#ff3b5c]" />
+        <h2 className="text-2xl">Usuario no encontrado</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+          {error 
+            ? 'Ocurrió un error al cargar los datos del usuario. Verifica tu conexión a Supabase.' 
+            : 'No se encontró un usuario con este ID en la base de datos.'}
+        </p>
+        <div className="flex gap-2">
+          <Button onClick={() => navigate('/usuarios')} variant="outline">
+            Volver a Usuarios
+          </Button>
+          {error && (
+            <Button onClick={() => navigate('/test-supabase')} className="bg-[#10f94e] text-black hover:bg-[#0ed145]">
+              Probar Conexión
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
 
   const userAttendance = mockAttendance.filter(a => a.userId === id);
-  const userPayments = mockPayments.filter(p => p.userId === id);
   const userProgress = mockPhysicalProgress.filter(p => p.userId === id);
-  const userRoutines = mockRoutines.filter(r => r.userId === id);
   const userInvoices = mockInvoices.filter(i => i.userId === id);
-
-  // Get trainer info
-  const assignedRoutine = userRoutines[0];
-  const trainer = assignedRoutine ? mockStaff.find(s => s.id === assignedRoutine.trainerId) : null;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -71,6 +116,35 @@ export function UserDetail() {
     setIsInvoiceDialogOpen(false);
   };
 
+  const assignRoutine = () => {
+    if (!selectedRoutineId || !startDate) {
+      toast.error('Por favor selecciona una rutina y fecha de inicio');
+      return;
+    }
+    
+    if (!currentStaff?.id) {
+      toast.error('No se pudo identificar al usuario actual');
+      return;
+    }
+
+    assignRoutineMutation.mutate({
+      user_id: id || '',
+      routine_id: selectedRoutineId,
+      assigned_by: currentStaff.id,
+      start_date: startDate,
+      end_date: endDate || undefined,
+      notes: assignmentNotes || undefined,
+    }, {
+      onSuccess: () => {
+        setIsAssignRoutineDialogOpen(false);
+        setSelectedRoutineId('');
+        setStartDate(new Date().toISOString().split('T')[0]);
+        setEndDate('');
+        setAssignmentNotes('');
+      },
+    });
+  };
+
   // Prepare chart data
   const weightChartData = userProgress.map(p => ({
     date: new Date(p.date).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }),
@@ -94,9 +168,13 @@ export function UserDetail() {
           <div>
             <h1 className="text-4xl mb-2">{user.name}</h1>
             <div className="flex items-center gap-4 text-muted-foreground">
-              <span>{user.memberNumber}</span>
-              <span>•</span>
-              <span>{user.email}</span>
+              <span>ID: {user.id}</span>
+              {user.email && (
+                <>
+                  <span>•</span>
+                  <span>{user.email}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -135,7 +213,7 @@ export function UserDetail() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Plan Actual</p>
-                <p className="text-lg">{user.plan}</p>
+                <p className="text-lg">{user.plan || 'No definido'}</p>
               </div>
             </div>
           </CardContent>
@@ -149,7 +227,9 @@ export function UserDetail() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">IMC</p>
-                <p className="text-2xl text-primary">{user.imc.toFixed(1)}</p>
+                <p className="text-2xl text-primary">
+                  {user.imc ? user.imc.toFixed(1) : 'N/A'}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -163,7 +243,11 @@ export function UserDetail() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Próximo Pago</p>
-                <p className="text-lg">{new Date(user.nextPayment).toLocaleDateString('es-ES')}</p>
+                <p className="text-lg">
+                  {user.next_payment 
+                    ? new Date(user.next_payment).toLocaleDateString('es-ES')
+                    : 'No definido'}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -195,27 +279,31 @@ export function UserDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Teléfono</p>
-                    <p>{user.phone}</p>
+                    <p>{user.phone || 'No definido'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Email</p>
-                    <p className="text-sm">{user.email}</p>
+                    <p className="text-sm">{user.email || 'No definido'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Peso</p>
-                    <p>{user.weight} kg</p>
+                    <p>{user.weight ? `${user.weight} kg` : 'No registrado'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Estatura</p>
-                    <p>{user.height} cm</p>
+                    <p>{user.height ? `${user.height} cm` : 'No registrado'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
-                    <p>{new Date(user.startDate).toLocaleDateString('es-ES')}</p>
+                    <p>
+                      {user.start_date 
+                        ? new Date(user.start_date).toLocaleDateString('es-ES')
+                        : 'No definido'}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Miembro #</p>
-                    <p className="text-primary">{user.memberNumber}</p>
+                    <p className="text-primary">{user.member_number || user.id || 'N/A'}</p>
                   </div>
                 </div>
               </CardContent>
@@ -226,36 +314,29 @@ export function UserDetail() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Dumbbell className="w-5 h-5" />
-                  Entrenador Asignado
+                  Rutinas Asignadas
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {trainer ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                        <UserIcon className="w-8 h-8 text-primary" />
+                {loadingAssignments ? (
+                  <div className="text-center py-8">
+                    <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
+                  </div>
+                ) : userRoutineAssignments && userRoutineAssignments.length > 0 ? (
+                  <div className="space-y-3">
+                    {userRoutineAssignments.slice(0, 2).map((assignment: any) => (
+                      <div key={assignment.id} className="p-3 bg-muted rounded-lg">
+                        <p className="mb-1">{assignment.routine_templates?.name || 'Rutina'}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Asignada por: {assignment.staff?.name || 'Entrenador'}
+                        </p>
                       </div>
-                      <div>
-                        <p className="text-lg">{trainer.name}</p>
-                        <p className="text-sm text-muted-foreground">{trainer.role}</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-1">Email</p>
-                        <p className="text-sm">{trainer.email}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-1">Turno</p>
-                        <p className="text-sm">{trainer.shift}</p>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     <Dumbbell className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>No hay entrenador asignado</p>
+                    <p>No hay rutinas asignadas</p>
                   </div>
                 )}
               </CardContent>
@@ -404,54 +485,65 @@ export function UserDetail() {
 
         {/* Routines Tab */}
         <TabsContent value="routines" className="space-y-6">
-          {userRoutines.length > 0 ? (
-            userRoutines.map((routine) => (
-              <Card key={routine.id} className="bg-card border-border">
+          {loadingAssignments ? (
+            <Card className="bg-card border-border">
+              <CardContent className="py-12">
+                <div className="text-center">
+                  <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto mb-2" />
+                  <p className="text-muted-foreground">Cargando rutinas...</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : userRoutineAssignments && userRoutineAssignments.length > 0 ? (
+            userRoutineAssignments.map((assignment: any) => (
+              <Card key={assignment.id} className="bg-card border-border">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2">
                       <Dumbbell className="w-5 h-5" />
-                      {routine.name}
+                      {assignment.routine_templates?.name || 'Rutina'}
                     </CardTitle>
                     <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
-                      Activa
+                      {assignment.is_active ? 'Activa' : 'Inactiva'}
                     </Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground">{routine.description}</p>
+                  <p className="text-sm text-muted-foreground">{assignment.routine_templates?.description || ''}</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4 pb-4 border-b border-border">
                     <div>
-                      <p className="text-sm text-muted-foreground mb-1">Entrenador</p>
-                      <p>{routine.trainerName}</p>
+                      <p className="text-sm text-muted-foreground mb-1">Asignada por</p>
+                      <p>{assignment.staff?.name || 'N/A'}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground mb-1">Inicio</p>
-                      <p>{new Date(routine.startDate).toLocaleDateString('es-ES')}</p>
+                      <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
+                      <p>{assignment.start_date ? new Date(assignment.start_date).toLocaleDateString('es-ES') : 'N/A'}</p>
                     </div>
                   </div>
                   
-                  <div>
-                    <h4 className="mb-3">Ejercicios</h4>
-                    <div className="space-y-3">
-                      {routine.exercises.map((exercise) => (
-                        <div
-                          key={exercise.id}
-                          className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                        >
-                          <div className="flex-1">
-                            <p>{exercise.name}</p>
-                            {exercise.notes && (
-                              <p className="text-sm text-muted-foreground">{exercise.notes}</p>
-                            )}
+                  {assignment.routine_templates?.exercise_templates && assignment.routine_templates.exercise_templates.length > 0 && (
+                    <div>
+                      <h4 className="mb-3">Ejercicios</h4>
+                      <div className="space-y-3">
+                        {assignment.routine_templates.exercise_templates.map((exercise: any) => (
+                          <div
+                            key={exercise.id}
+                            className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                          >
+                            <div className="flex-1">
+                              <p>{exercise.name}</p>
+                              {exercise.notes && (
+                                <p className="text-sm text-muted-foreground">{exercise.notes}</p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-primary">{exercise.sets} x {exercise.reps}</p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-primary">{exercise.sets} x {exercise.reps}</p>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             ))
@@ -465,6 +557,13 @@ export function UserDetail() {
               </CardContent>
             </Card>
           )}
+          <Button
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={() => setIsAssignRoutineDialogOpen(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Asignar Rutina
+          </Button>
         </TabsContent>
 
         {/* Payments Tab */}
@@ -477,9 +576,14 @@ export function UserDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {userPayments.length > 0 ? (
+              {loadingPayments ? (
+                <div className="text-center py-8">
+                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto mb-2" />
+                  <p className="text-muted-foreground text-sm">Cargando pagos...</p>
+                </div>
+              ) : userPayments && userPayments.length > 0 ? (
                 <div className="space-y-3">
-                  {userPayments.map((payment) => (
+                  {userPayments.map((payment: any) => (
                     <div
                       key={payment.id}
                       className="flex items-center justify-between p-4 bg-muted rounded-lg"
@@ -502,10 +606,15 @@ export function UserDetail() {
                           </div>
                           <div>
                             <p className="text-muted-foreground">Próximo Pago</p>
-                            <p>{new Date(payment.nextPayment).toLocaleDateString('es-ES')}</p>
+                            <p>{new Date(payment.next_payment).toLocaleDateString('es-ES')}</p>
                           </div>
                         </div>
                       </div>
+                      <PrintPayment
+                        payment={payment}
+                        userName={user.name}
+                        userMemberNumber={user.member_number}
+                      />
                     </div>
                   ))}
                 </div>
@@ -616,6 +725,86 @@ export function UserDetail() {
               >
                 <Download className="w-4 h-4 mr-2" />
                 Generar y Descargar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Routine Dialog */}
+      <Dialog open={isAssignRoutineDialogOpen} onOpenChange={setIsAssignRoutineDialogOpen}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle>Asignar Rutina</DialogTitle>
+            <DialogDescription>
+              Asignar una rutina a {user.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Rutina</Label>
+              <Select
+                value={selectedRoutineId}
+                onValueChange={setSelectedRoutineId}
+                className="bg-input border-border"
+              >
+                <SelectTrigger className="bg-input border-border">
+                  <SelectValue placeholder="Selecciona una rutina" />
+                </SelectTrigger>
+                <SelectContent className="bg-input border-border">
+                  {availableRoutines && availableRoutines.length > 0 ? (
+                    availableRoutines.map((routine: any) => (
+                      <SelectItem key={routine.id} value={routine.id}>
+                        {routine.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="none" disabled>No hay rutinas disponibles</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Fecha de Inicio</Label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Fecha de Fin (Opcional)</Label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Notas (Opcional)</Label>
+              <Textarea
+                value={assignmentNotes}
+                onChange={(e) => setAssignmentNotes(e.target.value)}
+                placeholder="Información adicional..."
+                className="bg-input border-border"
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setIsAssignRoutineDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="bg-primary hover:bg-primary/90"
+                onClick={assignRoutine}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Asignar Rutina
               </Button>
             </div>
           </div>

@@ -64,15 +64,22 @@ export function Dashboard() {
           <AlertDescription className="text-gray-300 ml-2">
             <div className="space-y-2">
               <p className="font-semibold text-white">
-                Error al cargar datos del servidor
+                ⚠️ No se pudo conectar con Supabase
               </p>
               <p className="text-sm">
-                {statsError?.message || 'No se pudieron cargar las estadísticas'}. Para conectar con Supabase:
+                {statsError?.message || 'Error de conexión'}. El sistema está mostrando <strong>datos de demostración</strong>.
               </p>
-              <ol className="text-sm list-decimal list-inside space-y-1 ml-2">
-                <li>Visita la <a href="/test-supabase" className="text-[#10f94e] hover:underline inline-flex items-center gap-1">página de pruebas <ExternalLink className="h-3 w-3 inline" /></a> para verificar la conexión</li>
-                <li>Revisa que tu backend de Supabase esté corriendo correctamente</li>
-              </ol>
+              <div className="flex items-center gap-2 mt-3">
+                <a 
+                  href="/test-supabase" 
+                  className="text-[#10f94e] hover:underline inline-flex items-center gap-1 text-sm"
+                >
+                  🧪 Ejecutar pruebas de conexión <ExternalLink className="h-3 w-3 inline" />
+                </a>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                📖 Consulta <code className="bg-gray-800 px-1 py-0.5 rounded">ARQUITECTURA_SUPABASE.md</code> para instrucciones de configuración
+              </p>
             </div>
           </AlertDescription>
         </Alert>
@@ -80,12 +87,22 @@ export function Dashboard() {
         <Alert className="border-[#10f94e]/30 bg-[#10f94e]/5">
           <Database className="h-5 w-5 text-[#10f94e]" />
           <AlertDescription className="text-gray-300 ml-2">
-            <p className="font-semibold text-white">
-              ¡Bienvenido, {user?.name}! 👋
-            </p>
-            <p className="text-sm mt-1">
-              Sistema conectado y mostrando datos reales de Supabase.
-            </p>
+            <div className="space-y-1">
+              <p className="font-semibold text-white">
+                ✅ ¡Bienvenido, {user?.name}!
+              </p>
+              <p className="text-sm">
+                Sistema conectado correctamente a Supabase. Mostrando datos en tiempo real.
+              </p>
+              <div className="flex items-center gap-4 mt-2">
+                <span className="text-xs text-gray-400">
+                  📊 <strong>{totalUsers}</strong> usuarios registrados
+                </span>
+                <span className="text-xs text-gray-400">
+                  💰 <strong>Bs {monthlyRevenue.toLocaleString()}</strong> cobrados
+                </span>
+              </div>
+            </div>
           </AlertDescription>
         </Alert>
       )}

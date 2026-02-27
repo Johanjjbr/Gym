@@ -337,7 +337,11 @@ app.delete("/make-server-104060a1/users/:id", async (c) => {
 
 app.get("/make-server-104060a1/payments", async (c) => {
   try {
-    const { data, error } = await supabase
+    const { user_id } = c.req.query();
+    
+    console.log('📊 GET /payments - user_id param:', user_id);
+    
+    let query = supabase
       .from('payments')
       .select(`
         *,
@@ -345,7 +349,17 @@ app.get("/make-server-104060a1/payments", async (c) => {
       `)
       .order('date', { ascending: false });
     
+    // Filtrar por usuario si se proporciona el parámetro
+    if (user_id) {
+      console.log('🔍 Filtering payments by user_id:', user_id);
+      query = query.eq('user_id', user_id);
+    }
+    
+    const { data, error } = await query;
+    
     if (error) throw error;
+    
+    console.log('✅ Payments returned:', data?.length || 0, 'records');
     
     return c.json(data);
   } catch (error) {

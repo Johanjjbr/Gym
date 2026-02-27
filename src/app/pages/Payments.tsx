@@ -1,9 +1,9 @@
 /**
- * Página de Pagos con CRUD completo, cálculo automático de fechas y alertas de morosidad
+ * Página de Pagos con filtros avanzados, impresión y vista de usuarios morosos
  */
 
-import { useState, useEffect } from 'react';
-import { Search, Plus, DollarSign, Loader2, AlertCircle, Eye, Calendar } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Search, Plus, DollarSign, Loader2, AlertCircle, Eye, Calendar, Filter, Printer, X, Users } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { paymentSchema, type PaymentFormData } from '../lib/validations';
@@ -15,15 +15,23 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { addMonths, format } from 'date-fns';
+import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths } from 'date-fns';
+import { PrintPayment } from '../components/PrintPayment';
+import { useNavigate } from 'react-router';
+
+type FilterType = 'all' | 'paid' | 'pending' | 'overdue';
+type TimeFilter = 'all' | 'thisMonth' | 'lastMonth';
 
 export function Payments() {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<FilterType>('all');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [showOverdueUsers, setShowOverdueUsers] = useState(false);
 
   // React Query hooks
   const { data: payments, isLoading: loadingPayments, error: paymentsError } = usePayments();
@@ -63,7 +71,7 @@ export function Payments() {
     if (watchUserId && users) {
       const user = users.find((u: any) => u.id === watchUserId);
       if (user) {
-        setSelectedUser(user.membership_type);
+        setSelectedUser(user.plan || user.membership_type || 'Mensual');
         // Establecer monto sugerido según membresía
         const amounts: Record<string, number> = {
           'Mensual': 300,
@@ -71,24 +79,88 @@ export function Payments() {
           'Semestral': 1500,
           'Anual': 2800,
         };
-        const suggestedAmount = amounts[user.membership_type] || 300;
+        const planKey = user.plan || user.membership_type || 'Mensual';
+        const suggestedAmount = amounts[planKey] || 300;
         setValue('amount', suggestedAmount);
       }
     }
   }, [watchUserId, users, setValue]);
 
-  // Filtrado de pagos
-  const filteredPayments = payments?.filter((payment: any) => {
-    const user = users?.find((u: any) => u.id === payment.user_id);
-    return user?.name.toLowerCase().includes(searchTerm.toLowerCase());
-  });
+  // Usuarios morosos (usuarios cuyo next_payment es anterior a hoy)
+  const overdueUsers = useMemo(() => {
+    if (!users) return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    return users.filter((user: any) => {
+      if (!user.next_payment) return false;
+      const nextPayment = new Date(user.next_payment);
+      nextPayment.setHours(0, 0, 0, 0);
+      return nextPayment < today;
+    });
+  }, [users]);
 
-  // Calcular totales
-  const totalAmount = payments?.reduce((sum: number, p: any) => sum + p.amount, 0) || 0;
-  const paidAmount = payments?.filter((p: any) => p.status === 'Pagado')
-    .reduce((sum: number, p: any) => sum + p.amount, 0) || 0;
-  const overdueAmount = payments?.filter((p: any) => p.status === 'Vencido')
-    .reduce((sum: number, p: any) => sum + p.amount, 0) || 0;
+  // Filtrado avanzado de pagos
+  const filteredPayments = useMemo(() => {
+    if (!payments) return [];
+    
+    return payments.filter((payment: any) => {
+      // Filtro de búsqueda por nombre
+      const user = users?.find((u: any) => u.id === payment.user_id);
+      const matchesSearch = !searchTerm || user?.name.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      // Filtro por estado
+      const matchesStatus = filterStatus === 'all' || 
+        (filterStatus === 'paid' && payment.status === 'Pagado') ||
+        (filterStatus === 'pending' && payment.status === 'Pendiente') ||
+        (filterStatus === 'overdue' && payment.status === 'Vencido');
+      
+      // Filtro por tiempo
+      let matchesTime = true;
+      if (timeFilter === 'thisMonth') {
+        const paymentDate = parseISO(payment.date);
+        const monthStart = startOfMonth(new Date());
+        const monthEnd = endOfMonth(new Date());
+        matchesTime = isWithinInterval(paymentDate, { start: monthStart, end: monthEnd });
+      } else if (timeFilter === 'lastMonth') {
+        const lastMonth = subMonths(new Date(), 1);
+        const paymentDate = parseISO(payment.date);
+        const monthStart = startOfMonth(lastMonth);
+        const monthEnd = endOfMonth(lastMonth);
+        matchesTime = isWithinInterval(paymentDate, { start: monthStart, end: monthEnd });
+      }
+      
+      return matchesSearch && matchesStatus && matchesTime;
+    });
+  }, [payments, users, searchTerm, filterStatus, timeFilter]);
+
+  // Calcular totales con filtros aplicados
+  const filteredTotals = useMemo(() => {
+    const total = filteredPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
+    const paid = filteredPayments
+      .filter((p: any) => p.status === 'Pagado')
+      .reduce((sum: number, p: any) => sum + p.amount, 0);
+    const overdue = filteredPayments
+      .filter((p: any) => p.status === 'Vencido')
+      .reduce((sum: number, p: any) => sum + p.amount, 0);
+    
+    return { total, paid, overdue };
+  }, [filteredPayments]);
+
+  // Totales generales (sin filtros)
+  const generalTotals = useMemo(() => {
+    if (!payments) return { total: 0, paid: 0, overdue: 0 };
+    
+    const total = payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+    const paid = payments
+      .filter((p: any) => p.status === 'Pagado')
+      .reduce((sum: number, p: any) => sum + p.amount, 0);
+    const overdue = payments
+      .filter((p: any) => p.status === 'Vencido')
+      .reduce((sum: number, p: any) => sum + p.amount, 0);
+    
+    return { total, paid, overdue };
+  }, [payments]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -97,6 +169,10 @@ export function Payments() {
       case 'Pendiente':
         return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
       case 'Vencido':
+        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
+      case 'Activo':
+        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
+      case 'Moroso':
         return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       default:
         return 'bg-muted text-muted-foreground';
@@ -108,6 +184,11 @@ export function Payments() {
     return user?.name || 'Usuario desconocido';
   };
 
+  const getUserMemberNumber = (userId: string) => {
+    const user = users?.find((u: any) => u.id === userId);
+    return user?.member_number || undefined;
+  };
+
   const onSubmit = async (data: PaymentFormData) => {
     try {
       await createPayment.mutateAsync(data);
@@ -117,6 +198,14 @@ export function Payments() {
       console.error(error);
     }
   };
+
+  const clearFilters = () => {
+    setFilterStatus('all');
+    setTimeFilter('all');
+    setSearchTerm('');
+  };
+
+  const hasActiveFilters = filterStatus !== 'all' || timeFilter !== 'all' || searchTerm !== '';
 
   // Estado de carga
   if (loadingPayments || loadingUsers) {
@@ -164,14 +253,91 @@ export function Payments() {
           <h1 className="text-4xl mb-2">Control de Pagos</h1>
           <p className="text-muted-foreground">Gestión de mensualidades y cobros</p>
         </div>
-        <Button
-          className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"
-          onClick={() => setIsRegisterOpen(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Registrar Pago
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className={`border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c]/10 ${showOverdueUsers ? 'bg-[#ff3b5c]/10' : ''}`}
+            onClick={() => setShowOverdueUsers(!showOverdueUsers)}
+          >
+            <Users className="w-4 h-4 mr-2" />
+            Usuarios Morosos ({overdueUsers.length})
+          </Button>
+          <Button
+            className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"
+            onClick={() => setIsRegisterOpen(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Registrar Pago
+          </Button>
+        </div>
       </div>
+
+      {/* Vista de Usuarios Morosos */}
+      {showOverdueUsers && (
+        <Card className="bg-card border-[#ff3b5c]/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-[#ff3b5c]">
+              <AlertCircle className="w-5 h-5" />
+              Usuarios con Pagos Vencidos ({overdueUsers.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {overdueUsers.length > 0 ? (
+              <div className="space-y-3">
+                {overdueUsers.map((user: any) => (
+                  <div
+                    key={user.id}
+                    className="flex items-center justify-between p-4 bg-[#ff3b5c]/5 border border-[#ff3b5c]/20 rounded-lg hover:bg-[#ff3b5c]/10 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/usuarios/${user.id}`)}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <p className="font-semibold">{user.name}</p>
+                        <Badge variant="outline" className={getStatusColor(user.status || 'Moroso')}>
+                          {user.status || 'Moroso'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 text-sm text-muted-foreground">
+                        <div>
+                          <span className="block text-xs">Plan</span>
+                          <span className="text-white">{user.plan || user.membership_type || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="block text-xs">Teléfono</span>
+                          <span className="text-white">{user.phone || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="block text-xs">Vencimiento</span>
+                          <span className="text-[#ff3b5c] font-semibold">
+                            {user.next_payment 
+                              ? new Date(user.next_payment).toLocaleDateString('es-ES')
+                              : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setValue('user_id', user.id);
+                        setIsRegisterOpen(true);
+                      }}
+                    >
+                      Registrar Pago
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No hay usuarios con pagos vencidos</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -184,7 +350,7 @@ export function Payments() {
               <div>
                 <p className="text-sm text-muted-foreground">Total Cobrado</p>
                 <p className="text-2xl font-bold text-[#10f94e]">
-                  Bs {paidAmount.toLocaleString()}
+                  Bs {(hasActiveFilters ? filteredTotals.paid : generalTotals.paid).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -199,7 +365,7 @@ export function Payments() {
               <div>
                 <p className="text-sm text-muted-foreground">Vencidos</p>
                 <p className="text-2xl font-bold text-[#ff3b5c]">
-                  Bs {overdueAmount.toLocaleString()}
+                  Bs {(hasActiveFilters ? filteredTotals.overdue : generalTotals.overdue).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -213,24 +379,114 @@ export function Payments() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total General</p>
-                <p className="text-2xl font-bold">Bs {totalAmount.toLocaleString()}</p>
+                <p className="text-2xl font-bold">
+                  Bs {(hasActiveFilters ? filteredTotals.total : generalTotals.total).toLocaleString()}
+                </p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Search */}
+      {/* Filtros */}
       <Card className="bg-card border-border">
         <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Buscar por nombre de usuario..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-input border-border"
-            />
+          <div className="space-y-4">
+            {/* Búsqueda */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input
+                placeholder="Buscar por nombre de usuario..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 bg-input border-border"
+              />
+            </div>
+
+            {/* Filtros de Estado y Tiempo */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label className="text-sm text-muted-foreground mb-2 block">Estado</Label>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={filterStatus === 'all' ? 'default' : 'outline'}
+                    onClick={() => setFilterStatus('all')}
+                    className={filterStatus === 'all' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={filterStatus === 'paid' ? 'default' : 'outline'}
+                    onClick={() => setFilterStatus('paid')}
+                    className={filterStatus === 'paid' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                  >
+                    Pagados
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={filterStatus === 'overdue' ? 'default' : 'outline'}
+                    onClick={() => setFilterStatus('overdue')}
+                    className={filterStatus === 'overdue' ? 'bg-[#ff3b5c] text-white hover:bg-[#ff3b5c]/90' : ''}
+                  >
+                    Vencidos
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm text-muted-foreground mb-2 block">Período</Label>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={timeFilter === 'all' ? 'default' : 'outline'}
+                    onClick={() => setTimeFilter('all')}
+                    className={timeFilter === 'all' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={timeFilter === 'thisMonth' ? 'default' : 'outline'}
+                    onClick={() => setTimeFilter('thisMonth')}
+                    className={timeFilter === 'thisMonth' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                  >
+                    Este Mes
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={timeFilter === 'lastMonth' ? 'default' : 'outline'}
+                    onClick={() => setTimeFilter('lastMonth')}
+                    className={timeFilter === 'lastMonth' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                  >
+                    Mes Pasado
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-end">
+                {hasActiveFilters && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={clearFilters}
+                    className="w-full"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Limpiar Filtros
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Indicador de filtros activos */}
+            {hasActiveFilters && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Filter className="w-4 h-4" />
+                <span>Mostrando {filteredPayments.length} de {payments?.length || 0} pagos</span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -238,12 +494,16 @@ export function Payments() {
       {/* Payments Table */}
       <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle>Historial de Pagos ({filteredPayments?.length || 0})</CardTitle>
+          <CardTitle>Historial de Pagos ({filteredPayments.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredPayments?.length === 0 ? (
+          {filteredPayments.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-muted-foreground">No hay pagos registrados</p>
+              <p className="text-muted-foreground">
+                {hasActiveFilters 
+                  ? 'No se encontraron pagos con los filtros aplicados'
+                  : 'No hay pagos registrados'}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -260,7 +520,7 @@ export function Payments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPayments?.map((payment: any) => (
+                  {filteredPayments.map((payment: any) => (
                     <tr
                       key={payment.id}
                       className="border-b border-border hover:bg-muted/50 transition-colors"
@@ -291,6 +551,11 @@ export function Payments() {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-end gap-2">
+                          <PrintPayment
+                            payment={payment}
+                            userName={getUserName(payment.user_id)}
+                            userMemberNumber={getUserMemberNumber(payment.user_id)}
+                          />
                           <Button
                             size="sm"
                             variant="ghost"
@@ -334,7 +599,7 @@ export function Payments() {
                 <option value="">Seleccionar usuario</option>
                 {users?.map((user: any) => (
                   <option key={user.id} value={user.id}>
-                    {user.name} - {user.membership_type}
+                    {user.name} - {user.plan || user.membership_type || 'Sin plan'}
                   </option>
                 ))}
               </select>
@@ -533,6 +798,11 @@ export function Payments() {
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t border-gray-700">
+                <PrintPayment
+                  payment={selectedPayment}
+                  userName={getUserName(selectedPayment.user_id)}
+                  userMemberNumber={getUserMemberNumber(selectedPayment.user_id)}
+                />
                 <Button
                   variant="outline"
                   onClick={() => setIsDetailsOpen(false)}

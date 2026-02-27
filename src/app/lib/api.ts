@@ -5,6 +5,7 @@
  */
 
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { supabase } from './supabase';
 
 const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-104060a1`;
 
@@ -159,9 +160,35 @@ export const users = {
    * Crear nuevo usuario
    */
   create: async (userData: any) => {
+    // 1. Convertimos "" en null para que Postgres no explote con las fechas
+    const sanitizedData = Object.fromEntries(
+      Object.entries(userData).map(([key, value]) => [
+        key, value === "" ? null : value
+      ])
+    );
+
+    // 2. Preparamos el objeto final para que coincida con las columnas de tu DB
+    const finalData = {
+      ...sanitizedData,
+      // Generamos un número de miembro si no existe (formato GYM-XXXXXX)
+      member_number: sanitizedData.member_number || `GYM-${Math.floor(Math.random() * 900000 + 100000)}`,
+      
+      // Mapeamos el campo del formulario 'membership_type' a la columna 'plan' de la DB
+      plan: sanitizedData.membership_type || 'Mensual',
+      
+      // Si no hay fecha de próximo pago, calculamos 30 días desde hoy
+      next_payment: sanitizedData.next_payment || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      
+      // Mapeamos 'registration_date' a 'start_date' si es necesario
+      start_date: sanitizedData.registration_date || new Date().toISOString(),
+    };
+
+    // 3. Eliminamos campos que el formulario envía pero la tabla no tiene (evita Error 400)
+    delete (finalData as any).membership_type; 
+
     return apiRequest('/users', {
       method: 'POST',
-      body: JSON.stringify(userData),
+      body: JSON.stringify(finalData),
     });
   },
 
@@ -195,6 +222,13 @@ export const payments = {
    */
   getAll: async () => {
     return apiRequest('/payments');
+  },
+
+  /**
+   * Obtener pagos de un usuario específico
+   */
+  getByUser: async (userId: string) => {
+    return apiRequest(`/payments?user_id=${userId}`);
   },
 
   /**
@@ -235,6 +269,62 @@ export const staff = {
       method: 'PUT',
       body: JSON.stringify(staffData),
     });
+  },
+};
+
+// =============================================
+// PROGRESO FÍSICO
+// =============================================
+
+export const physicalProgress = {
+  /**
+   * Obtener progreso físico por usuario
+   */
+  async getByUser(userId: string) {
+    const { data, error } = await supabase
+      .from('physical_progress')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false });
+
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Crear un nuevo registro de progreso
+   */
+  async create(progressData: {
+    user_id: string;
+    weight: number;
+    body_fat?: number;
+    muscle_mass?: number;
+    notes?: string;
+    date?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('physical_progress')
+      .insert([{
+        ...progressData,
+        date: progressData.date || new Date().toISOString(),
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Eliminar un registro de progreso
+   */
+  async delete(id: string) {
+    const { error } = await supabase
+      .from('physical_progress')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
   },
 };
 
@@ -376,4 +466,5 @@ export default {
   routineAssignments,
   stats,
   utils,
+  physicalProgress,
 };

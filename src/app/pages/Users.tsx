@@ -230,7 +230,7 @@ export function Users() {
                     <th className="text-left py-3 px-4 text-muted-foreground">Nombre</th>
                     <th className="text-left py-3 px-4 text-muted-foreground">Email</th>
                     <th className="text-left py-3 px-4 text-muted-foreground">Teléfono</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Membresía</th>
+                    <th className="text-left py-3 px-4 text-muted-foreground">Plan</th>
                     <th className="text-left py-3 px-4 text-muted-foreground">Estado</th>
                     <th className="text-right py-3 px-4 text-muted-foreground">Acciones</th>
                   </tr>
@@ -251,7 +251,7 @@ export function Users() {
                         <p className="text-sm">{user.phone || '-'}</p>
                       </td>
                       <td className="py-4 px-4">
-                        <p className="text-sm">{user.membership_type}</p>
+                        <p className="text-sm">{user.plan || '-'}</p>
                       </td>
                       <td className="py-4 px-4">
                         <Badge variant="outline" className={getStatusColor(user.status)}>

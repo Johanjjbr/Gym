@@ -10,6 +10,11 @@ import { z } from 'zod';
 // =============================================
 
 export const userSchema = z.object({
+  member_number: z.string()
+    .min(1, 'Número de miembro es requerido')
+    .max(50, 'Número de miembro demasiado largo')
+    .optional(), // Opcional en creación, se puede generar automáticamente
+  
   name: z.string()
     .min(2, 'El nombre debe tener al menos 2 caracteres')
     .max(100, 'El nombre es demasiado largo'),
@@ -19,18 +24,18 @@ export const userSchema = z.object({
     .max(255, 'Email demasiado largo'),
   
   phone: z.string()
-    .regex(/^[0-9]{10,15}$/, 'Teléfono debe tener entre 10 y 15 dígitos')
-    .optional()
-    .or(z.literal('')),
+    .min(1, 'El teléfono es requerido')
+    .max(20, 'Teléfono demasiado largo'),
   
   birth_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato YYYY-MM-DD')
     .optional()
     .or(z.literal('')),
   
-  gender: z.enum(['Masculino', 'Femenino', 'Otro'], {
-    errorMap: () => ({ message: 'Género debe ser Masculino, Femenino u Otro' })
-  }).optional(),
+  gender: z.string()
+    .max(20, 'Género demasiado largo')
+    .optional()
+    .or(z.literal('')),
   
   address: z.string()
     .max(500, 'Dirección demasiado larga')
@@ -42,20 +47,49 @@ export const userSchema = z.object({
     .optional()
     .or(z.literal('')),
   
-  membership_type: z.enum(['Mensual', 'Trimestral', 'Semestral', 'Anual'], {
-    errorMap: () => ({ message: 'Tipo de membresía inválido' })
+  plan: z.string()
+    .max(100, 'Plan demasiado largo')
+    .optional()
+    .or(z.literal('')),
+  
+  status: z.enum(['Activo', 'Inactivo', 'Moroso', 'Suspendido'], {
+    errorMap: () => ({ message: 'Estado debe ser Activo, Inactivo, Moroso o Suspendido' })
   }),
   
-  status: z.enum(['Activo', 'Inactivo', 'Suspendido'], {
-    errorMap: () => ({ message: 'Estado debe ser Activo, Inactivo o Suspendido' })
-  }),
-  
-  registration_date: z.string()
+  start_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato YYYY-MM-DD')
     .optional(),
   
+  next_payment: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato YYYY-MM-DD')
+    .optional()
+    .or(z.literal('')),
+  
+  weight: z.string()
+    .optional()
+    .transform((val) => val === '' || !val ? undefined : parseFloat(val))
+    .pipe(z.number().positive('El peso debe ser positivo').max(500, 'Peso fuera de rango').optional()),
+  
+  height: z.string()
+    .optional()
+    .transform((val) => val === '' || !val ? undefined : parseFloat(val))
+    .pipe(z.number().positive('La altura debe ser positiva').min(50, 'Altura mínima: 50cm').max(300, 'Altura máxima: 300cm').optional()),
+  
+  bmi: z.union([z.string(), z.number()])
+    .optional()
+    .transform((val) => {
+      if (!val || val === '') return undefined;
+      return typeof val === 'string' ? parseFloat(val) : val;
+    })
+    .pipe(z.number().positive('El IMC debe ser positivo').optional()),
+  
   notes: z.string()
     .max(1000, 'Notas demasiado largas')
+    .optional()
+    .or(z.literal('')),
+  
+  medical_notes: z.string()
+    .max(1000, 'Notas médicas demasiado largas')
     .optional()
     .or(z.literal('')),
 });

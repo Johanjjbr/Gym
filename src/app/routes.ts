@@ -10,8 +10,7 @@ import { Reports } from './pages/Reports';
 import { Routines } from './pages/Routines';
 import { MyWorkout } from './pages/MyWorkout';
 import { Login } from './pages/Login';
-import TestSupabase from './pages/TestSupabase';
-
+import { TestSupabase } from './pages/TestSupabase';
 
 export const router = createBrowserRouter([
   // Ruta pública - Login
