@@ -1,14 +1,53 @@
-import { Users, UserCheck, UserX, DollarSign, UserCog, Activity } from 'lucide-react';
+import { Users, UserCheck, UserX, DollarSign, UserCog, Activity, Loader2, AlertCircle } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { mockDashboardStats, monthlyRevenueData, attendanceData, userStatusData, mockAttendance } from '../lib/mockData';
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { monthlyRevenueData, attendanceData } from '../lib/mockData';
 import { useAuth } from '../contexts/AuthContext';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Database, ExternalLink } from 'lucide-react';
+import { useDashboardStats } from '../hooks/useStats';
+import { useUsers } from '../hooks/useUsers';
+import { usePayments } from '../hooks/usePayments';
 
 export function Dashboard() {
   const { user } = useAuth();
+  
+  // Usar React Query para obtener datos reales
+  const { data: stats, isLoading: loadingStats, error: statsError } = useDashboardStats();
+  const { data: users, isLoading: loadingUsers } = useUsers();
+  const { data: payments, isLoading: loadingPayments } = usePayments();
+
+  const isLoading = loadingStats || loadingUsers || loadingPayments;
+
+  // Calcular estadísticas desde los datos reales
+  const totalUsers = users?.length || 0;
+  const activeUsers = users?.filter((u: any) => u.status === 'Activo').length || 0;
+  const inactiveUsers = users?.filter((u: any) => u.status === 'Inactivo').length || 0;
+  const suspendedUsers = users?.filter((u: any) => u.status === 'Suspendido').length || 0;
+  
+  const monthlyRevenue = payments?.reduce((sum: number, p: any) => sum + p.amount, 0) || 0;
+  const totalStaff = stats?.totalStaff || 0;
+  const todayAttendance = stats?.todayAttendance || 0;
+
+  // Datos para el gráfico de estado de usuarios
+  const userStatusData = [
+    { name: 'Activos', value: activeUsers, color: '#10f94e' },
+    { name: 'Inactivos', value: inactiveUsers, color: '#6b7280' },
+    { name: 'Suspendidos', value: suspendedUsers, color: '#ff3b5c' },
+  ];
+
+  // Mostrar loading
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
+          <p className="text-gray-400">Cargando estadísticas...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -18,65 +57,78 @@ export function Dashboard() {
         <p className="text-muted-foreground">Resumen general del gimnasio</p>
       </div>
 
-      {/* Bienvenida y Alerta de Configuración */}
-      <Alert className="border-[#10f94e]/30 bg-[#10f94e]/5">
-        <Database className="h-5 w-5 text-[#10f94e]" />
-        <AlertDescription className="text-gray-300 ml-2">
-          <div className="space-y-2">
+      {/* Bienvenida */}
+      {statsError ? (
+        <Alert className="border-[#ff3b5c]/30 bg-[#ff3b5c]/5">
+          <AlertCircle className="h-5 w-5 text-[#ff3b5c]" />
+          <AlertDescription className="text-gray-300 ml-2">
+            <div className="space-y-2">
+              <p className="font-semibold text-white">
+                Error al cargar datos del servidor
+              </p>
+              <p className="text-sm">
+                {statsError?.message || 'No se pudieron cargar las estadísticas'}. Para conectar con Supabase:
+              </p>
+              <ol className="text-sm list-decimal list-inside space-y-1 ml-2">
+                <li>Visita la <a href="/test-supabase" className="text-[#10f94e] hover:underline inline-flex items-center gap-1">página de pruebas <ExternalLink className="h-3 w-3 inline" /></a> para verificar la conexión</li>
+                <li>Revisa que tu backend de Supabase esté corriendo correctamente</li>
+              </ol>
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Alert className="border-[#10f94e]/30 bg-[#10f94e]/5">
+          <Database className="h-5 w-5 text-[#10f94e]" />
+          <AlertDescription className="text-gray-300 ml-2">
             <p className="font-semibold text-white">
               ¡Bienvenido, {user?.name}! 👋
             </p>
-            <p className="text-sm">
-              El sistema está mostrando <strong>datos de demostración</strong>. Para conectar con tu base de datos real de Supabase:
+            <p className="text-sm mt-1">
+              Sistema conectado y mostrando datos reales de Supabase.
             </p>
-            <ol className="text-sm list-decimal list-inside space-y-1 ml-2">
-              <li>Visita la <a href="/test-supabase" className="text-[#10f94e] hover:underline inline-flex items-center gap-1">página de pruebas <ExternalLink className="h-3 w-3 inline" /></a> para verificar la conexión</li>
-              <li>Revisa el archivo <code className="bg-gray-800 px-1 py-0.5 rounded">CHECKLIST_SETUP.md</code> para los pasos de configuración</li>
-              <li>Ejecuta el schema SQL y el seed de datos según las instrucciones</li>
-            </ol>
-          </div>
-        </AlertDescription>
-      </Alert>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard
           title="Total Usuarios"
-          value={mockDashboardStats.totalUsers}
+          value={totalUsers}
           icon={Users}
           trend={{ value: 12, isPositive: true }}
           color="blue"
         />
         <StatCard
           title="Usuarios Activos"
-          value={mockDashboardStats.activeUsers}
+          value={activeUsers}
           icon={UserCheck}
           trend={{ value: 8, isPositive: true }}
           color="green"
         />
         <StatCard
-          title="Usuarios Morosos"
-          value={mockDashboardStats.delinquentUsers}
+          title="Usuarios Inactivos"
+          value={inactiveUsers + suspendedUsers}
           icon={UserX}
           trend={{ value: 15, isPositive: false }}
           color="red"
         />
         <StatCard
           title="Ingresos del Mes"
-          value={`Bs ${mockDashboardStats.monthlyRevenue.toLocaleString()}`}
+          value={`Bs ${monthlyRevenue.toLocaleString()}`}
           icon={DollarSign}
           trend={{ value: 6, isPositive: true }}
           color="green"
         />
         <StatCard
           title="Asistencia Hoy"
-          value={mockDashboardStats.todayAttendance}
+          value={todayAttendance}
           icon={Activity}
           color="purple"
         />
         <StatCard
           title="Personal Activo"
-          value={mockDashboardStats.totalStaff}
+          value={totalStaff}
           icon={UserCog}
           color="blue"
         />
@@ -175,25 +227,32 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Attendance */}
+        {/* Payments Summary */}
         <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle>Asistencia Reciente</CardTitle>
+            <CardTitle>Pagos Recientes</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {mockAttendance.slice(0, 6).map((attendance) => (
-                <div key={attendance.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div>
-                    <p className="text-sm">{attendance.userName}</p>
-                    <p className="text-xs text-muted-foreground">{attendance.date}</p>
+              {payments?.slice(0, 6).map((payment: any) => {
+                const paymentUser = users?.find((u: any) => u.id === payment.user_id);
+                return (
+                  <div key={payment.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                    <div>
+                      <p className="text-sm font-medium">{paymentUser?.name || 'Usuario'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(payment.date).toLocaleDateString('es-ES')}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-[#10f94e] font-semibold">
+                        Bs {payment.amount.toLocaleString()}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{payment.method}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm text-primary">{attendance.time}</p>
-                    <p className="text-xs text-muted-foreground">{attendance.type}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
