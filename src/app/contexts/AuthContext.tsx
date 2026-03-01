@@ -41,12 +41,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const { staff } = await api.auth.getSession();
-      setUser(staff);
-    } catch (error) {
-      console.error('Error verificando sesión:', error);
+      // Intentar obtener la sesión
+      try {
+        const { staff } = await api.auth.getSession();
+        
+        // Si no hay staff, limpiar la sesión
+        if (!staff) {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('user');
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+        
+        setUser(staff);
+      } catch (sessionError: any) {
+        // Si la API falla, intentar usar el usuario guardado en localStorage
+        const savedUser = localStorage.getItem('user');
+        
+        if (savedUser) {
+          try {
+            setUser(JSON.parse(savedUser));
+          } catch {
+            // Si no se puede parsear, limpiar
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user');
+            setUser(null);
+          }
+        } else {
+          // No hay usuario guardado, limpiar
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('user');
+          setUser(null);
+        }
+      }
+    } catch (error: any) {
+      console.warn('Error al verificar sesión, limpiando datos locales');
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
+      setUser(null);
     } finally {
       setIsLoading(false);
     }

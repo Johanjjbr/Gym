@@ -11,9 +11,9 @@ import { z } from 'zod';
 
 export const userSchema = z.object({
   member_number: z.string()
-    .min(1, 'Número de miembro es requerido')
     .max(50, 'Número de miembro demasiado largo')
-    .optional(), // Opcional en creación, se puede generar automáticamente
+    .optional()
+    .or(z.literal('')), // Completamente opcional, se genera automáticamente en el backend
   
   name: z.string()
     .min(2, 'El nombre debe tener al menos 2 caracteres')
@@ -75,7 +75,7 @@ export const userSchema = z.object({
     .transform((val) => val === '' || !val ? undefined : parseFloat(val))
     .pipe(z.number().positive('La altura debe ser positiva').min(50, 'Altura mínima: 50cm').max(300, 'Altura máxima: 300cm').optional()),
   
-  bmi: z.union([z.string(), z.number()])
+  imc: z.union([z.string(), z.number()])
     .optional()
     .transform((val) => {
       if (!val || val === '') return undefined;
@@ -253,8 +253,10 @@ export const routineSchema = z.object({
   category: z.string()
     .max(100, 'Categoría demasiado larga'),
   
-  duration: z.string()
-    .max(50, 'Duración demasiado larga'),
+  duration_weeks: z.number()
+    .int('Duración debe ser un número entero')
+    .min(1, 'Mínimo 1 semana')
+    .max(52, 'Máximo 52 semanas'),
   
   days_per_week: z.number()
     .int('Días por semana debe ser un número entero')

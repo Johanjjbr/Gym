@@ -8,6 +8,7 @@ import { StaffPage } from './pages/Staff';
 import { Attendance } from './pages/Attendance';
 import { Reports } from './pages/Reports';
 import { Routines } from './pages/Routines';
+import { RoutineBuilder } from './pages/RoutineBuilder';
 import { MyWorkout } from './pages/MyWorkout';
 import { Login } from './pages/Login';
 import { TestSupabase } from './pages/TestSupabase';
@@ -35,6 +36,8 @@ export const router = createBrowserRouter([
       { path: 'personal', Component: StaffPage },
       { path: 'asistencia', Component: Attendance },
       { path: 'rutinas', Component: Routines },
+      { path: 'rutinas/crear', Component: RoutineBuilder },
+      { path: 'rutinas/:id/editar', Component: RoutineBuilder },
       { path: 'mi-entrenamiento', Component: MyWorkout },
       { path: 'reportes', Component: Reports },
     ],

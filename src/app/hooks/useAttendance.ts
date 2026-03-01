@@ -11,6 +11,7 @@ import type { AttendanceFormData } from '../lib/validations';
 // Keys para el caché
 export const attendanceKeys = {
   all: (date?: string) => date ? ['attendance', date] as const : ['attendance'] as const,
+  byUser: (userId: string) => ['attendance', 'user', userId] as const,
 };
 
 /**
@@ -23,6 +24,21 @@ export function useAttendance(date?: string) {
     staleTime: 1000 * 60 * 1, // 1 minuto (asistencias son datos en tiempo real)
     refetchOnWindowFocus: true,
     refetchInterval: 1000 * 60 * 2, // Refrescar cada 2 minutos
+  });
+}
+
+/**
+ * Hook para obtener asistencia de un usuario específico
+ */
+export function useUserAttendance(userId: string) {
+  return useQuery({
+    queryKey: attendanceKeys.byUser(userId),
+    queryFn: async () => {
+      const allAttendance = await attendance.getAll();
+      return allAttendance.filter((a: any) => a.user_id === userId);
+    },
+    staleTime: 1000 * 60 * 1,
+    enabled: !!userId, // Solo ejecutar si hay userId
   });
 }
 

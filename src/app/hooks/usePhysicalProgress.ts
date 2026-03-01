@@ -3,7 +3,7 @@
  * Gestiona las operaciones CRUD del progreso físico
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tantml:invoke>
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { physicalProgress } from '../lib/api';
 import { toast } from 'sonner';
 import type { PhysicalDataFormData } from '../lib/validations';

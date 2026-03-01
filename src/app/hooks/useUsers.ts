@@ -4,7 +4,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { users } from '../lib/api';
+import { users, staff } from '../lib/api';
 import { toast } from 'sonner';
 import type { UserFormData } from '../lib/validations';
 
@@ -126,5 +126,70 @@ export function useDeleteUser() {
         });
       }
     },
+  });
+}
+
+/**
+ * Hook para asignar entrenador a un usuario
+ */
+export function useAssignTrainer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ userId, trainerId }: { userId: string; trainerId: string | null }) =>
+      users.assignTrainer(userId, trainerId),
+    onSuccess: (_, variables) => {
+      console.log('🔄 Invalidando caché después de asignar entrenador para userId:', variables.userId);
+      
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: userKeys.detail(variables.userId) });
+      queryClient.invalidateQueries({ queryKey: userKeys.all });
+      
+      // Forzar refetch inmediato
+      queryClient.refetchQueries({ queryKey: userKeys.detail(variables.userId) });
+      
+      // Mensaje diferente si se asigna o se remueve el entrenador
+      const message = variables.trainerId 
+        ? 'Entrenador asignado exitosamente' 
+        : 'Cambiado a entrenamiento libre exitosamente';
+      toast.success(message);
+    },
+    onError: (error: Error) => {
+      console.error('Error asignando entrenador:', error);
+      const message = error.message || 'Error al asignar entrenador';
+      
+      toast.error('Error al asignar entrenador', {
+        description: message
+      });
+    },
+  });
+}
+
+/**
+ * Hook para obtener usuarios sin entrenador
+ */
+export function useUsersWithoutTrainer() {
+  return useQuery({
+    queryKey: ['users', 'without-trainer'],
+    queryFn: users.getWithoutTrainer,
+    staleTime: 1000 * 60 * 2, // 2 minutos
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Hook para obtener entrenadores activos
+ */
+export function useTrainers() {
+  return useQuery({
+    queryKey: ['trainers'],
+    queryFn: async () => {
+      console.log('🏋️ Consultando entrenadores...');
+      const data = await staff.getTrainers();
+      console.log('✅ Entrenadores recibidos:', data);
+      return data;
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutos
+    refetchOnWindowFocus: true,
   });
 }

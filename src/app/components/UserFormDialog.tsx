@@ -37,10 +37,10 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   const [calculatedBMI, setCalculatedBMI] = useState<number | null>(null);
 
   // Función para obtener categoría de IMC
-  const getBMICategory = (bmi: number) => {
-    if (bmi < 18.5) return { label: 'Bajo peso', color: 'text-yellow-400' };
-    if (bmi < 25) return { label: 'Normal', color: 'text-[#10f94e]' };
-    if (bmi < 30) return { label: 'Sobrepeso', color: 'text-orange-400' };
+  const getBMICategory = (imc: number) => {
+    if (imc < 18.5) return { label: 'Bajo peso', color: 'text-yellow-400' };
+    if (imc < 25) return { label: 'Normal', color: 'text-[#10f94e]' };
+    if (imc < 30) return { label: 'Sobrepeso', color: 'text-orange-400' };
     return { label: 'Obesidad', color: 'text-[#ff3b5c]' };
   };
 
@@ -72,14 +72,14 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
       if (!isNaN(weightNum) && !isNaN(heightNum) && heightNum > 0) {
         // IMC = peso(kg) / (altura(m))^2
         const heightInMeters = heightNum / 100;
-        const bmi = weightNum / (heightInMeters * heightInMeters);
-        const roundedBMI = Math.round(bmi * 100) / 100;
-        setCalculatedBMI(roundedBMI);
-        setValue('bmi', roundedBMI);
+        const imc = weightNum / (heightInMeters * heightInMeters);
+        const roundedIMC = Math.round(imc * 100) / 100;
+        setCalculatedBMI(roundedIMC);
+        setValue('imc', roundedIMC);
       }
     } else {
       setCalculatedBMI(null);
-      setValue('bmi', undefined);
+      setValue('imc', undefined);
     }
   }, [weight, height, setValue]);
 
@@ -117,13 +117,8 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
   const onSubmit = async (data: UserFormData) => {
     try {
-      // Si es nuevo usuario y no tiene member_number, generar uno
-      if (!isEdit && !data.member_number) {
-        // Generar número de miembro basado en timestamp
-        const timestamp = Date.now().toString().slice(-6);
-        data.member_number = `GM${timestamp}`;
-      }
-
+      // El número de miembro se genera automáticamente en el backend
+      // No es necesario enviarlo en la creación
       if (isEdit) {
         await updateUser.mutateAsync({ id: user.id, data });
       } else {
@@ -364,21 +359,24 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
               )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="member_number" className="text-gray-300">
-                Número de Miembro {!isEdit && <span className="text-gray-500 text-xs"> (se genera automáticamente)</span>}
-              </Label>
-              <Input
-                id="member_number"
-                {...register('member_number')}
-                disabled={true}
-                className="bg-gray-800 border-gray-700 text-white"
-                placeholder={isEdit ? user?.member_number : "Se generará automáticamente"}
-              />
-              {errors.member_number && (
-                <p className="text-xs text-[#ff3b5c]">{errors.member_number.message}</p>
-              )}
-            </div>
+            {/* Solo mostrar el número de miembro cuando se edita un usuario */}
+            {isEdit && (
+              <div className="space-y-2">
+                <Label htmlFor="member_number" className="text-gray-300">
+                  Número de Miembro
+                </Label>
+                <Input
+                  id="member_number"
+                  {...register('member_number')}
+                  disabled={true}
+                  className="bg-gray-800 border-gray-700 text-white"
+                  placeholder={user?.member_number}
+                />
+                {errors.member_number && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.member_number.message}</p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="start_date" className="text-gray-300">
@@ -453,21 +451,21 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
             {calculatedBMI !== null && (
               <div className="space-y-2">
-                <Label htmlFor="bmi" className="text-gray-300">
+                <Label htmlFor="imc" className="text-gray-300">
                   IMC (Indice de Masa Corporal)
                 </Label>
                 <Input
-                  id="bmi"
+                  id="imc"
                   type="number"
                   step="0.01"
-                  {...register('bmi', { valueAsNumber: false })}
+                  {...register('imc', { valueAsNumber: false })}
                   disabled={isSubmitting}
                   className="bg-gray-800 border-gray-700 text-white"
                   placeholder="22.5"
                   value={calculatedBMI}
                 />
-                {errors.bmi && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.bmi.message}</p>
+                {errors.imc && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.imc.message}</p>
                 )}
                 <p className={getBMICategory(calculatedBMI).color}>
                   {getBMICategory(calculatedBMI).label}

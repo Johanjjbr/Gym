@@ -14,6 +14,8 @@ export interface User {
   height: number;
   imc: number;
   photo?: string;
+  trainer_id?: string;
+  trainer_name?: string;
 }
 
 export interface Payment {

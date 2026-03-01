@@ -9,6 +9,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Loader2, CheckCircle2, XCircle, Database, Users, DollarSign, Calendar, Dumbbell, UserCog } from 'lucide-react';
 import { utils, users, payments, staff, attendance, routines, stats } from '../lib/api';
+import { supabase } from '../lib/supabase';
 
 interface TestResult {
   name: string;
@@ -20,6 +21,8 @@ interface TestResult {
 export function TestSupabase() {
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
+  const [dbInfo, setDbInfo] = useState<any>(null);
+  const [checkingDb, setCheckingDb] = useState(false);
 
   const tests = [
     {

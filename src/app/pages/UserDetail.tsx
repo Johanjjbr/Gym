@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus } from 'lucide-react';
+import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -10,27 +10,59 @@ import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { mockAttendance, mockPhysicalProgress, mockInvoices } from '../lib/mockData';
+import { mockPhysicalProgress, mockInvoices } from '../lib/mockData';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
-import { useUser } from '../hooks/useUsers';
-import { useUserPayments } from '../hooks/usePayments';
+import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
+import { useUserPayments, useCreatePayment } from '../hooks/usePayments';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
+import { useUserAttendance } from '../hooks/useAttendance';
+import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
 import { PrintPayment } from '../components/PrintPayment';
-import { auth } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export function UserDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   const [isAssignRoutineDialogOpen, setIsAssignRoutineDialogOpen] = useState(false);
+  const [isAssignTrainerDialogOpen, setIsAssignTrainerDialogOpen] = useState(false);
+  const [isCreatePaymentDialogOpen, setIsCreatePaymentDialogOpen] = useState(false);
+  const [isAddProgressDialogOpen, setIsAddProgressDialogOpen] = useState(false);
   const [selectedRoutineId, setSelectedRoutineId] = useState('');
+  const [selectedTrainerId, setSelectedTrainerId] = useState<string | null>(null);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   
+  // Estados para el formulario de pago
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentNextDate, setPaymentNextDate] = useState(() => {
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    return nextMonth.toISOString().split('T')[0];
+  });
+  const [paymentStatus, setPaymentStatus] = useState<'Pagado' | 'Pendiente' | 'Vencido'>('Pagado');
+  const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
+  
+  // Estados para el formulario de progreso físico
+  const [progressWeight, setProgressWeight] = useState('');
+  const [progressBodyFat, setProgressBodyFat] = useState('');
+  const [progressMuscleMass, setProgressMuscleMass] = useState('');
+  const [progressDate, setProgressDate] = useState(new Date().toISOString().split('T')[0]);
+  const [progressNotes, setProgressNotes] = useState('');
+  
   // Usar React Query en lugar de mockData
   const { data: user, isLoading, error } = useUser(id || '');
+  
+  // DEBUG: Verificar qué datos estamos recibiendo
+  console.log('🔍 DEBUG UserDetail - Usuario recibido:', user);
+  console.log('🔍 DEBUG UserDetail - trainer_name:', user?.trainer_name);
+  console.log('🔍 DEBUG UserDetail - assigned_trainer:', user?.assigned_trainer);
   
   // Obtener pagos reales del usuario
   const { data: userPayments, isLoading: loadingPayments } = useUserPayments(id || '');
@@ -40,8 +72,23 @@ export function UserDetail() {
   const { data: userRoutineAssignments, isLoading: loadingAssignments } = useRoutineAssignments(id);
   const assignRoutineMutation = useAssignRoutine();
   
-  // Obtener usuario actual del staff
-  const currentStaff = auth.getCurrentUser();
+  // Obtener entrenadores disponibles
+  const { data: trainers, isLoading: loadingTrainers } = useTrainers();
+  const assignTrainerMutation = useAssignTrainer();
+  
+  // Hook para crear pagos
+  const createPaymentMutation = useCreatePayment();
+  
+  // Obtener usuario actual del staff usando el contexto de autenticación
+  const { user: currentUser } = useAuth();
+  
+  // Obtener asistencia del usuario
+  const { data: userAttendanceData, isLoading: loadingAttendance } = useUserAttendance(id || '');
+  
+  // Obtener progreso físico del usuario
+  const { data: userPhysicalProgress, isLoading: loadingPhysicalProgress } = usePhysicalProgress(id || '');
+  const createPhysicalProgressMutation = useCreatePhysicalProgress();
+  const deletePhysicalProgressMutation = useDeletePhysicalProgress();
 
   // Loading state
   if (isLoading) {
@@ -80,7 +127,6 @@ export function UserDetail() {
     );
   }
 
-  const userAttendance = mockAttendance.filter(a => a.userId === id);
   const userProgress = mockPhysicalProgress.filter(p => p.userId === id);
   const userInvoices = mockInvoices.filter(i => i.userId === id);
 
@@ -122,7 +168,7 @@ export function UserDetail() {
       return;
     }
     
-    if (!currentStaff?.id) {
+    if (!currentUser?.id) {
       toast.error('No se pudo identificar al usuario actual');
       return;
     }
@@ -130,7 +176,7 @@ export function UserDetail() {
     assignRoutineMutation.mutate({
       user_id: id || '',
       routine_id: selectedRoutineId,
-      assigned_by: currentStaff.id,
+      assigned_by: currentUser.id,
       start_date: startDate,
       end_date: endDate || undefined,
       notes: assignmentNotes || undefined,
@@ -145,12 +191,95 @@ export function UserDetail() {
     });
   };
 
-  // Prepare chart data
-  const weightChartData = userProgress.map(p => ({
+  const assignTrainer = () => {
+    if (!id) {
+      toast.error('ID de usuario no válido');
+      return;
+    }
+
+    assignTrainerMutation.mutate({
+      userId: id,
+      trainerId: selectedTrainerId,
+    }, {
+      onSuccess: () => {
+        setIsAssignTrainerDialogOpen(false);
+        setSelectedTrainerId(null);
+      },
+    });
+  };
+
+  const createPayment = () => {
+    if (!id || !paymentAmount || !paymentDate || !paymentNextDate || !paymentStatus || !paymentMethod) {
+      toast.error('Por favor completa todos los campos del pago');
+      return;
+    }
+
+    createPaymentMutation.mutate({
+      user_id: id,
+      amount: parseFloat(paymentAmount),
+      date: paymentDate,
+      next_payment: paymentNextDate,
+      status: paymentStatus,
+      method: paymentMethod,
+      reference: paymentReference,
+      notes: paymentNotes,
+    }, {
+      onSuccess: () => {
+        setIsCreatePaymentDialogOpen(false);
+        setPaymentAmount('');
+        setPaymentDate(new Date().toISOString().split('T')[0]);
+        setPaymentNextDate(() => {
+          const nextMonth = new Date();
+          nextMonth.setMonth(nextMonth.getMonth() + 1);
+          return nextMonth.toISOString().split('T')[0];
+        });
+        setPaymentStatus('Pagado');
+        setPaymentMethod('Efectivo');
+        setPaymentReference('');
+        setPaymentNotes('');
+      },
+    });
+  };
+  
+  const createProgress = () => {
+    if (!id || !progressWeight) {
+      toast.error('El peso es obligatorio');
+      return;
+    }
+
+    createPhysicalProgressMutation.mutate({
+      user_id: id,
+      weight: parseFloat(progressWeight),
+      body_fat: progressBodyFat ? parseFloat(progressBodyFat) : undefined,
+      muscle_mass: progressMuscleMass ? parseFloat(progressMuscleMass) : undefined,
+      date: progressDate,
+      notes: progressNotes || undefined,
+    }, {
+      onSuccess: () => {
+        setIsAddProgressDialogOpen(false);
+        setProgressWeight('');
+        setProgressBodyFat('');
+        setProgressMuscleMass('');
+        setProgressDate(new Date().toISOString().split('T')[0]);
+        setProgressNotes('');
+      },
+    });
+  };
+  
+  const deleteProgress = (progressId: string) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este registro?')) {
+      return;
+    }
+    
+    deletePhysicalProgressMutation.mutate(progressId);
+  };
+
+  // Prepare chart data - usar datos reales
+  const weightChartData = (userPhysicalProgress || []).map((p: any) => ({
     date: new Date(p.date).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }),
     peso: p.weight,
-    grasa: p.bodyFat,
-    musculo: p.muscleMass,
+    grasa: p.body_fat || 0,
+    musculo: p.muscle_mass || 0,
   }));
 
   return (
@@ -309,7 +438,69 @@ export function UserDetail() {
               </CardContent>
             </Card>
 
-            {/* Trainer Info */}
+            {/* Trainer Assignment Card */}
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    Entrenador Asignado
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-primary text-primary hover:bg-primary/10"
+                    onClick={() => setIsAssignTrainerDialogOpen(true)}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    {user.trainer_name ? 'Cambiar' : 'Asignar'}
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {user.trainer_name ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-primary/20">
+                          <Dumbbell className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-lg mb-1">{user.trainer_name}</p>
+                          <p className="text-sm text-muted-foreground">Entrenador Personal</p>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
+                      onClick={() => {
+                        if (!id) return;
+                        assignTrainerMutation.mutate({
+                          userId: id,
+                          trainerId: null,
+                        });
+                      }}
+                    >
+                      Cambiar a Entrenamiento Libre
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="p-3 rounded-lg bg-muted/50 w-fit mx-auto mb-3">
+                      <Users className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground mb-1">Entrenamiento Libre</p>
+                    <p className="text-sm text-muted-foreground">Sin entrenador asignado</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Rutinas Asignadas */}
             <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -341,6 +532,49 @@ export function UserDetail() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Último Pago */}
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="w-5 h-5" />
+                  Último Pago
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loadingPayments ? (
+                  <div className="text-center py-8">
+                    <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
+                  </div>
+                ) : userPayments && userPayments.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="p-4 bg-muted rounded-lg">
+                      <div className="flex items-center gap-4 mb-2">
+                        <p className="text-2xl text-primary">Bs {userPayments[0].amount.toLocaleString()}</p>
+                        <Badge variant="outline" className={getPaymentStatusColor(userPayments[0].status)}>
+                          {userPayments[0].status}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">Fecha</p>
+                          <p>{new Date(userPayments[0].date).toLocaleDateString('es-ES')}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Método</p>
+                          <p>{userPayments[0].method}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CreditCard className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No hay pagos registrados</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 
@@ -351,9 +585,13 @@ export function UserDetail() {
               <CardTitle>Historial de Asistencia</CardTitle>
             </CardHeader>
             <CardContent>
-              {userAttendance.length > 0 ? (
+              {loadingAttendance ? (
+                <div className="text-center py-8">
+                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
+                </div>
+              ) : userAttendanceData && userAttendanceData.length > 0 ? (
                 <div className="space-y-3">
-                  {userAttendance.map((attendance) => (
+                  {userAttendanceData.map((attendance) => (
                     <div
                       key={attendance.id}
                       className="flex items-center justify-between p-4 bg-muted rounded-lg"
@@ -445,37 +683,64 @@ export function UserDetail() {
 
           <Card className="bg-card border-border">
             <CardHeader>
-              <CardTitle>Registro de Mediciones</CardTitle>
+              <CardTitle className="flex items-center justify-between">
+                <span>Registro de Mediciones</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-primary text-primary hover:bg-primary/10"
+                  onClick={() => setIsAddProgressDialogOpen(true)}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Agregar Medición
+                </Button>
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              {userProgress.length > 0 ? (
+              {loadingPhysicalProgress ? (
+                <div className="text-center py-8">
+                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
+                </div>
+              ) : userPhysicalProgress && userPhysicalProgress.length > 0 ? (
                 <div className="space-y-4">
-                  {userProgress.map((progress) => (
+                  {userPhysicalProgress.map((progress: any) => (
                     <div
                       key={progress.id}
-                      className="grid grid-cols-4 gap-4 p-4 bg-muted rounded-lg"
+                      className="flex items-start justify-between p-4 bg-muted rounded-lg"
                     >
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-1">Fecha</p>
-                        <p>{new Date(progress.date).toLocaleDateString('es-ES')}</p>
+                      <div className="grid grid-cols-4 gap-4 flex-1">
+                        <div>
+                          <p className="text-sm text-muted-foreground mb-1">Fecha</p>
+                          <p>{new Date(progress.date).toLocaleDateString('es-ES')}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground mb-1">Peso</p>
+                          <p className="text-primary">{progress.weight} kg</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground mb-1">Grasa</p>
+                          <p>{progress.body_fat ? `${progress.body_fat}%` : 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground mb-1">Músculo</p>
+                          <p>{progress.muscle_mass ? `${progress.muscle_mass} kg` : 'N/A'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-1">Peso</p>
-                        <p className="text-primary">{progress.weight} kg</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-1">Grasa</p>
-                        <p>{progress.bodyFat}%</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-1">Músculo</p>
-                        <p>{progress.muscleMass} kg</p>
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
+                        onClick={() => deleteProgress(progress.id)}
+                        disabled={deletePhysicalProgressMutation.isPending}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
+                  <Activity className="w-12 h-12 mx-auto mb-2 opacity-50" />
                   <p>No hay registros de mediciones</p>
                 </div>
               )}
@@ -570,9 +835,20 @@ export function UserDetail() {
         <TabsContent value="payments" className="space-y-6">
           <Card className="bg-card border-border">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CreditCard className="w-5 h-5" />
-                Historial de Pagos
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-5 h-5" />
+                  Historial de Pagos
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-primary text-primary hover:bg-primary/10"
+                  onClick={() => setIsCreatePaymentDialogOpen(true)}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Registrar Pago
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -805,6 +1081,297 @@ export function UserDetail() {
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Asignar Rutina
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Trainer Dialog */}
+      <Dialog open={isAssignTrainerDialogOpen} onOpenChange={setIsAssignTrainerDialogOpen}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle>Asignar Entrenador</DialogTitle>
+            <DialogDescription>
+              Asignar un entrenador a {user.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Entrenador</Label>
+              {loadingTrainers ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="ml-2 text-sm text-muted-foreground">Cargando entrenadores...</span>
+                </div>
+              ) : (
+                <>
+                  <Select
+                    value={selectedTrainerId || 'libre'}
+                    onValueChange={(value) => setSelectedTrainerId(value === 'libre' ? null : value)}
+                    className="bg-input border-border"
+                  >
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="Selecciona un entrenador" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-input border-border">
+                      <SelectItem value="libre">Entrenamiento Libre</SelectItem>
+                      {trainers && trainers.length > 0 ? (
+                        trainers.map((trainer: any) => (
+                          <SelectItem key={trainer.id} value={trainer.id}>
+                            {trainer.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="no-trainers" disabled>
+                          No hay entrenadores disponibles
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {trainers && trainers.length === 0 && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      No hay entrenadores activos. Ve a la sección de Personal para crear uno.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setIsAssignTrainerDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="bg-primary hover:bg-primary/90"
+                onClick={assignTrainer}
+                disabled={assignTrainerMutation.isPending || loadingTrainers}
+              >
+                {assignTrainerMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Asignando...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Asignar
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Payment Dialog */}
+      <Dialog open={isCreatePaymentDialogOpen} onOpenChange={setIsCreatePaymentDialogOpen}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle>Registrar Pago</DialogTitle>
+            <DialogDescription>
+              Registrar un nuevo pago para {user.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Monto (Bs)</Label>
+              <Input
+                type="number"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder="450"
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Fecha de Pago</Label>
+              <Input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Próximo Pago</Label>
+              <Input
+                type="date"
+                value={paymentNextDate}
+                onChange={(e) => setPaymentNextDate(e.target.value)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Estado</Label>
+              <Select
+                value={paymentStatus}
+                onValueChange={setPaymentStatus}
+                className="bg-input border-border"
+              >
+                <SelectTrigger className="bg-input border-border">
+                  <SelectValue placeholder="Selecciona un estado" />
+                </SelectTrigger>
+                <SelectContent className="bg-input border-border">
+                  <SelectItem value="Pagado">Pagado</SelectItem>
+                  <SelectItem value="Pendiente">Pendiente</SelectItem>
+                  <SelectItem value="Vencido">Vencido</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Método de Pago</Label>
+              <Select
+                value={paymentMethod}
+                onValueChange={setPaymentMethod}
+                className="bg-input border-border"
+              >
+                <SelectTrigger className="bg-input border-border">
+                  <SelectValue placeholder="Selecciona un método" />
+                </SelectTrigger>
+                <SelectContent className="bg-input border-border">
+                  <SelectItem value="Efectivo">Efectivo</SelectItem>
+                  <SelectItem value="Transferencia">Transferencia</SelectItem>
+                  <SelectItem value="Tarjeta">Tarjeta</SelectItem>
+                  <SelectItem value="Pago Móvil">Pago Móvil</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Referencia (Opcional)</Label>
+              <Input
+                value={paymentReference}
+                onChange={(e) => setPaymentReference(e.target.value)}
+                placeholder="Nro. de transferencia, etc."
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Notas (Opcional)</Label>
+              <Textarea
+                value={paymentNotes}
+                onChange={(e) => setPaymentNotes(e.target.value)}
+                placeholder="Información adicional..."
+                className="bg-input border-border"
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setIsCreatePaymentDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="bg-primary hover:bg-primary/90"
+                onClick={createPayment}
+                disabled={createPaymentMutation.isPending}
+              >
+                {createPaymentMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Registrando...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Registrar Pago
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Physical Progress Dialog */}
+      <Dialog open={isAddProgressDialogOpen} onOpenChange={setIsAddProgressDialogOpen}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle>Agregar Medición</DialogTitle>
+            <DialogDescription>
+              Registrar nuevas medidas físicas de {user.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Peso (kg) *</Label>
+              <Input
+                type="number"
+                step="0.1"
+                value={progressWeight}
+                onChange={(e) => setProgressWeight(e.target.value)}
+                placeholder="75.5"
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Porcentaje de Grasa Corporal (%) <span className="text-muted-foreground">(Opcional)</span></Label>
+              <Input
+                type="number"
+                step="0.1"
+                value={progressBodyFat}
+                onChange={(e) => setProgressBodyFat(e.target.value)}
+                placeholder="15.5"
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Masa Muscular (kg) <span className="text-muted-foreground">(Opcional)</span></Label>
+              <Input
+                type="number"
+                step="0.1"
+                value={progressMuscleMass}
+                onChange={(e) => setProgressMuscleMass(e.target.value)}
+                placeholder="55.5"
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Fecha de Medición</Label>
+              <Input
+                type="date"
+                value={progressDate}
+                onChange={(e) => setProgressDate(e.target.value)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Notas (Opcional)</Label>
+              <Textarea
+                value={progressNotes}
+                onChange={(e) => setProgressNotes(e.target.value)}
+                placeholder="Observaciones, condiciones físicas, etc..."
+                className="bg-input border-border"
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setIsAddProgressDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="bg-primary hover:bg-primary/90"
+                onClick={createProgress}
+                disabled={createPhysicalProgressMutation.isPending || !progressWeight}
+              >
+                {createPhysicalProgressMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Registrando...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Agregar Medición
+                  </>
+                )}
               </Button>
             </div>
           </div>

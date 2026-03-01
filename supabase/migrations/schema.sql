@@ -91,8 +91,8 @@ CREATE TABLE IF NOT EXISTS routine_templates (
   name TEXT NOT NULL,
   description TEXT,
   level TEXT NOT NULL CHECK (level IN ('Principiante', 'Intermedio', 'Avanzado')),
-  category TEXT NOT NULL CHECK (category IN ('Fuerza', 'Cardio', 'Funcional', 'Hipertrofia', 'Pérdida de Peso', 'Resistencia')),
-  duration TEXT NOT NULL, -- ej: "4 semanas", "8 semanas"
+  category TEXT NOT NULL,
+  duration_weeks INTEGER NOT NULL DEFAULT 4,
   days_per_week INTEGER NOT NULL,
   created_by UUID REFERENCES staff(id),
   is_active BOOLEAN DEFAULT true,
@@ -101,20 +101,18 @@ CREATE TABLE IF NOT EXISTS routine_templates (
 );
 
 -- =============================================
--- TABLA: exercise_templates (Ejercicios dentro de rutinas)
+-- TABLA: routine_exercises (Ejercicios dentro de rutinas)
 -- =============================================
-CREATE TABLE IF NOT EXISTS exercise_templates (
+CREATE TABLE IF NOT EXISTS routine_exercises (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   routine_id UUID REFERENCES routine_templates(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  muscle_group TEXT NOT NULL CHECK (muscle_group IN ('Pecho', 'Espalda', 'Piernas', 'Hombros', 'Brazos', 'Core', 'Cardio', 'Cuerpo Completo')),
-  sets INTEGER NOT NULL,
-  reps TEXT NOT NULL, -- ej: "12", "10-12", "Al fallo"
-  rest_time TEXT, -- ej: "60s", "90s"
-  weight TEXT, -- ej: "Peso corporal", "5kg"
-  instructions TEXT,
-  video_url TEXT,
+  exercise_name TEXT NOT NULL,
+  day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 1 AND 7),
   order_index INTEGER NOT NULL DEFAULT 0,
+  sets INTEGER NOT NULL,
+  reps TEXT NOT NULL,
+  rest_seconds INTEGER NOT NULL DEFAULT 60,
+  notes TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -153,9 +151,8 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
 CREATE TABLE IF NOT EXISTS workout_exercise_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
-  exercise_id UUID REFERENCES exercise_templates(id),
+  exercise_id UUID REFERENCES routine_exercises(id),
   exercise_name TEXT NOT NULL,
-  muscle_group TEXT NOT NULL,
   is_completed BOOLEAN DEFAULT false,
   notes TEXT,
   created_at TIMESTAMP DEFAULT NOW()
@@ -234,12 +231,13 @@ ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE physical_progress ENABLE ROW LEVEL SECURITY;
-ALTER TABLE routine_templates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exercise_templates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_routine_assignments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE workout_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE workout_exercise_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE set_logs ENABLE ROW LEVEL SECURITY;
+-- RLS deshabilitado para rutinas (el servidor usa SERVICE_ROLE_KEY)
+-- ALTER TABLE routine_templates ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE routine_exercises ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE user_routine_assignments ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE workout_sessions ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE workout_exercise_logs ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE set_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 
 -- Políticas para STAFF (administrador tiene acceso total)
@@ -363,9 +361,19 @@ CREATE POLICY "Entrenadores pueden actualizar sus rutinas"
     )
   );
 
--- Políticas para EXERCISE TEMPLATES
+CREATE POLICY "Entrenadores pueden eliminar sus rutinas"
+  ON routine_templates FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM staff s
+      WHERE s.auth_user_id = auth.uid()
+      AND (s.role = 'Administrador' OR (s.role = 'Entrenador' AND routine_templates.created_by = s.id))
+    )
+  );
+
+-- Políticas para ROUTINE EXERCISES
 CREATE POLICY "Staff puede ver ejercicios"
-  ON exercise_templates FOR SELECT
+  ON routine_exercises FOR SELECT
   USING (
     EXISTS (
       SELECT 1 FROM staff
@@ -374,7 +382,7 @@ CREATE POLICY "Staff puede ver ejercicios"
   );
 
 CREATE POLICY "Entrenadores pueden gestionar ejercicios"
-  ON exercise_templates FOR ALL
+  ON routine_exercises FOR ALL
   USING (
     EXISTS (
       SELECT 1 FROM staff
