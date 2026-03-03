@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import api from '../lib/api';
 import type { UserRole } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface AuthUser {
   id: string;
@@ -10,6 +11,7 @@ interface AuthUser {
   phone: string;
   shift: string;
   status: string;
+  memberNumber?: string;
 }
 
 interface AuthContextType {
@@ -34,49 +36,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkSession = async () => {
     try {
-      const token = localStorage.getItem('access_token');
+      // Primero verificar si hay sesión de Supabase Auth
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
+      if (session && !sessionError) {
+        // Hay sesión de Supabase Auth
+        const userRole = session.user.user_metadata?.role;
+        
+        if (userRole === 'Usuario') {
+          // Usuario regular
+          const { data: regularUser, error: userError } = await supabase
+            .from('users')
+            .select('id, name, email, phone, member_number, status')
+            .eq('auth_user_id', session.user.id)
+            .single();
 
-      // Intentar obtener la sesión
-      try {
-        const { staff } = await api.auth.getSession();
-        
-        // Si no hay staff, limpiar la sesión
-        if (!staff) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('user');
-          setUser(null);
-          setIsLoading(false);
-          return;
-        }
-        
-        setUser(staff);
-      } catch (sessionError: any) {
-        // Si la API falla, intentar usar el usuario guardado en localStorage
-        const savedUser = localStorage.getItem('user');
-        
-        if (savedUser) {
-          try {
-            setUser(JSON.parse(savedUser));
-          } catch {
-            // Si no se puede parsear, limpiar
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('user');
-            setUser(null);
+          if (regularUser && !userError) {
+            const userData = {
+              id: regularUser.id,
+              name: regularUser.name,
+              email: regularUser.email,
+              phone: regularUser.phone || '',
+              role: 'Usuario' as UserRole,
+              shift: '',
+              status: regularUser.status || 'Activo',
+              memberNumber: regularUser.member_number,
+            };
+            setUser(userData);
+            localStorage.setItem('user', JSON.stringify(userData));
+            localStorage.setItem('access_token', session.access_token);
+            setIsLoading(false);
+            return;
           }
         } else {
-          // No hay usuario guardado, limpiar
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('user');
-          setUser(null);
+          // Staff con sesión de Supabase
+          const { data: staffUser, error: staffError } = await supabase
+            .from('staff')
+            .select('*')
+            .eq('email', session.user.email)
+            .single();
+
+          if (staffUser && !staffError) {
+            setUser(staffUser);
+            localStorage.setItem('user', JSON.stringify(staffUser));
+            localStorage.setItem('access_token', session.access_token);
+            setIsLoading(false);
+            return;
+          }
         }
       }
+
+      // Si no hay sesión de Supabase, verificar localStorage para staff
+      const storedUser = localStorage.getItem('user');
+      const storedToken = localStorage.getItem('access_token');
+      
+      if (storedUser && storedToken) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          // Solo para staff, verificar la sesión con la API
+          if (parsedUser.role !== 'Usuario') {
+            setUser(parsedUser);
+            setIsLoading(false);
+            return;
+          }
+        } catch (parseError) {
+          // Error al parsear, limpiar localStorage
+          console.warn('Error al parsear usuario almacenado');
+        }
+      }
+
+      // No hay sesión válida, limpiar todo
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+      setUser(null);
     } catch (error: any) {
-      console.warn('Error al verificar sesión, limpiando datos locales');
+      console.warn('Error al verificar sesión:', error.message);
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
       setUser(null);
@@ -87,8 +121,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await api.auth.login(email, password);
-      setUser(response.staff);
+      // Primero intentar login con Supabase Auth (para usuarios regulares)
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (!authError && authData.session) {
+        // Login exitoso con Supabase Auth
+        localStorage.setItem('access_token', authData.session.access_token);
+        
+        // Determinar el tipo de usuario
+        const userRole = authData.user.user_metadata?.role;
+        
+        if (userRole === 'Usuario') {
+          // Obtener datos del usuario regular
+          const { data: regularUser } = await supabase
+            .from('users')
+            .select('id, name, email, phone, member_number, status')
+            .eq('auth_user_id', authData.user.id)
+            .single();
+
+          if (regularUser) {
+            const userData = {
+              id: regularUser.id,
+              name: regularUser.name,
+              email: regularUser.email,
+              phone: regularUser.phone || '',
+              role: 'Usuario' as UserRole,
+              shift: '',
+              status: regularUser.status || 'Activo',
+              memberNumber: regularUser.member_number,
+            };
+            
+            setUser(userData);
+            localStorage.setItem('user', JSON.stringify(userData));
+            return;
+          }
+        }
+      }
+
+      // Si falla o no es usuario regular, intentar con la API (staff)
+      try {
+        const response = await api.auth.login(email, password);
+        const userData = response.staff;
+        setUser(userData);
+      } catch (apiError: any) {
+        // Si ambos métodos fallan, lanzar error
+        throw new Error(authError?.message || apiError.message || 'Error al iniciar sesión');
+      }
     } catch (error: any) {
       throw new Error(error.message || 'Error al iniciar sesión');
     }
@@ -96,7 +177,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await api.auth.logout();
+      // Cerrar sesión en Supabase Auth (para usuarios regulares)
+      await supabase.auth.signOut();
+      
+      // Intentar cerrar sesión en la API (para staff)
+      try {
+        await api.auth.logout();
+      } catch (apiError) {
+        // Si falla la API, no importa, ya limpiamos Supabase
+        console.warn('No se pudo cerrar sesión en la API, pero continuando...');
+      }
     } catch (error) {
       console.error('Error en logout:', error);
     } finally {

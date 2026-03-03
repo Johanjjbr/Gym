@@ -21,5 +21,7 @@ export function useDashboardStats() {
     staleTime: 1000 * 60 * 1, // 1 minuto (estadísticas deben estar actualizadas)
     refetchOnWindowFocus: true,
     refetchInterval: 1000 * 60 * 5, // Refrescar cada 5 minutos automáticamente
+    enabled: !!localStorage.getItem('access_token'), // Solo ejecutar si hay token
+    retry: false, // No reintentar si falla
   });
 }

@@ -1022,129 +1022,6 @@ app.delete("/make-server-104060a1/routines/:id", async (c) => {
 // CRUD: USER ROUTINE ASSIGNMENTS (Asignaciones)
 // =============================================
 
-// =============================================
-// CRUD: EXERCISES (Biblioteca de Ejercicios)
-// =============================================
-
-// Obtener todos los ejercicios
-app.get("/make-server-104060a1/exercises", async (c) => {
-  try {
-    const { data, error } = await supabase
-      .from('exercises')
-      .select('*')
-      .order('name', { ascending: true });
-    
-    if (error) throw error;
-    
-    return c.json(data);
-  } catch (error) {
-    console.error('Error obteniendo ejercicios:', error);
-    return c.json({ error: 'Error obteniendo ejercicios' }, 500);
-  }
-});
-
-// Obtener un ejercicio por ID
-app.get("/make-server-104060a1/exercises/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    
-    const { data, error } = await supabase
-      .from('exercises')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (error) throw error;
-    
-    return c.json(data);
-  } catch (error) {
-    console.error('Error obteniendo ejercicio:', error);
-    return c.json({ error: 'Error obteniendo ejercicio' }, 500);
-  }
-});
-
-// Crear nuevo ejercicio
-app.post("/make-server-104060a1/exercises", async (c) => {
-  try {
-    const exerciseData = await c.req.json();
-    
-    console.log('📝 Creando ejercicio:', exerciseData.name);
-    
-    const { data, error } = await supabase
-      .from('exercises')
-      .insert(exerciseData)
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('❌ Error creando ejercicio:', error);
-      throw error;
-    }
-    
-    console.log('✅ Ejercicio creado:', data.id);
-    
-    return c.json(data);
-  } catch (error) {
-    console.error('Error creando ejercicio:', error);
-    return c.json({ 
-      error: 'Error creando ejercicio',
-      details: error instanceof Error ? error.message : String(error)
-    }, 500);
-  }
-});
-
-// Actualizar ejercicio
-app.put("/make-server-104060a1/exercises/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const exerciseData = await c.req.json();
-    
-    const { data, error } = await supabase
-      .from('exercises')
-      .update(exerciseData)
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    
-    return c.json(data);
-  } catch (error) {
-    console.error('Error actualizando ejercicio:', error);
-    return c.json({ error: 'Error actualizando ejercicio' }, 500);
-  }
-});
-
-// Eliminar ejercicio
-app.delete("/make-server-104060a1/exercises/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    
-    console.log('🗑️ Eliminando ejercicio:', id);
-    
-    const { error } = await supabase
-      .from('exercises')
-      .delete()
-      .eq('id', id);
-    
-    if (error) {
-      console.error('❌ Error eliminando ejercicio:', error);
-      throw error;
-    }
-    
-    console.log('✅ Ejercicio eliminado exitosamente');
-    
-    return c.json({ message: 'Ejercicio eliminado' });
-  } catch (error) {
-    console.error('Error eliminando ejercicio:', error);
-    return c.json({ error: 'Error eliminando ejercicio. Puede estar en uso en rutinas activas.' }, 500);
-  }
-});
-
-// =============================================
-// CRUD: USER ROUTINE ASSIGNMENTS (Asignaciones)
-// =============================================
-
 app.get("/make-server-104060a1/routine-assignments", async (c) => {
   try {
     const { user_id } = c.req.query();
@@ -1154,7 +1031,15 @@ app.get("/make-server-104060a1/routine-assignments", async (c) => {
       .select(`
         *,
         users (name, member_number),
-        routine_templates (name, description, exercise_templates (*)),
+        routine_templates (
+          id,
+          name,
+          description,
+          level,
+          category,
+          duration_weeks,
+          days_per_week
+        ),
         staff (name)
       `)
       .order('created_at', { ascending: false });

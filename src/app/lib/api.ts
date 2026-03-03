@@ -47,17 +47,30 @@ async function apiRequest<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
-  console.log(`🌐 API Request: ${options.method || 'GET'} ${endpoint}`);
-  if (options.body) {
-    console.log('📤 Request body:', JSON.parse(options.body as string));
+  // Solo log si no es un request de auth o health
+  const isAuthRequest = endpoint.includes('/auth') || endpoint.includes('/health');
+  if (!isAuthRequest) {
+    console.log(`🌐 API Request: ${options.method || 'GET'} ${endpoint}`);
   }
   
   try {
-    // Obtener el token actual de la sesión de Supabase
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData?.session?.access_token || publicAnonKey;
+    // Obtener el token actual de la sesión de Supabase o localStorage
+    let token = publicAnonKey;
     
-    console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'anon key');
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session?.access_token) {
+        token = sessionData.session.access_token;
+      } else {
+        // Si no hay sesión de Supabase, intentar obtener token de localStorage (para staff)
+        const localToken = localStorage.getItem('access_token');
+        if (localToken) {
+          token = localToken;
+        }
+      }
+    } catch (sessionError) {
+      // Si falla al obtener sesión, usar anon key silenciosamente
+    }
     
     const response = await fetch(url, {
       ...options,
@@ -81,10 +94,11 @@ async function apiRequest<T>(
     
     if (contentType && contentType.includes('application/json')) {
       data = await response.json();
-      console.log(`📥 Response (${response.status}):`, data);
+      if (!isAuthRequest && !response.ok) {
+        console.log(`📥 Response (${response.status}):`, data);
+      }
     } else {
       const text = await response.text();
-      console.error('❌ Response is not JSON:', text);
       
       // Si no es JSON, crear un error apropiado
       const error = new Error(`Invalid response from server (${response.status})`);
@@ -93,17 +107,16 @@ async function apiRequest<T>(
     }
 
     if (!response.ok) {
-      // Si es 401, limpiar la sesión
+      // Si es 401, no mostrar error ruidoso - es un estado normal
       if (response.status === 401) {
-        console.warn('⚠️ Token inválido o expirado. Limpiando sesión...');
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('user');
-        await supabase.auth.signOut();
+        // Silenciosamente lanzar el error
+        const error = new Error(data.error || data.message || 'No autorizado');
+        (error as any).status = 401;
+        throw error;
       }
       
       // Crear un error más descriptivo basado en el código de estado
       const errorMessage = data.error || data.message || data.details || `Error ${response.status}: ${response.statusText}`;
-      console.error(`❌ API Error (${response.status}):`, data);
       
       const error = new Error(errorMessage);
       
@@ -124,7 +137,6 @@ async function apiRequest<T>(
     
     // Si es un error de red o el fetch falló
     if (error instanceof TypeError && error.message.includes('fetch')) {
-      console.error('❌ Network error - URL:', url);
       const networkError = new Error('Error de conexión. Verifica tu conexión a internet o la configuración de Supabase.');
       (networkError as any).status = 0;
       throw networkError;
@@ -144,6 +156,7 @@ export const auth = {
    * Iniciar sesión
    */
   login: async (email: string, password: string): Promise<AuthResponse> => {
+    // ⚠️ Importante: Asegúrate de que apiRequest NO envíe token en esta ruta
     const data = await apiRequest<AuthResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
@@ -154,7 +167,7 @@ export const auth = {
       localStorage.setItem('access_token', data.session.access_token);
       localStorage.setItem('user', JSON.stringify(data.staff));
       
-      // Establecer la sesión en Supabase client
+      // Establecer la sesión en Supabase client para que el SDK funcione bien
       await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
@@ -171,9 +184,7 @@ export const auth = {
     try {
       return await apiRequest('/auth/session');
     } catch (error: any) {
-      // Si la función no está deployada o hay error 404, retornar null silenciosamente
-      if (error.status === 404 || error.message.includes('404')) {
-        console.warn('Edge Function no encontrada. Asegúrate de que esté deployada.');
+      if (error.status === 404 || error.message?.includes('404')) {
         throw new Error('Función de autenticación no disponible');
       }
       throw error;
@@ -184,30 +195,19 @@ export const auth = {
    * Cerrar sesión
    */
   logout: async (): Promise<void> => {
-    // Limpiar primero el localStorage
+    // 1. Limpiar la memoria local inmediatamente para que la UI reaccione
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
     
-    // Cerrar sesión en Supabase
-    await supabase.auth.signOut();
-    
-    // Intentar llamar al endpoint de logout pero no fallar si hay error
+    // 2. Cerrar sesión en el backend de Supabase (invalida el token real)
     try {
-      // Usar el anon key para el logout ya que el token de usuario puede estar inválido
-      const response = await fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-      });
-      
-      if (!response.ok) {
-        console.warn('⚠️ Error al cerrar sesión en el servidor, pero la sesión local fue limpiada');
-      }
-    } catch (error: any) {
-      console.warn('⚠️ No se pudo contactar al servidor para logout, pero la sesión local fue limpiada');
+      await supabase.auth.signOut();
+      console.log('✅ Sesión cerrada correctamente en el servidor');
+    } catch (error) {
+      console.error('⚠️ No se pudo contactar al servidor para logout, pero la sesión local fue limpiada', error);
     }
+    
+    // Eliminamos el fetch manual a la Edge Function, ¡ya no hace falta!
   },
 
   /**

@@ -2,13 +2,32 @@ import { Users, UserCheck, UserX, DollarSign, UserCog, Activity, Loader2, AlertC
 import { StatCard } from '../components/StatCard';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { monthlyRevenueData, attendanceData } from '../lib/mockData';
 import { useAuth } from '../contexts/AuthContext';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Database, ExternalLink } from 'lucide-react';
 import { useDashboardStats } from '../hooks/useStats';
 import { useUsers } from '../hooks/useUsers';
 import { usePayments } from '../hooks/usePayments';
+
+// Mock data para los gráficos
+const monthlyRevenueData = [
+  { month: 'Ene', revenue: 12000 },
+  { month: 'Feb', revenue: 15000 },
+  { month: 'Mar', revenue: 18000 },
+  { month: 'Abr', revenue: 16000 },
+  { month: 'May', revenue: 20000 },
+  { month: 'Jun', revenue: 22000 },
+];
+
+const attendanceData = [
+  { day: 'Lun', count: 45 },
+  { day: 'Mar', count: 52 },
+  { day: 'Mie', count: 48 },
+  { day: 'Jue', count: 61 },
+  { day: 'Vie', count: 55 },
+  { day: 'Sab', count: 38 },
+  { day: 'Dom', count: 25 },
+];
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -222,7 +241,7 @@ export function Dashboard() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name} ${percent ? (percent * 100).toFixed(0) : 0}%`}
                   outerRadius={100}
                   fill="#8884d8"
                   dataKey="value"

@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { users, staff } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import type { UserFormData } from '../lib/validations';
 
@@ -23,6 +24,8 @@ export function useUsers() {
     queryFn: users.getAll,
     staleTime: 1000 * 60 * 5, // 5 minutos
     refetchOnWindowFocus: true,
+    enabled: !!localStorage.getItem('access_token'), // Solo ejecutar si hay token
+    retry: false, // No reintentar si falla
   });
 }
 
@@ -45,11 +48,37 @@ export function useCreateUser() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: UserFormData) => users.create(data),
+    mutationFn: async (data: UserFormData) => {
+      // Generar token de activación único
+      const activationToken = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+      
+      // Crear el usuario directamente en Supabase con el token
+      const { data: newUser, error } = await supabase
+        .from('users')
+        .insert([{
+          ...data,
+          activation_token: activationToken,
+          is_activated: false,
+          member_number: `GYM${Date.now().toString().slice(-6)}`, // Generar número de miembro
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(error.message || 'Error al crear usuario');
+      }
+
+      return {
+        user: newUser,
+        activationToken,
+      };
+    },
     onSuccess: () => {
       // Invalidar caché para refrescar la lista
       queryClient.invalidateQueries({ queryKey: userKeys.all });
-      toast.success('Usuario creado exitosamente');
+      // No mostrar toast aquí, lo mostrará el modal de activación
     },
     onError: (error: Error) => {
       console.error('Error creando usuario:', error);

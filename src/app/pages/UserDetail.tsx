@@ -10,7 +10,6 @@ import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { mockPhysicalProgress, mockInvoices } from '../lib/mockData';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
@@ -58,11 +57,6 @@ export function UserDetail() {
   
   // Usar React Query en lugar de mockData
   const { data: user, isLoading, error } = useUser(id || '');
-  
-  // DEBUG: Verificar qué datos estamos recibiendo
-  console.log('🔍 DEBUG UserDetail - Usuario recibido:', user);
-  console.log('🔍 DEBUG UserDetail - trainer_name:', user?.trainer_name);
-  console.log('🔍 DEBUG UserDetail - assigned_trainer:', user?.assigned_trainer);
   
   // Obtener pagos reales del usuario
   const { data: userPayments, isLoading: loadingPayments } = useUserPayments(id || '');
@@ -127,8 +121,9 @@ export function UserDetail() {
     );
   }
 
-  const userProgress = mockPhysicalProgress.filter(p => p.userId === id);
-  const userInvoices = mockInvoices.filter(i => i.userId === id);
+  // Datos reales obtenidos de los hooks
+  const userProgress = physicalProgress || [];
+  const userInvoices: any[] = []; // Facturas se manejan desde payments
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -155,7 +150,7 @@ export function UserDetail() {
   };
 
   const generateInvoice = (payment: any) => {
-    const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(mockInvoices.length + 1).padStart(3, '0')}`;
+    const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(payments?.length || 0 + 1).padStart(3, '0')}`;
     toast.success('Factura generada exitosamente', {
       description: `Factura ${invoiceNumber} lista para descargar`,
     });

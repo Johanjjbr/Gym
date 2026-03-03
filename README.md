@@ -1,255 +1,274 @@
-# 🏋️ GymTeques — Sistema de Gestión de Gimnasio
+# 💪 Sistema de Gestión - Gimnasio Los Teques
 
 <div align="center">
 
-![React](https://img.shields.io/badge/React-18.3.1-61DAFB?style=for-the-badge&logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript)
-![Supabase](https://img.shields.io/badge/Supabase-Backend-3ECF8E?style=for-the-badge&logo=supabase)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.x-38BDF8?style=for-the-badge&logo=tailwindcss)
-![Vite](https://img.shields.io/badge/Vite-Build_Tool-646CFF?style=for-the-badge&logo=vite)
+![Estado](https://img.shields.io/badge/Estado-Integración_Completa-success)
+![Versión](https://img.shields.io/badge/Versión-1.0-blue)
+![Frontend](https://img.shields.io/badge/Frontend-React_18-61dafb)
+![Backend](https://img.shields.io/badge/Backend-Supabase-3ecf8e)
+![TypeScript](https://img.shields.io/badge/TypeScript-100%25-blue)
 
-**Sistema web completo para la gestión del Gimnasio Los Teques, Sector Lagunetica.**
+**Sistema web completo para la gestión integral de gimnasios**
+
+[Inicio Rápido](#-inicio-rápido) • [Documentación](#-documentación) • [Características](#-características) • [Tech Stack](#-tech-stack)
 
 </div>
 
 ---
 
-## 📋 Tabla de Contenidos
+## 🎯 Descripción
 
-- [Descripción](#-descripción)
-- [Características](#-características)
-- [Tecnologías](#-tecnologías)
-- [Arquitectura](#-arquitectura)
-- [Base de Datos](#-base-de-datos)
-- [Sistema de Roles](#-sistema-de-roles)
-- [Instalación](#-instalación)
-- [Configuración de Supabase](#-configuración-de-supabase)
-- [Credenciales de Prueba](#-credenciales-de-prueba)
-- [API Client](#-api-client)
-- [Estructura del Proyecto](#-estructura-del-proyecto)
-- [Diseño](#-diseño)
-- [Estado del Proyecto](#-estado-del-proyecto)
+Sistema administrativo moderno y completo para la gestión del **Gimnasio Los Teques** (Sector Lagunetica). Incluye control de usuarios, pagos, asistencia, rutinas de ejercicio, seguimiento físico y gestión de personal.
 
----
+### ✨ Características Principales
 
-## 📖 Descripción
-
-GymTeques es una aplicación web moderna y completa para la administración integral de un gimnasio. Permite gestionar miembros, pagos, asistencia, rutinas de ejercicio y progreso físico desde una interfaz intuitiva con tema oscuro estilo fitness.
-
-El sistema cuenta con tres niveles de acceso (Administrador, Entrenador, Recepción) y seguridad robusta implementada directamente en la base de datos mediante Row Level Security (RLS) de PostgreSQL.
+- 🔐 **Autenticación completa** con 3 roles (Admin, Entrenador, Recepción)
+- 👥 **Gestión de usuarios** (miembros del gimnasio)
+- 💳 **Control de pagos** y mensualidades
+- 📊 **Dashboard** con estadísticas en tiempo real
+- 📋 **Registro de asistencia** con códigos QR
+- 🏋️ **Sistema de rutinas** personalizadas
+- 📈 **Seguimiento de progreso** físico (peso, IMC, medidas)
+- 👔 **Gestión de personal** y turnos
+- 📄 **Reportes** y exportación de datos
+- 🎨 **Diseño fitness moderno** con tema oscuro y neón
 
 ---
 
-## ✨ Características
+## 🚀 Inicio Rápido
 
-### ✅ Implementadas
-- **Autenticación completa** — Login/logout con JWT, persistencia de sesión y protección de rutas
-- **Dashboard con estadísticas** — 6 tarjetas de métricas, gráficos de ingresos, asistencia semanal y distribución de usuarios
-- **Gestión de Usuarios (CRUD completo)** — Creación con número de miembro automático (GYM-XXX), cálculo de IMC en tiempo real, búsqueda en tiempo real
-- **Gestión de Personal (CRUD completo)** — Administración de staff con roles, turnos y badges visuales por rol
-- **Control de Pagos** — Registro de pagos, historial y alertas de vencimiento
-- **Registro de Asistencia** — Control de entradas/salidas con generación de códigos QR por usuario
-- **Sistema de Roles** — 3 niveles de acceso con permisos diferenciados
-- **Seguridad RLS** — Políticas de acceso a nivel de base de datos
+### Prerrequisitos
 
-### 🚧 En Desarrollo
-- Sistema de rutinas de ejercicio
-- Seguimiento de progreso físico
-- Reportes y exportación de datos
-- Dashboard de progreso con gráficas avanzadas
+- Node.js 18+ instalado
+- Cuenta en [Supabase](https://supabase.com)
+- Git (opcional)
+
+### Instalación
+
+```bash
+# 1. Clonar o descargar el proyecto
+git clone <url-del-repo>
+cd sistema-gimnasio
+
+# 2. Instalar dependencias
+npm install
+
+# 3. Ejecutar en modo desarrollo
+npm run dev
+
+# 4. Abrir en el navegador
+# http://localhost:5173
+```
+
+### Configuración Rápida (3 Pasos)
+
+#### Paso 1: Ejecutar Schema SQL
+1. Ve a [Supabase Dashboard](https://supabase.com/dashboard)
+2. SQL Editor → New Query
+3. Copia todo el contenido de `/supabase/migrations/schema.sql`
+4. Pégalo y haz clic en **RUN**
+
+#### Paso 2: Crear Usuarios de Prueba
+```bash
+curl -X POST https://jhzgcfvshnjgktajspqo.supabase.co/functions/v1/make-server-104060a1/seed
+```
+
+#### Paso 3: Iniciar Sesión
+```
+Email:    admin@gymteques.com
+Password: Admin123!
+```
+
+**¡Listo! 🎉** Tu sistema está funcionando.
+
+> 📖 Para instrucciones detalladas, lee: [`INICIO_RAPIDO.md`](./INICIO_RAPIDO.md)
 
 ---
 
-## 🛠️ Tecnologías
+## 📚 Documentación
 
-### Frontend
-| Tecnología | Versión | Uso |
-|---|---|---|
-| React | 18.3.1 | Framework UI principal |
-| TypeScript | 5.x | Tipado estático |
-| React Router | 7 | Navegación SPA |
-| Tailwind CSS | 4 | Estilos utilitarios |
-| Recharts | — | Gráficos y estadísticas |
-| Lucide React | — | Iconos |
-| shadcn/ui | — | Componentes UI |
-| React Query | — | Gestión de estado del servidor |
-| Vite | — | Build tool y dev server |
+### 🎓 Para Comenzar
 
-### Backend
-| Tecnología | Uso |
-|---|---|
-| Supabase | BaaS — Base de datos, Auth, Edge Functions |
-| PostgreSQL | Base de datos relacional |
-| Supabase Auth | Sistema de autenticación con JWT |
-| Hono (Deno) | Framework web para Edge Functions |
-| Row Level Security | Seguridad de datos a nivel BD |
+| Documento | Descripción | Tiempo |
+|-----------|-------------|--------|
+| [**INICIO_RAPIDO.md**](./INICIO_RAPIDO.md) | 3 pasos para empezar | 3 min ⭐ |
+| [**RESUMEN_EJECUTIVO.md**](./RESUMEN_EJECUTIVO.md) | Vista general del proyecto | 5 min ⭐ |
+| [**CHECKLIST_SETUP.md**](./CHECKLIST_SETUP.md) | Guía paso a paso completa | 10 min |
+
+### 🛠️ Para Desarrolladores
+
+| Documento | Descripción | Tiempo |
+|-----------|-------------|--------|
+| [**GUIA_INTEGRACION_FRONTEND.md**](./GUIA_INTEGRACION_FRONTEND.md) | Integración completa | 15 min ⭐ |
+| [**CRUD_DOCUMENTATION.md**](./CRUD_DOCUMENTATION.md) | Ejemplos de código | 10 min |
+| [**ARQUITECTURA_SISTEMA.md**](./ARQUITECTURA_SISTEMA.md) | Arquitectura técnica | 12 min |
+
+### 📖 Referencia
+
+| Documento | Descripción | Tiempo |
+|-----------|-------------|--------|
+| [**SUPABASE_STRUCTURE.md**](./SUPABASE_STRUCTURE.md) | Estructura de base de datos | 8 min |
+| [**GUIA_VISUAL.md**](./GUIA_VISUAL.md) | Guía visual del diseño | 10 min |
+| [**CAMBIOS_INTEGRACION.md**](./CAMBIOS_INTEGRACION.md) | Historial de cambios | 8 min |
+| [**README_SUPABASE.md**](./README_SUPABASE.md) | Documentación de Supabase | 10 min |
+
+> ⭐ = Recomendado para empezar
 
 ---
 
 ## 🏗️ Arquitectura
 
 ```
-Usuario (Browser)
-      │
-      ▼
-React + TypeScript (Vite)
-      │
-      ▼
-api.ts (Cliente HTTP con JWT)
-      │
-      ▼
-Supabase Edge Functions (Hono / Deno)
-      │
-      ├── Verificación JWT
-      ├── Consulta staff table (rol del usuario)
-      │
-      ▼
-PostgreSQL (Supabase)
-      │
-      ├── Políticas RLS según rol
-      │
-      ▼
-JSON Response → Componente React → DOM
+┌─────────────────────────────────────────────────────────────┐
+│                     FRONTEND (React)                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ Login    │  │Dashboard │  │ Users    │  │ Payments │   │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
+│       │             │              │             │          │
+│       └─────────────┴──────────────┴─────────────┘          │
+│                          │                                  │
+│                    AuthContext                              │
+│                          │                                  │
+│                      API Client                             │
+└──────────────────────────┼──────────────────────────────────┘
+                           │
+                    HTTPS (Bearer Token)
+                           │
+┌──────────────────────────▼──────────────────────────────────┐
+│                  BACKEND (Supabase)                         │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │          Edge Function (API REST)                     │ │
+│  │  /auth/login  /users  /payments  /staff  /routines   │ │
+│  └────────────────────────┬──────────────────────────────┘ │
+│                           │                                 │
+│  ┌────────────────────────▼─────────────────────────────┐  │
+│  │         PostgreSQL + Row Level Security             │  │
+│  │  12 Tablas | Políticas RLS | Triggers | Functions   │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │              Supabase Auth (JWT)                     │  │
+│  │  3 Roles: Administrador | Entrenador | Recepción    │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🗃️ Base de Datos
+## 🎨 Características del Diseño
 
-El sistema utiliza **12 tablas** en PostgreSQL:
+### Tema Fitness Oscuro
 
-### Usuarios y Personal
-- `users` — Miembros del gimnasio (nombre, plan, estado, datos físicos)
-- `staff` — Personal con autenticación integrada (Administradores, Entrenadores, Recepción)
+- **Verde Neón:** `#10f94e` - Acciones principales, éxito
+- **Rojo Neón:** `#ff3b5c` - Alertas, errores, morosos
+- **Fondo Oscuro:** `#0a0a0f` - Background principal
+- **Tipografía:** Rajdhani (títulos) + Inter (texto)
 
-### Finanzas
-- `payments` — Registro de pagos realizados
-- `invoices` — Facturas generadas
+### Responsive Design
 
-### Asistencia
-- `attendance` — Registro de entradas y salidas
+✅ Desktop (1920x1080)  
+✅ Tablet (768px - 1024px)  
+✅ Mobile (< 768px)
 
-### Progreso Físico
-- `physical_progress` — Peso, altura, IMC y medidas corporales
+### Componentes UI
 
-### Sistema de Rutinas
-- `routine_templates` — Plantillas de rutinas
-- `exercise_templates` — Biblioteca de ejercicios
-- `user_routine_assignments` — Asignaciones de rutinas a miembros
-- `workout_sessions` — Sesiones de entrenamiento
-- `workout_exercise_logs` — Ejercicios completados por sesión
-- `set_logs` — Series y repeticiones registradas
+- 50+ componentes de shadcn/ui
+- Gráficos con Recharts
+- Iconos con Lucide React
+- Animaciones suaves
+- Estados de carga
 
-> ✅ RLS activo en todas las tablas con políticas granulares por rol.
+---
+
+## 💻 Tech Stack
+
+### Frontend
+
+- **React 18.3.1** - Biblioteca UI
+- **TypeScript** - Tipado estático
+- **Tailwind CSS 4** - Estilos utility-first
+- **React Router 7** - Navegación SPA
+- **Recharts 2** - Gráficos y visualizaciones
+- **Lucide React** - Biblioteca de iconos
+- **shadcn/ui** - Componentes accesibles
+- **Vite 6** - Build tool ultra rápido
+
+### Backend
+
+- **Supabase** - Backend as a Service
+- **PostgreSQL** - Base de datos relacional
+- **Supabase Auth** - Autenticación JWT
+- **Edge Functions** - API REST serverless
+- **Row Level Security** - Seguridad a nivel de fila
+
+### Herramientas
+
+- **ESLint** - Linter de código
+- **PostCSS** - Procesamiento CSS
+- **QRCode.react** - Generación de códigos QR
+- **Date-fns** - Manejo de fechas
+
+---
+
+## 📊 Base de Datos
+
+### 12 Tablas Principales
+
+```
+📁 Usuarios y Personal
+├── users              # Miembros del gimnasio
+└── staff              # Personal (Admin, Trainer, Reception)
+
+📁 Finanzas
+├── payments           # Registro de pagos
+└── invoices           # Facturas
+
+📁 Asistencia
+└── attendance         # Entradas y salidas
+
+📁 Progreso Físico
+└── physical_progress  # Peso, IMC, medidas
+
+📁 Sistema de Rutinas
+├── routine_templates        # Plantillas de rutinas
+├── exercise_templates       # Ejercicios
+├── user_routine_assignments # Asignaciones
+├── workout_sessions         # Sesiones
+├── workout_exercise_logs    # Ejercicios completados
+└── set_logs                # Series y repeticiones
+```
+
+### Row Level Security (RLS)
+
+✅ **Activo en todas las tablas**  
+✅ **Políticas por rol**  
+✅ **Aislamiento de datos**  
+✅ **Auditoría automática**
 
 ---
 
 ## 🔐 Sistema de Roles
 
-| Funcionalidad | 👑 Administrador | 🏋️ Entrenador | 📋 Recepción |
-|---|:---:|:---:|:---:|
-| Gestión de usuarios | ✅ CRUD | ✅ Ver/Editar | ✅ Ver |
-| Gestión de pagos | ✅ CRUD | ❌ | ✅ Crear |
-| Registro de asistencia | ✅ | ✅ | ✅ |
-| Gestión de rutinas | ✅ CRUD | ✅ CRUD | ❌ |
-| Gestión de staff | ✅ CRUD | ❌ | ❌ |
-| Progreso físico | ✅ | ✅ Crear/Editar | ✅ Ver |
+### 👑 Administrador
+- **Permisos:** Acceso total al sistema
+- **Puede:** Todo (CRUD completo en todas las tablas)
+- **Credenciales:** `admin@gymteques.com` / `Admin123!`
+
+### 🏋️ Entrenador
+- **Permisos:** Gestión de rutinas y usuarios
+- **Puede:** Ver/editar usuarios, crear/asignar rutinas, ver asistencia
+- **Credenciales:** `trainer@gymteques.com` / `Trainer123!`
+
+### 📋 Recepción
+- **Permisos:** Registro operativo
+- **Puede:** Registrar asistencia, pagos, ver usuarios
+- **Credenciales:** `recepcion@gymteques.com` / `Recepcion123!`
 
 ---
 
-## 🚀 Instalación
+## 🛠️ API Client
 
-### Requisitos previos
-- Node.js 18+
-- npm o pnpm
-- Cuenta en [Supabase](https://supabase.com)
-
-### Pasos
-
-```bash
-# 1. Clonar el repositorio
-git clone <url-del-repositorio>
-cd gimnasio-los-teques
-
-# 2. Instalar dependencias
-npm install
-
-# 3. Configurar variables de entorno (ver sección siguiente)
-
-# 4. Iniciar servidor de desarrollo
-npm run dev
-```
-
----
-
-## ⚙️ Configuración de Supabase
-
-### 1. Crear proyecto en Supabase
-
-Crea un nuevo proyecto en [supabase.com](https://supabase.com) y obtén tu **Project ID** y **Anon Key**.
-
-### 2. Configurar credenciales
-
-Edita el archivo `utils/supabase/info.tsx` con tus datos:
-
-```typescript
-export const SUPABASE_PROJECT_ID = 'tu-project-id';
-export const SUPABASE_ANON_KEY = 'tu-anon-key';
-```
-
-### 3. Ejecutar schema SQL
-
-En el **SQL Editor** de Supabase, ejecuta el archivo:
-```
-supabase/migrations/schema.sql
-```
-
-Esto creará las 12 tablas con todas sus políticas RLS.
-
-### 4. Cargar datos de prueba
-
-Llama al endpoint de seed para poblar la base de datos:
-
-```
-POST https://[tu-project-id].supabase.co/functions/v1/make-server-104060a1/seed
-```
-
-### 5. Verificar la instalación
-
-Navega a `/test-supabase` en la app para ejecutar las pruebas de conexión.
-
-#### Checklist de verificación
-- [ ] Schema SQL ejecutado (12 tablas visibles en Table Editor)
-- [ ] Endpoint `/seed` ejecutado correctamente
-- [ ] 3 usuarios en Supabase Authentication
-- [ ] 5 miembros en tabla `users`
-- [ ] Login funciona con `admin@gymteques.com`
-
----
-
-## 🔑 Credenciales de Prueba
-
-| Rol | Email | Contraseña |
-|---|---|---|
-| 👑 Administrador | `admin@gymteques.com` | `Admin123!` |
-| 🏋️ Entrenador | `trainer@gymteques.com` | `Trainer123!` |
-| 📋 Recepción | `recepcion@gymteques.com` | `Recepcion123!` |
-
-### Miembros de prueba incluidos
-
-| Nombre | N° Miembro | Plan | Estado |
-|---|---|---|---|
-| Carlos Rodríguez | GYM-001 | Mensual | ✅ Activo |
-| María González | GYM-002 | Trimestral | ✅ Activo |
-| José Pérez | GYM-003 | Mensual | ⚠️ Moroso |
-| Ana Martínez | GYM-004 | Anual | ✅ Activo |
-| Luis Hernández | GYM-005 | — | ❌ Inactivo |
-
----
-
-## 📡 API Client
-
-Importa el cliente centralizado desde cualquier componente:
+### Endpoints Disponibles
 
 ```typescript
 import api from './lib/api';
@@ -270,7 +289,7 @@ await api.users.delete(id);
 await api.payments.getAll();
 await api.payments.create(paymentData);
 
-// Personal
+// Staff
 await api.staff.getAll();
 await api.staff.update(id, staffData);
 
@@ -282,114 +301,213 @@ await api.attendance.create(attendanceData);
 await api.routines.getAll();
 await api.routines.create(routineData);
 await api.routineAssignments.getAll(userId?);
+await api.routineAssignments.create(assignmentData);
 
-// Estadísticas del Dashboard
+// Estadísticas
 await api.stats.getDashboard();
 ```
+
+> 📖 Ver ejemplos completos en: [`CRUD_DOCUMENTATION.md`](./CRUD_DOCUMENTATION.md)
+
+---
+
+## 🧪 Testing
+
+### Página de Pruebas Integrada
+
+**URL:** `http://localhost:5173/test-supabase`
+
+**Tests incluidos:**
+- ✅ Health Check del servidor
+- ✅ Login con credenciales
+- ✅ Obtener Usuarios
+- ✅ Obtener Pagos
+- ✅ Obtener Staff
+- ✅ Obtener Asistencia
+- ✅ Obtener Rutinas
+- ✅ Estadísticas del Dashboard
+
+**Acceso:**
+- Desde Login: Click en "Test de Conexión Supabase →"
+- Desde Sidebar: Sección "Desarrollo" → "Test Supabase"
 
 ---
 
 ## 📁 Estructura del Proyecto
 
 ```
-gimnasio-los-teques/
+sistema-gimnasio/
 │
-├── supabase/
-│   ├── migrations/
-│   │   └── schema.sql              # Schema SQL completo
-│   └── functions/
-│       └── server/
-│           ├── index.tsx           # Servidor Hono con todos los endpoints
-│           ├── seed.tsx            # Datos de prueba
-│           └── kv_store.tsx        # [Sistema — No editar]
+├── 📁 src/app/                      # Código fuente principal
+│   ├── App.tsx                      # Punto de entrada
+│   ├── routes.ts                    # Configuración de rutas
+│   │
+│   ├── 📁 pages/                    # Páginas de la aplicación
+│   │   ├── Login.tsx               # Pantalla de login
+│   │   ├── Dashboard.tsx           # Panel principal
+│   │   ├── Users.tsx               # Gestión de usuarios
+│   │   ├── Payments.tsx            # Control de pagos
+│   │   ├── Staff.tsx               # Gestión de personal
+│   │   ├── Attendance.tsx          # Registro de asistencia
+│   │   ├── Routines.tsx            # Rutinas de ejercicio
+│   │   ├── MyWorkout.tsx           # Entrenamiento personal
+│   │   ├── Reports.tsx             # Reportes
+│   │   ├── Layout.tsx              # Layout principal
+│   │   └── TestSupabase.tsx        # Página de pruebas
+│   │
+│   ├── 📁 components/               # Componentes reutilizables
+│   │   ├── Sidebar.tsx             # Navegación lateral
+│   │   ├── ProtectedRoute.tsx      # HOC de protección
+│   │   ├── StatCard.tsx            # Tarjeta de estadística
+│   │   └── ui/                     # Componentes UI (shadcn)
+│   │
+│   ├── 📁 contexts/                 # Contextos de React
+│   │   └── AuthContext.tsx         # Estado de autenticación
+│   │
+│   ├── 📁 lib/                      # Utilidades y configuración
+│   │   ├── api.ts                  # Cliente API de Supabase
+│   │   └── mockData.ts             # Datos de demostración
+│   │
+│   └── 📁 types/                    # Definiciones de TypeScript
+│       └── index.ts                # Tipos globales
 │
-├── src/
-│   └── app/
-│       ├── components/
-│       │   ├── Sidebar.tsx
-│       │   ├── StatCard.tsx
-│       │   ├── DatabaseSetup.tsx
-│       │   └── ui/                 # Componentes shadcn/ui
-│       │
-│       ├── contexts/
-│       │   └── AuthContext.tsx     # Contexto global de autenticación
-│       │
-│       ├── lib/
-│       │   ├── api.ts              # Cliente API TypeScript centralizado
-│       │   └── mockData.ts         # Datos de demostración (fallback)
-│       │
-│       ├── pages/
-│       │   ├── Dashboard.tsx       # Panel principal con estadísticas
-│       │   ├── Users.tsx           # Gestión de miembros
-│       │   ├── Payments.tsx        # Control de pagos
-│       │   ├── Routines.tsx        # Sistema de rutinas
-│       │   ├── Staff.tsx           # Gestión de personal
-│       │   ├── Attendance.tsx      # Registro de asistencia + QR
-│       │   ├── TestSupabase.tsx    # Página de diagnóstico
-│       │   └── Layout.tsx          # Layout principal con Sidebar
-│       │
-│       ├── types/
-│       │   └── index.ts            # Tipos TypeScript globales
-│       │
-│       ├── routes.ts               # Definición de rutas
-│       └── App.tsx                 # Componente raíz
+├── 📁 supabase/                     # Configuración de Supabase
+│   ├── 📁 migrations/
+│   │   └── schema.sql              # Schema completo de la BD
+│   └── 📁 functions/server/
+│       ├── index.tsx               # Edge Function principal
+│       └── seed.tsx                # Seed de datos de prueba
 │
-├── utils/
-│   └── supabase/
-│       └── info.tsx                # Project ID y Anon Key
+├── 📁 utils/supabase/               # Info de configuración
+│   └── info.tsx                    # PROJECT_ID y ANON_KEY
 │
-├── package.json
-└── vite.config.ts
+├── 📁 src/styles/                   # Estilos globales
+│   ├── theme.css                   # Tema y variables CSS
+│   ├── fonts.css                   # Fuentes de Google
+│   └── index.css                   # Estilos base
+│
+├── 📄 package.json                  # Dependencias del proyecto
+├── 📄 vite.config.ts               # Configuración de Vite
+├── 📄 tsconfig.json                # Configuración de TypeScript
+│
+└── 📚 Documentación/                # Guías y manuales
+    ├── README.md                   # Este archivo
+    ├── INICIO_RAPIDO.md
+    ├── RESUMEN_EJECUTIVO.md
+    ├── CHECKLIST_SETUP.md
+    ├── GUIA_INTEGRACION_FRONTEND.md
+    ├── CRUD_DOCUMENTATION.md
+    ├── ARQUITECTURA_SISTEMA.md
+    ├── SUPABASE_STRUCTURE.md
+    ├── GUIA_VISUAL.md
+    ├── CAMBIOS_INTEGRACION.md
+    └── README_SUPABASE.md
 ```
 
 ---
 
-## 🎨 Diseño
+## 🎯 Roadmap
 
-El sistema utiliza un tema oscuro con estética fitness moderna:
+### ✅ Fase 1: Infraestructura (Completada)
+- [x] Setup de Supabase
+- [x] Schema SQL completo
+- [x] Sistema de autenticación
+- [x] Row Level Security
+- [x] Edge Functions
+- [x] Frontend base con React
+- [x] Sistema de rutas
+- [x] Integración frontend-backend
 
-| Token | Color | Uso |
-|---|---|---|
-| Primary | `#10f94e` | Acciones positivas, CTA principal |
-| Secondary | `#ff3b5c` | Alertas, estados negativos |
-| Background | `#0a0a0f` | Fondo principal |
-| Surface | `#13131a` | Cards y paneles |
+### 🚧 Fase 2: Funcionalidades Core (En Progreso)
+- [ ] CRUD completo de usuarios
+- [ ] Sistema de pagos
+- [ ] Registro de asistencia con QR
+- [ ] Dashboard con datos reales
+- [ ] Gestión de personal
 
-**Tipografías:** Rajdhani (títulos) + Inter (texto general)
+### 📅 Fase 3: Funcionalidades Avanzadas
+- [ ] Sistema completo de rutinas
+- [ ] Seguimiento de progreso físico
+- [ ] Reportes y exportación
+- [ ] Notificaciones automáticas
+- [ ] Calendario de eventos
+
+### 🚀 Fase 4: Optimización
+- [ ] Tests unitarios
+- [ ] Tests E2E
+- [ ] Optimización de rendimiento
+- [ ] PWA (Progressive Web App)
+- [ ] Deploy a producción
+
+---
+
+## 🤝 Contribución
+
+### Cómo Contribuir
+
+1. Fork el proyecto
+2. Crea una rama (`git checkout -b feature/nueva-funcionalidad`)
+3. Commit tus cambios (`git commit -m 'Agregar nueva funcionalidad'`)
+4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
+5. Abre un Pull Request
+
+### Estándares de Código
+
+- ✅ Usar TypeScript para todo
+- ✅ Seguir guía de estilo de Tailwind
+- ✅ Componentes funcionales con hooks
+- ✅ Nombres descriptivos en español
+- ✅ Comentarios en código complejo
+- ✅ Tests para funcionalidades críticas
+
+---
+
+## 📝 Licencia
+
+Este proyecto es privado y pertenece al **Gimnasio Los Teques**.
+
+---
+
+## 📞 Contacto
+
+**Gimnasio Los Teques**  
+Sector Lagunetica, Los Teques  
+Estado Miranda, Venezuela
+
+---
+
+## 🙏 Agradecimientos
+
+- **Supabase** - Por la plataforma increíble
+- **shadcn/ui** - Por los componentes UI
+- **Tailwind CSS** - Por el sistema de diseño
+- **Recharts** - Por los gráficos hermosos
+- **React Router** - Por la navegación fluida
 
 ---
 
 ## 📊 Estado del Proyecto
 
-| Módulo | Estado | Progreso |
-|---|---|---|
-| Infraestructura (Supabase + BD) | ✅ Completo | 100% |
-| Autenticación y roles | ✅ Completo | 100% |
-| Dashboard | ✅ Completo | 100% |
-| Gestión de Usuarios | ✅ Completo | 100% |
-| Gestión de Personal | ✅ Completo | 100% |
-| Control de Pagos | ✅ Completo | 100% |
-| Registro de Asistencia + QR | ✅ Completo | 100% |
-| Sistema de Rutinas | 🚧 En desarrollo | 30% |
-| Progreso Físico | 🚧 En desarrollo | 30% |
-| Reportes y Exportación | ⏳ Pendiente | 0% |
-
-**Progreso General: ~78%** ✅
+![Progreso](https://img.shields.io/badge/Progreso-78%25-success)
+![Backend](https://img.shields.io/badge/Backend-100%25-success)
+![Frontend](https://img.shields.io/badge/Frontend_Base-100%25-success)
+![Integración](https://img.shields.io/badge/Integración-100%25-success)
+![Funcionalidades](https://img.shields.io/badge/Funcionalidades-30%25-yellow)
 
 ---
 
-## 🛠️ Solución de Problemas
+## 🎉 ¡Gracias por usar nuestro sistema!
 
-| Error | Solución |
-|---|---|
-| `"Database error querying schema"` | Ejecutar el schema SQL en Supabase SQL Editor |
-| `"Usuario no encontrado en staff"` | Ejecutar el endpoint `/seed` |
-| `"Invalid token"` / `"Unauthorized"` | Verificar token en localStorage o volver a hacer login |
-| Tablas no aparecen en Supabase | Refrescar Table Editor y verificar ejecución del SQL |
+Si tienes preguntas o necesitas ayuda, consulta la documentación o abre un issue.
+
+**¡Vamos a hacer grande al Gimnasio Los Teques! 💪🏋️‍♂️**
 
 ---
 
-## 📄 Licencia
+<div align="center">
 
-Proyecto desarrollado para **Gimnasio Los Teques, Sector Lagunetica**.  
-Versión 1.0 — Febrero 2026.
+**Hecho con ❤️ para el Gimnasio Los Teques**
+
+[⬆ Volver arriba](#-sistema-de-gestión---gimnasio-los-teques)
+
+</div>

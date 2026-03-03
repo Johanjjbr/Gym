@@ -9,6 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { userSchema, type UserFormData } from '../lib/validations';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
 import { useStaff } from '../hooks/useStaff';
+import { ActivationModal } from './ActivationModal';
 import {
   Dialog,
   DialogContent,
@@ -35,6 +36,11 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const [calculatedBMI, setCalculatedBMI] = useState<number | null>(null);
+  const [activationData, setActivationData] = useState<{
+    token: string;
+    userName: string;
+    userEmail: string;
+  } | null>(null);
 
   // Función para obtener categoría de IMC
   const getBMICategory = (imc: number) => {
@@ -121,11 +127,20 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
       // No es necesario enviarlo en la creación
       if (isEdit) {
         await updateUser.mutateAsync({ id: user.id, data });
+        reset();
+        onOpenChange(false);
       } else {
-        await createUser.mutateAsync(data);
+        const result = await createUser.mutateAsync(data);
+        reset();
+        onOpenChange(false);
+        
+        // Mostrar modal de activación con el token generado
+        setActivationData({
+          token: result.activationToken,
+          userName: data.name,
+          userEmail: data.email,
+        });
       }
-      reset();
-      onOpenChange(false);
     } catch (error) {
       // El error ya se muestra en toast automáticamente
       console.error(error);
@@ -133,377 +148,388 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 border-gray-700">
-        <DialogHeader>
-          <DialogTitle className="text-2xl text-white">
-            {isEdit ? 'Editar Usuario' : 'Nuevo Usuario'}
-          </DialogTitle>
-          <DialogDescription className="text-gray-400">
-            {isEdit
-              ? 'Modifica los datos del usuario. Los campos con * son obligatorios.'
-              : 'Completa los datos del nuevo usuario. Los campos con * son obligatorios.'}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 border-gray-700">
+          <DialogHeader>
+            <DialogTitle className="text-2xl text-white">
+              {isEdit ? 'Editar Usuario' : 'Nuevo Usuario'}
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              {isEdit
+                ? 'Modifica los datos del usuario. Los campos con * son obligatorios.'
+                : 'Completa los datos del nuevo usuario. Los campos con * son obligatorios.'}
+            </DialogDescription>
+          </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Información Personal */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
-              Información Personal
-            </h3>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            {/* Información Personal */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+                Información Personal
+              </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-gray-300">
-                  Nombre Completo <span className="text-[#ff3b5c]">*</span>
-                </Label>
-                <Input
-                  id="name"
-                  {...register('name')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  placeholder="Juan Pérez"
-                />
-                {errors.name && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.name.message}</p>
-                )}
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-gray-300">
+                    Nombre Completo <span className="text-[#ff3b5c]">*</span>
+                  </Label>
+                  <Input
+                    id="name"
+                    {...register('name')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    placeholder="Juan Pérez"
+                  />
+                  {errors.name && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.name.message}</p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-gray-300">
-                  Email <span className="text-[#ff3b5c]">*</span>
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  {...register('email')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  placeholder="juan@ejemplo.com"
-                />
-                {errors.email && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.email.message}</p>
-                )}
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-gray-300">
+                    Email <span className="text-[#ff3b5c]">*</span>
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    {...register('email')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    placeholder="juan@ejemplo.com"
+                  />
+                  {errors.email && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.email.message}</p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phone" className="text-gray-300">
-                  Teléfono
-                </Label>
-                <Input
-                  id="phone"
-                  {...register('phone')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  placeholder="04121234567"
-                />
-                {errors.phone && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.phone.message}</p>
-                )}
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone" className="text-gray-300">
+                    Teléfono
+                  </Label>
+                  <Input
+                    id="phone"
+                    {...register('phone')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    placeholder="04121234567"
+                  />
+                  {errors.phone && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.phone.message}</p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="birth_date" className="text-gray-300">
-                  Fecha de Nacimiento
-                </Label>
-                <Input
-                  id="birth_date"
-                  type="date"
-                  {...register('birth_date')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                />
-                {errors.birth_date && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.birth_date.message}</p>
-                )}
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="birth_date" className="text-gray-300">
+                    Fecha de Nacimiento
+                  </Label>
+                  <Input
+                    id="birth_date"
+                    type="date"
+                    {...register('birth_date')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                  />
+                  {errors.birth_date && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.birth_date.message}</p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="gender" className="text-gray-300">
-                  Género
-                </Label>
-                <select
-                  id="gender"
-                  {...register('gender')}
-                  disabled={isSubmitting}
-                  className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-                >
-                  <option value="">Seleccionar...</option>
-                  <option value="Masculino">Masculino</option>
-                  <option value="Femenino">Femenino</option>
-                  <option value="Otro">Otro</option>
-                </select>
-                {errors.gender && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.gender.message}</p>
-                )}
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gender" className="text-gray-300">
+                    Género
+                  </Label>
+                  <select
+                    id="gender"
+                    {...register('gender')}
+                    disabled={isSubmitting}
+                    className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
+                  >
+                    <option value="">Seleccionar...</option>
+                    <option value="Masculino">Masculino</option>
+                    <option value="Femenino">Femenino</option>
+                    <option value="Otro">Otro</option>
+                  </select>
+                  {errors.gender && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.gender.message}</p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="address" className="text-gray-300">
-                  Dirección
-                </Label>
-                <Input
-                  id="address"
-                  {...register('address')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  placeholder="Los Teques, Lagunetica"
-                />
-                {errors.address && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.address.message}</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Información de Membresía */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
-              Información de Membresía
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="plan" className="text-gray-300">
-                  Tipo de Membresía <span className="text-[#ff3b5c]">*</span>
-                </Label>
-                <select
-                  id="plan"
-                  {...register('plan')}
-                  disabled={isSubmitting}
-                  className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-                >
-                  <option value="Mensual">Mensual</option>
-                  <option value="Trimestral">Trimestral</option>
-                  <option value="Semestral">Semestral</option>
-                  <option value="Anual">Anual</option>
-                </select>
-                {errors.plan && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.plan.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="status" className="text-gray-300">
-                  Estado <span className="text-[#ff3b5c]">*</span>
-                </Label>
-                <select
-                  id="status"
-                  {...register('status')}
-                  disabled={isSubmitting}
-                  className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-                >
-                  <option value="Activo">Activo</option>
-                  <option value="Inactivo">Inactivo</option>
-                  <option value="Suspendido">Suspendido</option>
-                </select>
-                {errors.status && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.status.message}</p>
-                )}
+                <div className="space-y-2">
+                  <Label htmlFor="address" className="text-gray-300">
+                    Dirección
+                  </Label>
+                  <Input
+                    id="address"
+                    {...register('address')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    placeholder="Los Teques, Lagunetica"
+                  />
+                  {errors.address && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.address.message}</p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Información Adicional */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
-              Información Adicional
-            </h3>
+            {/* Información de Membresía */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+                Información de Membresía
+              </h3>
 
-            <div className="space-y-2">
-              <Label htmlFor="emergency_contact" className="text-gray-300">
-                Contacto de Emergencia
-              </Label>
-              <Input
-                id="emergency_contact"
-                {...register('emergency_contact')}
-                disabled={isSubmitting}
-                className="bg-gray-800 border-gray-700 text-white"
-                placeholder="Nombre: María Pérez, Tel: 0412-9876543"
-              />
-              {errors.emergency_contact && (
-                <p className="text-xs text-[#ff3b5c]">{errors.emergency_contact.message}</p>
-              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="plan" className="text-gray-300">
+                    Tipo de Membresía <span className="text-[#ff3b5c]">*</span>
+                  </Label>
+                  <select
+                    id="plan"
+                    {...register('plan')}
+                    disabled={isSubmitting}
+                    className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
+                  >
+                    <option value="Mensual">Mensual</option>
+                    <option value="Trimestral">Trimestral</option>
+                    <option value="Semestral">Semestral</option>
+                    <option value="Anual">Anual</option>
+                  </select>
+                  {errors.plan && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.plan.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="status" className="text-gray-300">
+                    Estado <span className="text-[#ff3b5c]">*</span>
+                  </Label>
+                  <select
+                    id="status"
+                    {...register('status')}
+                    disabled={isSubmitting}
+                    className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
+                  >
+                    <option value="Activo">Activo</option>
+                    <option value="Inactivo">Inactivo</option>
+                    <option value="Suspendido">Suspendido</option>
+                  </select>
+                  {errors.status && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.status.message}</p>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="notes" className="text-gray-300">
-                Notas
-              </Label>
-              <Textarea
-                id="notes"
-                {...register('notes')}
-                disabled={isSubmitting}
-                className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
-                placeholder="Observaciones médicas, alergias, etc."
-              />
-              {errors.notes && (
-                <p className="text-xs text-[#ff3b5c]">{errors.notes.message}</p>
-              )}
-            </div>
+            {/* Información Adicional */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+                Información Adicional
+              </h3>
 
-            <div className="space-y-2">
-              <Label htmlFor="medical_notes" className="text-gray-300">
-                Notas Médicas
-              </Label>
-              <Textarea
-                id="medical_notes"
-                {...register('medical_notes')}
-                disabled={isSubmitting}
-                className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
-                placeholder="Observaciones médicas, alergias, etc."
-              />
-              {errors.medical_notes && (
-                <p className="text-xs text-[#ff3b5c]">{errors.medical_notes.message}</p>
-              )}
-            </div>
-
-            {/* Solo mostrar el número de miembro cuando se edita un usuario */}
-            {isEdit && (
               <div className="space-y-2">
-                <Label htmlFor="member_number" className="text-gray-300">
-                  Número de Miembro
+                <Label htmlFor="emergency_contact" className="text-gray-300">
+                  Contacto de Emergencia
                 </Label>
                 <Input
-                  id="member_number"
-                  {...register('member_number')}
-                  disabled={true}
+                  id="emergency_contact"
+                  {...register('emergency_contact')}
+                  disabled={isSubmitting}
                   className="bg-gray-800 border-gray-700 text-white"
-                  placeholder={user?.member_number}
+                  placeholder="Nombre: María Pérez, Tel: 0412-9876543"
                 />
-                {errors.member_number && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.member_number.message}</p>
+                {errors.emergency_contact && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.emergency_contact.message}</p>
                 )}
               </div>
-            )}
 
-            <div className="space-y-2">
-              <Label htmlFor="start_date" className="text-gray-300">
-                Fecha de Inicio
-              </Label>
-              <Input
-                id="start_date"
-                type="date"
-                {...register('start_date')}
-                disabled={isEdit || isSubmitting}
-                className="bg-gray-800 border-gray-700 text-white"
-              />
-              {errors.start_date && (
-                <p className="text-xs text-[#ff3b5c]">{errors.start_date.message}</p>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="notes" className="text-gray-300">
+                  Notas
+                </Label>
+                <Textarea
+                  id="notes"
+                  {...register('notes')}
+                  disabled={isSubmitting}
+                  className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
+                  placeholder="Observaciones médicas, alergias, etc."
+                />
+                {errors.notes && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.notes.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="medical_notes" className="text-gray-300">
+                  Notas Médicas
+                </Label>
+                <Textarea
+                  id="medical_notes"
+                  {...register('medical_notes')}
+                  disabled={isSubmitting}
+                  className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
+                  placeholder="Observaciones médicas, alergias, etc."
+                />
+                {errors.medical_notes && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.medical_notes.message}</p>
+                )}
+              </div>
+
+              {/* Solo mostrar el número de miembro cuando se edita un usuario */}
               {isEdit && (
-                <p className="text-xs text-gray-500">La fecha de inicio no se puede modificar</p>
+                <div className="space-y-2">
+                  <Label htmlFor="member_number" className="text-gray-300">
+                    Número de Miembro
+                  </Label>
+                  <Input
+                    id="member_number"
+                    {...register('member_number')}
+                    disabled={true}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    placeholder={user?.member_number}
+                  />
+                  {errors.member_number && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.member_number.message}</p>
+                  )}
+                </div>
               )}
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="next_payment" className="text-gray-300">
-                Próximo Pago
-              </Label>
-              <Input
-                id="next_payment"
-                type="date"
-                {...register('next_payment')}
-                disabled={isSubmitting}
-                className="bg-gray-800 border-gray-700 text-white"
-              />
-              {errors.next_payment && (
-                <p className="text-xs text-[#ff3b5c]">{errors.next_payment.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="weight" className="text-gray-300">
-                Peso (kg)
-              </Label>
-              <Input
-                id="weight"
-                type="number"
-                step="0.01"
-                {...register('weight', { valueAsNumber: false })}
-                disabled={isSubmitting}
-                className="bg-gray-800 border-gray-700 text-white"
-                placeholder="70.5"
-              />
-              {errors.weight && (
-                <p className="text-xs text-[#ff3b5c]">{errors.weight.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="height" className="text-gray-300">
-                Altura (cm)
-              </Label>
-              <Input
-                id="height"
-                type="number"
-                step="0.01"
-                {...register('height', { valueAsNumber: false })}
-                disabled={isSubmitting}
-                className="bg-gray-800 border-gray-700 text-white"
-                placeholder="175.5"
-              />
-              {errors.height && (
-                <p className="text-xs text-[#ff3b5c]">{errors.height.message}</p>
-              )}
-            </div>
-
-            {calculatedBMI !== null && (
               <div className="space-y-2">
-                <Label htmlFor="imc" className="text-gray-300">
-                  IMC (Indice de Masa Corporal)
+                <Label htmlFor="start_date" className="text-gray-300">
+                  Fecha de Inicio
                 </Label>
                 <Input
-                  id="imc"
+                  id="start_date"
+                  type="date"
+                  {...register('start_date')}
+                  disabled={isEdit || isSubmitting}
+                  className="bg-gray-800 border-gray-700 text-white"
+                />
+                {errors.start_date && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.start_date.message}</p>
+                )}
+                {isEdit && (
+                  <p className="text-xs text-gray-500">La fecha de inicio no se puede modificar</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="next_payment" className="text-gray-300">
+                  Próximo Pago
+                </Label>
+                <Input
+                  id="next_payment"
+                  type="date"
+                  {...register('next_payment')}
+                  disabled={isSubmitting}
+                  className="bg-gray-800 border-gray-700 text-white"
+                />
+                {errors.next_payment && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.next_payment.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="weight" className="text-gray-300">
+                  Peso (kg)
+                </Label>
+                <Input
+                  id="weight"
                   type="number"
                   step="0.01"
-                  {...register('imc', { valueAsNumber: false })}
+                  {...register('weight', { valueAsNumber: false })}
                   disabled={isSubmitting}
                   className="bg-gray-800 border-gray-700 text-white"
-                  placeholder="22.5"
-                  value={calculatedBMI}
+                  placeholder="70.5"
                 />
-                {errors.imc && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.imc.message}</p>
+                {errors.weight && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.weight.message}</p>
                 )}
-                <p className={getBMICategory(calculatedBMI).color}>
-                  {getBMICategory(calculatedBMI).label}
-                </p>
               </div>
-            )}
-          </div>
 
-          <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                reset();
-                onOpenChange(false);
-              }}
-              disabled={isSubmitting}
-              className="border-gray-700 hover:bg-gray-800"
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                <>{isEdit ? 'Actualizar' : 'Crear'} Usuario</>
+              <div className="space-y-2">
+                <Label htmlFor="height" className="text-gray-300">
+                  Altura (cm)
+                </Label>
+                <Input
+                  id="height"
+                  type="number"
+                  step="0.01"
+                  {...register('height', { valueAsNumber: false })}
+                  disabled={isSubmitting}
+                  className="bg-gray-800 border-gray-700 text-white"
+                  placeholder="175.5"
+                />
+                {errors.height && (
+                  <p className="text-xs text-[#ff3b5c]">{errors.height.message}</p>
+                )}
+              </div>
+
+              {calculatedBMI !== null && (
+                <div className="space-y-2">
+                  <Label htmlFor="imc" className="text-gray-300">
+                    IMC (Indice de Masa Corporal)
+                  </Label>
+                  <Input
+                    id="imc"
+                    type="number"
+                    step="0.01"
+                    {...register('imc', { valueAsNumber: false })}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    placeholder="22.5"
+                    value={calculatedBMI}
+                  />
+                  {errors.imc && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.imc.message}</p>
+                  )}
+                  <p className={getBMICategory(calculatedBMI).color}>
+                    {getBMICategory(calculatedBMI).label}
+                  </p>
+                </div>
               )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  reset();
+                  onOpenChange(false);
+                }}
+                disabled={isSubmitting}
+                className="border-gray-700 hover:bg-gray-800"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>{isEdit ? 'Actualizar' : 'Crear'} Usuario</>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {activationData && (
+        <ActivationModal
+          open={true}
+          onOpenChange={() => setActivationData(null)}
+          token={activationData.token}
+          userName={activationData.userName}
+          userEmail={activationData.userEmail}
+        />
+      )}
+    </>
   );
 }

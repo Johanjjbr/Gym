@@ -23,6 +23,8 @@ export function usePayments() {
     queryFn: payments.getAll,
     staleTime: 1000 * 60 * 2, // 2 minutos (pagos cambian frecuentemente)
     refetchOnWindowFocus: true,
+    enabled: !!localStorage.getItem('access_token'), // Solo ejecutar si hay token
+    retry: false, // No reintentar si falla
   });
 }
 

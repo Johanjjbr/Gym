@@ -50,7 +50,6 @@ const runSeed = async () => {
       setDetails(data);
 
     } catch (error: any) {
-      console.error('Error ejecutando seed:', error);
       setStatus('error');
       setMessage(error.message || 'Error al inicializar la base de datos');
     }
