@@ -1026,10 +1026,15 @@ app.get("/make-server-104060a1/routine-assignments", async (c) => {
   try {
     const { user_id } = c.req.query();
     
+    // Usar workout_sessions en lugar de user_routine_assignments
     let query = supabase
-      .from('user_routine_assignments')
+      .from('workout_sessions')
       .select(`
-        *,
+        id,
+        user_id,
+        routine_id,
+        date,
+        created_at,
         users (name, member_number),
         routine_templates (
           id,
@@ -1039,9 +1044,9 @@ app.get("/make-server-104060a1/routine-assignments", async (c) => {
           category,
           duration_weeks,
           days_per_week
-        ),
-        staff (name)
+        )
       `)
+      .not('routine_id', 'is', null)
       .order('created_at', { ascending: false });
     
     if (user_id) {
@@ -1063,17 +1068,20 @@ app.post("/make-server-104060a1/routine-assignments", async (c) => {
   try {
     const assignmentData = await c.req.json();
     
-    // Desactivar asignaciones anteriores del mismo usuario
-    await supabase
-      .from('user_routine_assignments')
-      .update({ is_active: false })
-      .eq('user_id', assignmentData.user_id)
-      .eq('is_active', true);
+    // Crear una sesión de entrenamiento en lugar de asignación
+    const now = new Date();
+    const start_time = now.toTimeString().slice(0, 8); // "HH:MM:SS"
     
-    // Crear nueva asignación
     const { data, error } = await supabase
-      .from('user_routine_assignments')
-      .insert(assignmentData)
+      .from('workout_sessions')
+      .insert([{
+        user_id: assignmentData.user_id,
+        routine_id: assignmentData.routine_id,
+        date: assignmentData.start_date || new Date().toISOString().split('T')[0],
+        start_time,
+        is_completed: false,
+        notes: assignmentData.notes,
+      }])
       .select()
       .single();
     

@@ -5,10 +5,10 @@ interface RoutineAssignment {
   id: string;
   user_id: string;
   routine_id: string;
-  assigned_date: string;
   start_date: string;
-  end_date: string | null;
+  assigned_by: string | null;
   is_active: boolean;
+  created_at: string;
   routine_templates: {
     id: string;
     name: string;
@@ -39,6 +39,7 @@ interface WorkoutSession {
   date: string;
   routine_id: string;
   is_completed: boolean;
+  start_time: string;
 }
 
 interface WorkoutExerciseLog {
@@ -65,10 +66,19 @@ export function useRoutineAssignment(userId: string) {
     queryFn: async () => {
       if (!userId) return null;
 
+      console.log('🔍 Buscando asignación para userId:', userId);
+
+      // Buscar la rutina activa del usuario en user_routine_assignments
       const { data, error } = await supabase
         .from('user_routine_assignments')
         .select(`
-          *,
+          id,
+          user_id,
+          routine_id,
+          start_date,
+          assigned_by,
+          is_active,
+          created_at,
           routine_templates (
             id,
             name,
@@ -82,11 +92,16 @@ export function useRoutineAssignment(userId: string) {
         `)
         .eq('user_id', userId)
         .eq('is_active', true)
-        .order('assigned_date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error al obtener asignación:', error.message, error.code, error.details);
+        throw error;
+      }
+      
+      console.log('✅ Asignación encontrada:', data ? 'SÍ' : 'NO', data);
       return data;
     },
     enabled: !!userId,
@@ -99,11 +114,14 @@ export function useRoutineExercises(routineId: string, dayOfWeek: number) {
     queryFn: async () => {
       if (!routineId) return [];
 
+      // Convert JS day (0=Sunday,1=Monday,...,6=Saturday) to DB day (1=Monday,...,7=Sunday)
+      const dbDayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
+
       const { data, error } = await supabase
         .from('routine_exercises')
         .select('*')
         .eq('routine_id', routineId)
-        .eq('day_of_week', dayOfWeek)
+        .eq('day_of_week', dbDayOfWeek)
         .order('order_index', { ascending: true });
 
       if (error) throw error;
@@ -168,10 +186,15 @@ export function useCreateSession() {
       routine_id: string;
       date: string;
     }) => {
+      // start_time is required NOT NULL in the schema
+      const now = new Date();
+      const start_time = now.toTimeString().slice(0, 8); // "HH:MM:SS"
+
       const { data, error } = await supabase
         .from('workout_sessions')
         .insert([{
           ...session,
+          start_time,
           is_completed: false,
         }])
         .select()
@@ -288,6 +311,10 @@ export function useSaveExerciseLog() {
       queryClient.invalidateQueries({ 
         queryKey: ['exerciseLogs', variables.session_id] 
       });
+      // También invalidar el historial para que se actualice
+      queryClient.invalidateQueries({ 
+        queryKey: ['workoutHistory'] 
+      });
     },
   });
 }
@@ -340,5 +367,53 @@ export function useToggleExerciseComplete() {
         queryKey: ['exerciseLogs', variables.session_id] 
       });
     },
+  });
+}
+
+// Hook para obtener historial de sesiones con ejercicios
+export function useWorkoutHistory(userId: string, limit: number = 10) {
+  return useQuery({
+    queryKey: ['workoutHistory', userId, limit],
+    queryFn: async () => {
+      if (!userId) return [];
+
+      // Obtener las últimas sesiones
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('workout_sessions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .limit(limit);
+
+      if (sessionsError) throw sessionsError;
+      if (!sessions || sessions.length === 0) return [];
+
+      // Para cada sesión, obtener sus ejercicios con sets
+      const sessionsWithExercises = await Promise.all(
+        sessions.map(async (session) => {
+          const { data: exerciseLogs, error: logsError } = await supabase
+            .from('workout_exercise_logs')
+            .select(`
+              *,
+              set_logs (*)
+            `)
+            .eq('session_id', session.id)
+            .order('created_at', { ascending: true });
+
+          if (logsError) {
+            console.error('Error loading exercise logs:', logsError);
+            return { ...session, exercises: [] };
+          }
+
+          return {
+            ...session,
+            exercises: exerciseLogs || [],
+          };
+        })
+      );
+
+      return sessionsWithExercises;
+    },
+    enabled: !!userId,
   });
 }

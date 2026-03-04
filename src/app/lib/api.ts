@@ -1110,81 +1110,52 @@ export const routineAssignments = {
       console.log('🔍 Obteniendo asignaciones para userId:', userId);
       
       try {
-        // Primero, obtener las asignaciones básicas
-        let assignmentsQuery = supabase
+        // Obtener asignaciones de la tabla user_routine_assignments
+        let query = supabase
           .from('user_routine_assignments')
-          .select('*')
+          .select(`
+            id,
+            user_id,
+            routine_id,
+            assigned_by,
+            start_date,
+            end_date,
+            is_active,
+            created_at,
+            routine_templates (
+              id,
+              name,
+              description,
+              level,
+              category,
+              days_per_week,
+              duration_weeks
+            ),
+            user:users (
+              id,
+              name,
+              email
+            ),
+            assigner:staff!user_routine_assignments_assigned_by_fkey (
+              id,
+              name
+            )
+          `)
           .order('created_at', { ascending: false });
         
         if (userId) {
-          assignmentsQuery = assignmentsQuery.eq('user_id', userId);
+          query = query.eq('user_id', userId);
         }
         
-        const { data: assignments, error: assignmentsError } = await assignmentsQuery;
+        const { data, error: supabaseError } = await query;
         
-        if (assignmentsError) {
-          console.error('❌ Error al obtener asignaciones básicas:', assignmentsError);
-          throw new Error(assignmentsError.message);
+        if (supabaseError) {
+          console.error('❌ Error al obtener asignaciones:', supabaseError);
+          throw new Error(supabaseError.message);
         }
         
-        console.log('✅ Asignaciones básicas obtenidas:', assignments?.length || 0);
-        
-        // Si no hay asignaciones, retornar array vacío
-        if (!assignments || assignments.length === 0) {
-          return [];
-        }
-        
-        // Obtener datos relacionados para cada asignación
-        const enrichedAssignments = await Promise.all(
-          assignments.map(async (assignment) => {
-            // Obtener rutina con ejercicios
-            const { data: routine } = await supabase
-              .from('routine_templates')
-              .select(`
-                id,
-                name,
-                description,
-                level,
-                category,
-                routine_exercises (
-                  id,
-                  exercise_name,
-                  day_of_week,
-                  order_index,
-                  sets,
-                  reps,
-                  rest_seconds,
-                  notes
-                )
-              `)
-              .eq('id', assignment.routine_id)
-              .single();
-            
-            // Obtener usuario
-            const { data: user } = await supabase
-              .from('users')
-              .select('id, name, email')
-              .eq('id', assignment.user_id)
-              .single();
-            
-            // Obtener staff que asignó
-            const { data: staff } = await supabase
-              .from('staff')
-              .select('id, name')
-              .eq('id', assignment.assigned_by)
-              .maybeSingle();
-            
-            return {
-              ...assignment,
-              routine_templates: routine,
-              users: user,
-              staff: staff,
-            };
-          })
-        );
-        
-        console.log('✅ Asignaciones enriquecidas:', enrichedAssignments.length);
-        return enrichedAssignments;
+        console.log('✅ Asignaciones obtenidas:', data?.length || 0);
+        return data || [];
         
       } catch (innerError: any) {
         console.error('❌ Error procesando asignaciones:', innerError);
@@ -1205,14 +1176,21 @@ export const routineAssignments = {
       const { data, error: supabaseError } = await supabase
         .from('user_routine_assignments')
         .select(`
-          *,
+          id,
+          user_id,
+          routine_id,
+          assigned_by,
+          start_date,
+          end_date,
+          is_active,
+          created_at,
           user:users (
             id,
             name,
             email,
             phone
           ),
-          assigner:staff!assigned_by (
+          assigner:staff!user_routine_assignments_assigned_by_fkey (
             id,
             name
           )
@@ -1244,10 +1222,15 @@ export const routineAssignments = {
     } catch (error: any) {
       console.log('⚠️ API no disponible, usando Supabase directamente');
       
+      // Crear asignación en user_routine_assignments
       const { data, error: supabaseError } = await supabase
         .from('user_routine_assignments')
         .insert([{
-          ...assignmentData,
+          user_id: assignmentData.user_id,
+          routine_id: assignmentData.routine_id,
+          assigned_by: assignmentData.assigned_by,
+          start_date: assignmentData.start_date,
+          end_date: assignmentData.end_date || null,
           is_active: true,
         }])
         .select()
@@ -1273,7 +1256,7 @@ export const routineAssignments = {
         .from('user_routine_assignments')
         .update({ 
           is_active: false,
-          updated_at: new Date().toISOString(),
+          end_date: new Date().toISOString().split('T')[0],
         })
         .eq('id', id)
         .select()

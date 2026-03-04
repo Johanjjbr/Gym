@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Dumbbell, TrendingUp, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
+import { Calendar, Dumbbell, TrendingUp, ChevronDown, ChevronUp, CheckCircle, History, Bug } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { 
   useRoutineAssignment, 
   useRoutineExercises, 
@@ -13,16 +15,18 @@ import {
   useCreateSession,
   useSaveExerciseLog,
   useToggleExerciseComplete,
+  useWorkoutHistory,
 } from '../hooks/useRoutineAssignments';
 import { toast } from 'sonner';
 
 export function MyTraining() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const today = new Date().toISOString().split('T')[0];
   const dayOfWeek = new Date().getDay(); // 0 = Domingo, 1 = Lunes, etc.
 
   // Queries
-  const { data: assignment, isLoading: loadingAssignment } = useRoutineAssignment(user?.id || '');
+  const { data: assignment, isLoading: loadingAssignment, error: assignmentError } = useRoutineAssignment(user?.id || '');
   const { data: exercises = [], isLoading: loadingExercises } = useRoutineExercises(
     assignment?.routine_templates?.id || '',
     dayOfWeek
@@ -33,6 +37,7 @@ export function MyTraining() {
     today
   );
   const { data: exerciseLogs = [] } = useExerciseLogs(session?.id || '');
+  const { data: workoutHistory = [] } = useWorkoutHistory(user?.id || '');
   
   // Mutations
   const createSession = useCreateSession();
@@ -42,7 +47,8 @@ export function MyTraining() {
   // Estado local
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
   const [exerciseData, setExerciseData] = useState<Record<string, { weight: string; reps: string; notes: string }>>({});
-
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
+  
   // Crear sesión automáticamente si no existe
   useEffect(() => {
     if (user?.id && assignment?.routine_templates?.id && exercises.length > 0 && !session && !createSession.isPending) {
@@ -119,7 +125,7 @@ export function MyTraining() {
       setSelectedExercise(null);
     } catch (error: any) {
       console.error('Error guardando ejercicio:', error);
-      toast.error('Error al registrar el ejercicio');
+      toast.error(`Error al registrar el ejercicio: ${error.message}`);
     }
   };
 
@@ -143,7 +149,7 @@ export function MyTraining() {
       toast.success(newStatus ? 'Ejercicio completado' : 'Ejercicio desmarcado');
     } catch (error: any) {
       console.error('Error:', error);
-      toast.error('Error al actualizar el ejercicio');
+      toast.error(`Error al actualizar el ejercicio: ${error.message}`);
     }
   };
 
@@ -160,6 +166,37 @@ export function MyTraining() {
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
           <p className="mt-4 text-muted-foreground">Cargando entrenamiento...</p>
         </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (assignmentError) {
+    return (
+      <div className="space-y-4 sm:space-y-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl mb-2">Mi Entrenamiento</h1>
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Dumbbell className="w-16 h-16 mx-auto mb-4 text-destructive opacity-50" />
+            <h3 className="text-xl font-semibold mb-2">Error al cargar la rutina</h3>
+            <p className="text-muted-foreground mb-4">
+              {(assignmentError as any)?.message || 'No se pudo conectar con la base de datos'}
+            </p>
+            <p className="text-xs text-muted-foreground font-mono bg-muted p-2 rounded">
+              Usuario ID: {user?.id}
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => navigate('/diagnostico-rutinas')}
+            >
+              <Bug className="w-4 h-4 mr-2" />
+              Ver Diagnóstico
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -457,6 +494,160 @@ export function MyTraining() {
               );
             })}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Workout History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl flex items-center gap-2">
+            <History className="w-5 h-5" />
+            Historial de Entrenamientos
+          </CardTitle>
+          <p className="text-xs sm:text-sm text-muted-foreground">
+            Revisa tus sesiones anteriores y progreso
+          </p>
+        </CardHeader>
+        <CardContent>
+          {workoutHistory.length === 0 ? (
+            <div className="text-center py-8">
+              <Calendar className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+              <p className="text-muted-foreground">
+                Aún no tienes historial de entrenamientos
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Completa tu primer entrenamiento para verlo aquí
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 sm:space-y-3">
+              {workoutHistory.map((sessionData: any) => {
+                const date = new Date(sessionData.date);
+                const dayName = getDayName(date.getDay());
+                const formattedDate = date.toLocaleDateString('es-ES', { 
+                  day: 'numeric', 
+                  month: 'short' 
+                });
+                const isExpanded = expandedSessions.has(sessionData.id);
+                const exercises = sessionData.exercises || [];
+                const completedExercises = exercises.filter((ex: any) => ex.is_completed);
+
+                return (
+                  <div
+                    key={sessionData.id}
+                    className="border rounded-lg transition-all"
+                  >
+                    {/* Session Header */}
+                    <button
+                      onClick={() => {
+                        const newExpanded = new Set(expandedSessions);
+                        if (isExpanded) {
+                          newExpanded.delete(sessionData.id);
+                        } else {
+                          newExpanded.add(sessionData.id);
+                        }
+                        setExpandedSessions(newExpanded);
+                      }}
+                      className="w-full p-3 sm:p-4 flex items-center justify-between hover:bg-accent/50 transition-colors rounded-lg"
+                    >
+                      <div className="flex items-center gap-3 flex-1 text-left">
+                        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                          <Calendar className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-sm sm:text-base">
+                            {dayName}, {formattedDate}
+                          </h4>
+                          <p className="text-xs sm:text-sm text-muted-foreground">
+                            {completedExercises.length} de {exercises.length} ejercicios completados
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {completedExercises.length > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            {completedExercises.length}
+                          </Badge>
+                        )}
+                        {isExpanded ? (
+                          <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Session Details (Expanded) */}
+                    {isExpanded && exercises.length > 0 && (
+                      <div className="px-3 sm:px-4 pb-3 sm:pb-4 space-y-2 border-t">
+                        {exercises.map((exercise: any) => {
+                          const sets = exercise.set_logs || [];
+                          const lastSet = sets.length > 0 ? sets[0] : null;
+
+                          return (
+                            <div
+                              key={exercise.id}
+                              className={`p-3 rounded-lg border ${
+                                exercise.is_completed 
+                                  ? 'bg-primary/5 border-primary/20' 
+                                  : 'bg-muted/30 border-muted'
+                              }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className="flex-shrink-0">
+                                  {exercise.is_completed ? (
+                                    <CheckCircle className="w-5 h-5 text-primary" />
+                                  ) : (
+                                    <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
+                                  )}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <h5 className={`font-medium text-sm ${
+                                    exercise.is_completed 
+                                      ? 'text-foreground' 
+                                      : 'text-muted-foreground'
+                                  }`}>
+                                    {exercise.exercise_name}
+                                  </h5>
+
+                                  {lastSet && (
+                                    <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
+                                      <span className="font-medium text-foreground">
+                                        {lastSet.weight} kg
+                                      </span>
+                                      <span>×</span>
+                                      <span className="font-medium text-foreground">
+                                        {lastSet.reps} reps
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {exercise.notes && (
+                                    <div className="mt-2">
+                                      <p className="text-xs text-muted-foreground mb-1">
+                                        Comentarios:
+                                      </p>
+                                      <p className="text-xs bg-muted/50 p-2 rounded italic">
+                                        {exercise.notes}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

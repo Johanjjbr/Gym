@@ -122,8 +122,9 @@ export function UserDetail() {
   }
 
   // Datos reales obtenidos de los hooks
-  const userProgress = physicalProgress || [];
+  const userProgress = userPhysicalProgress || [];
   const userInvoices: any[] = []; // Facturas se manejan desde payments
+  const payments = userPayments || [];
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -402,7 +403,7 @@ export function UserDetail() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">Teléfono</p>
+                    <p className="text-sm text-muted-foreground mb-1">Tel��fono</p>
                     <p>{user.phone || 'No definido'}</p>
                   </div>
                   <div>

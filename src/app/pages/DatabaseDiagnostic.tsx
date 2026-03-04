@@ -17,7 +17,6 @@ export function DatabaseDiagnostic() {
     'physical_progress',
     'routine_templates',
     'routine_exercises',
-    'user_routine_assignments',
     'workout_sessions',
     'workout_exercise_logs',
     'set_logs',

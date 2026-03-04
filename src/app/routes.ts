@@ -20,6 +20,8 @@ import { Login } from './pages/Login';
 import { Activate } from './pages/Activate';
 import { TestSupabase } from './pages/TestSupabase';
 import { DatabaseDiagnostic } from './pages/DatabaseDiagnostic';
+import { RoutineDiagnostic } from './pages/RoutineDiagnostic';
+import { MigrateRoutines } from './pages/MigrateRoutines';
 
 export const router = createBrowserRouter([
   // Ruta pública - Login
@@ -41,6 +43,11 @@ export const router = createBrowserRouter([
   {
     path: '/diagnostico-db',
     Component: DatabaseDiagnostic,
+  },
+  // Ruta de migración de rutinas (accesible directamente)
+  {
+    path: '/migrar-rutinas',
+    Component: MigrateRoutines,
   },
   // Rutas para usuarios regulares
   {
@@ -64,6 +71,9 @@ export const router = createBrowserRouter([
       { path: 'progreso', Component: MyProgress },
       { path: 'asistencia', Component: MyAttendance },
       { path: 'pagos', Component: MyPayments },
+     { path: 'diagnostico-rutina', Component: RoutineDiagnostic },
+     { path: 'migrar-rutinas', Component: MigrateRoutines },
+
     ],
   },
   // Rutas protegidas - Staff (Con Layout administrativo)
@@ -82,6 +92,7 @@ export const router = createBrowserRouter([
       { path: 'rutinas/:id/editar', Component: RoutineBuilder },
       { path: 'mi-entrenamiento', Component: MyWorkout },
       { path: 'reportes', Component: Reports },
+   //   { path: 'migrar-rutinas', Component: MigrateRoutines },
     ],
   },
 ]);
