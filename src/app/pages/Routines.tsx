@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Plus, Eye, Trash2, Dumbbell, Calendar, Loader2, Edit, Users } from 'lucide-react';
+import { Search, Plus, Eye, Trash2, Dumbbell, Calendar, Loader2, Edit, Users, Power } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
-import { useRoutines, useDeleteRoutine, useRoutine, useRoutineAssignedUsers } from '../hooks/useRoutines';
+import { useRoutines, useDeleteRoutine, useRoutine, useRoutineAssignedUsers, useToggleRoutineActive } from '../hooks/useRoutines';
 import { useAuth } from '../contexts/AuthContext';
 
 type RoutineLevel = 'Principiante' | 'Intermedio' | 'Avanzado';
@@ -65,6 +65,7 @@ export function Routines() {
   const { data: viewingRoutine, isLoading: isLoadingRoutine } = useRoutine(viewingRoutineId || '');
   const { data: assignedUsers = [], isLoading: isLoadingAssignedUsers } = useRoutineAssignedUsers(viewingAssignedUsersRoutineId || '');
   const deleteRoutineMutation = useDeleteRoutine();
+  const toggleRoutineActiveMutation = useToggleRoutineActive();
 
   const filteredRoutines = routines.filter((routine: RoutineData) =>
     routine.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -262,6 +263,22 @@ export function Routines() {
                   >
                     <Eye className="w-4 h-4 mr-2" />
                     Ver Detalle
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title={routine.is_active ? 'Desactivar rutina' : 'Activar rutina'}
+                    className={routine.is_active 
+                      ? 'hover:bg-orange-500/10 hover:text-orange-500' 
+                      : 'hover:bg-[#10f94e]/10 hover:text-[#10f94e]'
+                    }
+                    onClick={() => toggleRoutineActiveMutation.mutate({ 
+                      id: routine.id, 
+                      isActive: !routine.is_active 
+                    })}
+                    disabled={toggleRoutineActiveMutation.isPending}
+                  >
+                    <Power className="w-4 h-4" />
                   </Button>
                   <Button
                     variant="ghost"

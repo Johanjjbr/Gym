@@ -952,7 +952,7 @@ app.put("/routines/:id", async (c) => {
       
       // Borramos los ejercicios anteriores vinculados a esta rutina
       const { error: deleteError } = await supabase
-        .from('exercise_templates')
+        .from('routine_exercises')
         .delete()
         .eq('routine_id', id);
 
@@ -966,7 +966,7 @@ app.put("/routines/:id", async (c) => {
         }));
 
         const { error: insertError } = await supabase
-          .from('exercise_templates')
+          .from('routine_exercises')
           .insert(exercisesToInsert);
 
         if (insertError) throw insertError;
@@ -1022,31 +1022,141 @@ app.delete("/make-server-104060a1/routines/:id", async (c) => {
 // CRUD: USER ROUTINE ASSIGNMENTS (Asignaciones)
 // =============================================
 
+// =============================================
+// CRUD: EXERCISES (Biblioteca de Ejercicios)
+// =============================================
+
+// Obtener todos los ejercicios
+app.get("/make-server-104060a1/exercises", async (c) => {
+  try {
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('*')
+      .order('name', { ascending: true });
+    
+    if (error) throw error;
+    
+    return c.json(data);
+  } catch (error) {
+    console.error('Error obteniendo ejercicios:', error);
+    return c.json({ error: 'Error obteniendo ejercicios' }, 500);
+  }
+});
+
+// Obtener un ejercicio por ID
+app.get("/make-server-104060a1/exercises/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) throw error;
+    
+    return c.json(data);
+  } catch (error) {
+    console.error('Error obteniendo ejercicio:', error);
+    return c.json({ error: 'Error obteniendo ejercicio' }, 500);
+  }
+});
+
+// Crear nuevo ejercicio
+app.post("/make-server-104060a1/exercises", async (c) => {
+  try {
+    const exerciseData = await c.req.json();
+    
+    console.log('📝 Creando ejercicio:', exerciseData.name);
+    
+    const { data, error } = await supabase
+      .from('exercises')
+      .insert(exerciseData)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('❌ Error creando ejercicio:', error);
+      throw error;
+    }
+    
+    console.log('✅ Ejercicio creado:', data.id);
+    
+    return c.json(data);
+  } catch (error) {
+    console.error('Error creando ejercicio:', error);
+    return c.json({ 
+      error: 'Error creando ejercicio',
+      details: error instanceof Error ? error.message : String(error)
+    }, 500);
+  }
+});
+
+// Actualizar ejercicio
+app.put("/make-server-104060a1/exercises/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const exerciseData = await c.req.json();
+    
+    const { data, error } = await supabase
+      .from('exercises')
+      .update(exerciseData)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    return c.json(data);
+  } catch (error) {
+    console.error('Error actualizando ejercicio:', error);
+    return c.json({ error: 'Error actualizando ejercicio' }, 500);
+  }
+});
+
+// Eliminar ejercicio
+app.delete("/make-server-104060a1/exercises/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    
+    console.log('🗑️ Eliminando ejercicio:', id);
+    
+    const { error } = await supabase
+      .from('exercises')
+      .delete()
+      .eq('id', id);
+    
+    if (error) {
+      console.error('❌ Error eliminando ejercicio:', error);
+      throw error;
+    }
+    
+    console.log('✅ Ejercicio eliminado exitosamente');
+    
+    return c.json({ message: 'Ejercicio eliminado' });
+  } catch (error) {
+    console.error('Error eliminando ejercicio:', error);
+    return c.json({ error: 'Error eliminando ejercicio. Puede estar en uso en rutinas activas.' }, 500);
+  }
+});
+
+// =============================================
+// CRUD: USER ROUTINE ASSIGNMENTS (Asignaciones)
+// =============================================
+
 app.get("/make-server-104060a1/routine-assignments", async (c) => {
   try {
     const { user_id } = c.req.query();
     
-    // Usar workout_sessions en lugar de user_routine_assignments
     let query = supabase
-      .from('workout_sessions')
+      .from('user_routine_assignments')
       .select(`
-        id,
-        user_id,
-        routine_id,
-        date,
-        created_at,
+        *,
         users (name, member_number),
-        routine_templates (
-          id,
-          name,
-          description,
-          level,
-          category,
-          duration_weeks,
-          days_per_week
-        )
+        routine_templates (name, description, routine_exercises (*)),
+        staff (name)
       `)
-      .not('routine_id', 'is', null)
       .order('created_at', { ascending: false });
     
     if (user_id) {
@@ -1068,20 +1178,17 @@ app.post("/make-server-104060a1/routine-assignments", async (c) => {
   try {
     const assignmentData = await c.req.json();
     
-    // Crear una sesión de entrenamiento en lugar de asignación
-    const now = new Date();
-    const start_time = now.toTimeString().slice(0, 8); // "HH:MM:SS"
+    // Desactivar asignaciones anteriores del mismo usuario
+    await supabase
+      .from('user_routine_assignments')
+      .update({ is_active: false })
+      .eq('user_id', assignmentData.user_id)
+      .eq('is_active', true);
     
+    // Crear nueva asignación
     const { data, error } = await supabase
-      .from('workout_sessions')
-      .insert([{
-        user_id: assignmentData.user_id,
-        routine_id: assignmentData.routine_id,
-        date: assignmentData.start_date || new Date().toISOString().split('T')[0],
-        start_time,
-        is_completed: false,
-        notes: assignmentData.notes,
-      }])
+      .from('user_routine_assignments')
+      .insert(assignmentData)
       .select()
       .single();
     

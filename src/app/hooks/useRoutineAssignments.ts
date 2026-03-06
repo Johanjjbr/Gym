@@ -25,6 +25,7 @@ interface RoutineExercise {
   id: string;
   routine_id: string;
   exercise_name: string;
+  muscle_group: string; // Agregado: grupo muscular
   day_of_week: number;
   sets: number;
   reps: string;
@@ -64,9 +65,12 @@ export function useRoutineAssignment(userId: string) {
   return useQuery<RoutineAssignment | null>({
     queryKey: ['routineAssignment', userId],
     queryFn: async () => {
-      if (!userId) return null;
+      if (!userId) {
+        console.log('⚠️ [useRoutineAssignment] No userId provided');
+        return null;
+      }
 
-      console.log('🔍 Buscando asignación para userId:', userId);
+      console.log('🔍 [useRoutineAssignment] Buscando asignación para userId:', userId);
 
       // Buscar la rutina activa del usuario en user_routine_assignments
       const { data, error } = await supabase
@@ -97,11 +101,11 @@ export function useRoutineAssignment(userId: string) {
         .maybeSingle();
 
       if (error) {
-        console.error('❌ Error al obtener asignación:', error.message, error.code, error.details);
+        console.error('❌ [useRoutineAssignment] Error:', error.message, error.code);
         throw error;
       }
       
-      console.log('✅ Asignación encontrada:', data ? 'SÍ' : 'NO', data);
+      console.log('✅ [useRoutineAssignment] Resultado:', data ? `Encontrada: ${data.routine_templates?.name}` : 'No encontrada');
       return data;
     },
     enabled: !!userId,
@@ -136,7 +140,12 @@ export function useWorkoutSession(userId: string, routineId: string, date: strin
   return useQuery<WorkoutSession | null>({
     queryKey: ['workoutSession', userId, date],
     queryFn: async () => {
-      if (!userId || !routineId || !date) return null;
+      if (!userId || !routineId || !date) {
+        console.log('⚠️ [useWorkoutSession] Faltan parámetros:', { userId, routineId, date });
+        return null;
+      }
+
+      console.log('🔍 [useWorkoutSession] Buscando sesión:', { userId, date });
 
       // Buscar sesión existente
       const { data, error } = await supabase
@@ -146,8 +155,12 @@ export function useWorkoutSession(userId: string, routineId: string, date: strin
         .eq('date', date)
         .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error && error.code !== 'PGRST116') {
+        console.error('❌ [useWorkoutSession] Error:', error);
+        throw error;
+      }
       
+      console.log('✅ [useWorkoutSession] Resultado:', data ? `Sesión ${data.id}` : 'No encontrada');
       return data;
     },
     enabled: !!userId && !!routineId && !!date,
@@ -186,6 +199,8 @@ export function useCreateSession() {
       routine_id: string;
       date: string;
     }) => {
+      console.log('🏗️ [useCreateSession] Creando sesión:', session);
+      
       // start_time is required NOT NULL in the schema
       const now = new Date();
       const start_time = now.toTimeString().slice(0, 8); // "HH:MM:SS"
@@ -200,7 +215,12 @@ export function useCreateSession() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ [useCreateSession] Error:', error);
+        throw error;
+      }
+      
+      console.log('✅ [useCreateSession] Sesión creada:', data);
       return data;
     },
     onSuccess: (_, variables) => {
@@ -220,6 +240,7 @@ export function useSaveExerciseLog() {
       session_id: string;
       exercise_id: string;
       exercise_name: string;
+      muscle_group: string;
       weight: number;
       reps: number;
       notes: string | null;
@@ -258,6 +279,7 @@ export function useSaveExerciseLog() {
             session_id: log.session_id,
             exercise_id: log.exercise_id,
             exercise_name: log.exercise_name,
+            muscle_group: log.muscle_group,
             is_completed: true,
             notes: log.notes,
           }])
@@ -328,6 +350,7 @@ export function useToggleExerciseComplete() {
       session_id: string;
       exercise_id: string;
       exercise_name: string;
+      muscle_group: string;
       is_completed: boolean;
     }) => {
       // Buscar el log existente
@@ -356,6 +379,7 @@ export function useToggleExerciseComplete() {
             session_id: params.session_id,
             exercise_id: params.exercise_id,
             exercise_name: params.exercise_name,
+            muscle_group: params.muscle_group,
             is_completed: params.is_completed,
           }]);
 

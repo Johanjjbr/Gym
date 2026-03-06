@@ -22,6 +22,7 @@ import { TestSupabase } from './pages/TestSupabase';
 import { DatabaseDiagnostic } from './pages/DatabaseDiagnostic';
 import { RoutineDiagnostic } from './pages/RoutineDiagnostic';
 import { MigrateRoutines } from './pages/MigrateRoutines';
+import { RoutineAssignmentDebug } from './pages/RoutineAssignmentDebug';
 
 export const router = createBrowserRouter([
   // Ruta pública - Login
@@ -71,9 +72,9 @@ export const router = createBrowserRouter([
       { path: 'progreso', Component: MyProgress },
       { path: 'asistencia', Component: MyAttendance },
       { path: 'pagos', Component: MyPayments },
-     { path: 'diagnostico-rutina', Component: RoutineDiagnostic },
-     { path: 'migrar-rutinas', Component: MigrateRoutines },
-
+      { path: 'diagnostico-rutina', Component: RoutineDiagnostic },
+      { path: 'migrar-rutinas', Component: MigrateRoutines },
+      { path: 'debug-asignaciones', Component: RoutineAssignmentDebug },
     ],
   },
   // Rutas protegidas - Staff (Con Layout administrativo)
