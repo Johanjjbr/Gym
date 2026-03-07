@@ -53,12 +53,37 @@ cd sistema-gimnasio
 # 2. Instalar dependencias
 npm install
 
-# 3. Ejecutar en modo desarrollo
+# 3. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales de Supabase
+
+# 4. Ejecutar en modo desarrollo
 npm run dev
 
-# 4. Abrir en el navegador
+# 5. Abrir en el navegador
 # http://localhost:5173
 ```
+
+### ⚙️ Configuración de Variables de Entorno
+
+#### Paso 1: Obtener credenciales de Supabase
+
+1. Ve a [Supabase Dashboard](https://supabase.com/dashboard)
+2. Selecciona tu proyecto
+3. Ve a **Settings** → **API**
+4. Copia tu **Project URL** y **anon/public key**
+
+#### Paso 2: Configurar .env
+
+El proyecto ya incluye un archivo `.env` configurado. Si necesitas cambiarlo:
+
+```bash
+# Edita el archivo .env con tus credenciales
+VITE_SUPABASE_PROJECT_ID=tu_project_id
+VITE_SUPABASE_ANON_KEY=tu_anon_key_aqui
+```
+
+> ⚠️ **IMPORTANTE:** El archivo `.env` NO se sube a GitHub por seguridad. Usa `.env.example` como plantilla.
 
 ### Configuración Rápida (3 Pasos)
 
@@ -141,7 +166,7 @@ Password: Admin123!
 │  │  /auth/login  /users  /payments  /staff  /routines   │ │
 │  └────────────────────────┬──────────────────────────────┘ │
 │                           │                                 │
-│  ┌────────────────────────▼─────────────────────────────┐  │
+│  ┌────────────────────────▼──────────��──────────────────┐  │
 │  │         PostgreSQL + Row Level Security             │  │
 │  │  12 Tablas | Políticas RLS | Triggers | Functions   │  │
 │  └──────────────────────────────────────────────────────┘  │
@@ -388,7 +413,7 @@ sistema-gimnasio/
 │
 ├── 📄 package.json                  # Dependencias del proyecto
 ├── 📄 vite.config.ts               # Configuración de Vite
-├── 📄 tsconfig.json                # Configuración de TypeScript
+├─��� 📄 tsconfig.json                # Configuración de TypeScript
 │
 └── 📚 Documentación/                # Guías y manuales
     ├── README.md                   # Este archivo
