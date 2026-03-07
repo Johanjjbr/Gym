@@ -3,9 +3,10 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+const projectId = import.meta.env.VITE_SUPABASE_URL;
+const publicAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const supabaseUrl = `https://${projectId}.supabase.co`;
+const supabaseUrl = `${projectId}`;
 const supabaseAnonKey = publicAnonKey;
 
 // Cliente de Supabase con configuración de auth
