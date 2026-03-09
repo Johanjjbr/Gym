@@ -525,7 +525,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
         <ActivationModal
           open={true}
           onOpenChange={() => setActivationData(null)}
-          token={activationData.token}
+          activationToken={activationData.token}  // ✅ corregido
           userName={activationData.userName}
           userEmail={activationData.userEmail}
         />
