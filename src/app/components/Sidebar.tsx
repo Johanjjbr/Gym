@@ -35,6 +35,12 @@ export function Sidebar() {
     navigate('/login');
   };
 
+  // Restringir items del menú para el rol "Entrenador"
+  const restrictedPathsForTrainer = ['/', '/pagos', '/personal', '/reportes'];
+  const filteredMenuItems = user?.role === 'Entrenador'
+    ? menuItems.filter(item => !restrictedPathsForTrainer.includes(item.path))
+    : menuItems;
+
   // Función para obtener las iniciales del nombre
   const getInitials = (name: string) => {
     return name
@@ -63,7 +69,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-4">
         <ul className="space-y-1">
-          {menuItems.map((item) => {
+          {filteredMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
             

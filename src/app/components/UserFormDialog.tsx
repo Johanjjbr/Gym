@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { userSchema, type UserFormData } from '../lib/validations';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
@@ -55,6 +55,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     handleSubmit,
     reset,
     setValue,
+    control,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<UserFormData>({
@@ -239,17 +240,22 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   <Label htmlFor="gender" className="text-gray-300">
                     Género
                   </Label>
-                  <select
-                    id="gender"
-                    {...register('gender')}
-                    disabled={isSubmitting}
-                    className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-                  >
-                    <option value="">Seleccionar...</option>
-                    <option value="Masculino">Masculino</option>
-                    <option value="Femenino">Femenino</option>
-                    <option value="Otro">Otro</option>
-                  </select>
+                  <Controller
+                    control={control}
+                    name="gender"
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                          <SelectValue placeholder="Seleccionar..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Masculino">Masculino</SelectItem>
+                          <SelectItem value="Femenino">Femenino</SelectItem>
+                          <SelectItem value="Otro">Otro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                   {errors.gender && (
                     <p className="text-xs text-[#ff3b5c]">{errors.gender.message}</p>
                   )}

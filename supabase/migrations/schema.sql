@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   phone TEXT NOT NULL,
+  gender TEXT CHECK (gender IN ('Masculino', 'Femenino', 'Otro')),
   status TEXT NOT NULL DEFAULT 'Activo' CHECK (status IN ('Activo', 'Inactivo', 'Moroso')),
   plan TEXT NOT NULL,
   start_date TIMESTAMP NOT NULL DEFAULT NOW(),
