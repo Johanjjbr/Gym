@@ -43,11 +43,11 @@ app.use(
   }),
 );
 
-app.get("/make-server-104060a1/health", (c) => {
+app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-app.post("/make-server-104060a1/auth/signup", async (c) => {
+app.post("/auth/signup", async (c) => {
   try {
     const { email, password, name, role, phone, shift } = await c.req.json();
     const authToken = c.req.header('Authorization')?.split(' ')[1];
@@ -77,7 +77,7 @@ app.post("/make-server-104060a1/auth/signup", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/auth/login", async (c) => {
+app.post("/auth/login", async (c) => {
   try {
     const bodyText = await c.req.text();
     let email, password;
@@ -102,7 +102,7 @@ app.post("/make-server-104060a1/auth/login", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/auth/session", async (c) => {
+app.get("/auth/session", async (c) => {
   try {
     const authToken = c.req.header('Authorization')?.split(' ')[1];
     if (!authToken) return c.json({ error: 'No token provided' }, 401);
@@ -116,7 +116,7 @@ app.get("/make-server-104060a1/auth/session", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/auth/logout", async (c) => {
+app.post("/auth/logout", async (c) => {
   try {
     const authToken = c.req.header('Authorization')?.split(' ')[1];
     if (!authToken) return c.json({ error: 'No token provided' }, 401);
@@ -128,7 +128,7 @@ app.post("/make-server-104060a1/auth/logout", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/users", async (c) => {
+app.get("/users", async (c) => {
   try {
     const { data, error } = await supabase
       .from('users').select('*, trainer:staff!users_assigned_trainer_fkey (id, name, role)').order('created_at', { ascending: false });
@@ -140,7 +140,7 @@ app.get("/make-server-104060a1/users", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/users/:id", async (c) => {
+app.get("/users/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const { data, error } = await supabase
@@ -152,7 +152,7 @@ app.get("/make-server-104060a1/users/:id", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/users", async (c) => {
+app.post("/users", async (c) => {
   try {
     const userData = await c.req.json();
     const memberNumber = `GYM-${Date.now().toString().slice(-6)}`;
@@ -164,7 +164,7 @@ app.post("/make-server-104060a1/users", async (c) => {
   }
 });
 
-app.put("/make-server-104060a1/users/:id", async (c) => {
+app.put("/users/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const userData = await c.req.json();
@@ -176,7 +176,7 @@ app.put("/make-server-104060a1/users/:id", async (c) => {
   }
 });
 
-app.delete("/make-server-104060a1/users/:id", async (c) => {
+app.delete("/users/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const { error } = await supabase.from('users').delete().eq('id', id);
@@ -187,7 +187,7 @@ app.delete("/make-server-104060a1/users/:id", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/users/:id/assign-trainer", async (c) => {
+app.post("/users/:id/assign-trainer", async (c) => {
   try {
     const userId = c.req.param('id');
     const { trainer_id } = await c.req.json();
@@ -206,7 +206,7 @@ app.post("/make-server-104060a1/users/:id/assign-trainer", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/trainers", async (c) => {
+app.get("/trainers", async (c) => {
   try {
     const { data, error } = await supabase
       .from('staff').select('id, name, email, phone, shift, status').eq('role', 'Entrenador').eq('status', 'Activo').order('name');
@@ -217,7 +217,7 @@ app.get("/make-server-104060a1/trainers", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/users/without-trainer", async (c) => {
+app.get("/users/without-trainer", async (c) => {
   try {
     const { data, error } = await supabase
       .from('users').select('id, name, email, phone, member_number, status, plan').is('assigned_trainer', null).eq('status', 'Activo').order('created_at', { ascending: false });
@@ -228,7 +228,7 @@ app.get("/make-server-104060a1/users/without-trainer", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/payments", async (c) => {
+app.get("/payments", async (c) => {
   try {
     const { user_id } = c.req.query();
     let query = supabase.from('payments').select('*, users (name, member_number)').order('date', { ascending: false });
@@ -241,7 +241,7 @@ app.get("/make-server-104060a1/payments", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/users/:userId/payments", async (c) => {
+app.get("/users/:userId/payments", async (c) => {
   try {
     const userId = c.req.param('userId');
     const { data, error } = await supabase
@@ -253,7 +253,7 @@ app.get("/make-server-104060a1/users/:userId/payments", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/payments", async (c) => {
+app.post("/payments", async (c) => {
   try {
     const paymentData = await c.req.json();
     const { data, error } = await supabase.from('payments').insert(paymentData).select().single();
@@ -267,7 +267,7 @@ app.post("/make-server-104060a1/payments", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/staff", async (c) => {
+app.get("/staff", async (c) => {
   try {
     const { data, error } = await supabase.from('staff').select('*').order('created_at', { ascending: false });
     if (error) throw error;
@@ -277,7 +277,7 @@ app.get("/make-server-104060a1/staff", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/staff/:id", async (c) => {
+app.get("/staff/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const { data, error } = await supabase.from('staff').select('*').eq('id', id).single();
@@ -288,7 +288,7 @@ app.get("/make-server-104060a1/staff/:id", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/staff", async (c) => {
+app.post("/staff", async (c) => {
   try {
     const { email, password, name, role, phone, shift } = await c.req.json();
     const authToken = c.req.header('Authorization')?.split(' ')[1];
@@ -310,7 +310,7 @@ app.post("/make-server-104060a1/staff", async (c) => {
   }
 });
 
-app.put("/make-server-104060a1/staff/:id", async (c) => {
+app.put("/staff/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const staffData = await c.req.json();
@@ -322,7 +322,7 @@ app.put("/make-server-104060a1/staff/:id", async (c) => {
   }
 });
 
-app.delete("/make-server-104060a1/staff/:id", async (c) => {
+app.delete("/staff/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const { data: staffMember, error: getError } = await supabase.from('staff').select('auth_user_id').eq('id', id).single();
@@ -336,7 +336,7 @@ app.delete("/make-server-104060a1/staff/:id", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/attendance", async (c) => {
+app.get("/attendance", async (c) => {
   try {
     const { date } = c.req.query();
     let query = supabase.from('attendance').select('*, users (name, member_number)').order('created_at', { ascending: false });
@@ -349,7 +349,7 @@ app.get("/make-server-104060a1/attendance", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/attendance", async (c) => {
+app.post("/attendance", async (c) => {
   try {
     const attendanceData = await c.req.json();
     const { data, error } = await supabase.from('attendance').insert(attendanceData).select().single();
@@ -360,7 +360,7 @@ app.post("/make-server-104060a1/attendance", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/routines", async (c) => {
+app.get("/routines", async (c) => {
   try {
     const { data, error } = await supabase
       .from('routine_templates').select('*, creator:staff!created_by (id, name), exercises:routine_exercises (id, exercise_name, day_of_week, order_index, sets, reps, rest_seconds, notes)').order('created_at', { ascending: false });
@@ -371,7 +371,7 @@ app.get("/make-server-104060a1/routines", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/routines/:id", async (c) => {
+app.get("/routines/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const { data, error } = await supabase
@@ -384,7 +384,7 @@ app.get("/make-server-104060a1/routines/:id", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/routines", async (c) => {
+app.post("/routines", async (c) => {
   try {
     const { exercises, ...routineData } = await c.req.json();
     const { data: routine, error: routineError } = await supabase.from('routine_templates').insert({ ...routineData, is_active: true }).select().single();
@@ -400,7 +400,7 @@ app.post("/make-server-104060a1/routines", async (c) => {
   }
 });
 
-app.put("/make-server-104060a1/routines/:id", async (c) => {
+app.put("/routines/:id", async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -421,7 +421,7 @@ app.put("/make-server-104060a1/routines/:id", async (c) => {
   }
 });
 
-app.delete("/make-server-104060a1/routines/:id", async (c) => {
+app.delete("/routines/:id", async (c) => {
   try {
     const { id } = c.req.param();
     await supabase.from('routine_exercises').delete().eq('routine_id', id);
@@ -433,7 +433,7 @@ app.delete("/make-server-104060a1/routines/:id", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/exercises", async (c) => {
+app.get("/exercises", async (c) => {
   try {
     const { data, error } = await supabase.from('exercises').select('*').order('name');
     if (error) throw error;
@@ -443,7 +443,7 @@ app.get("/make-server-104060a1/exercises", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/exercises/:id", async (c) => {
+app.get("/exercises/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const { data, error } = await supabase.from('exercises').select('*').eq('id', id).single();
@@ -454,7 +454,7 @@ app.get("/make-server-104060a1/exercises/:id", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/exercises", async (c) => {
+app.post("/exercises", async (c) => {
   try {
     const exerciseData = await c.req.json();
     const { data, error } = await supabase.from('exercises').insert(exerciseData).select().single();
@@ -465,7 +465,7 @@ app.post("/make-server-104060a1/exercises", async (c) => {
   }
 });
 
-app.put("/make-server-104060a1/exercises/:id", async (c) => {
+app.put("/exercises/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const exerciseData = await c.req.json();
@@ -477,7 +477,7 @@ app.put("/make-server-104060a1/exercises/:id", async (c) => {
   }
 });
 
-app.delete("/make-server-104060a1/exercises/:id", async (c) => {
+app.delete("/exercises/:id", async (c) => {
   try {
     const { id } = c.req.param();
     const { error } = await supabase.from('exercises').delete().eq('id', id);
@@ -488,7 +488,7 @@ app.delete("/make-server-104060a1/exercises/:id", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/routine-assignments", async (c) => {
+app.get("/routine-assignments", async (c) => {
   try {
     const { user_id } = c.req.query();
     let query = supabase
@@ -502,7 +502,7 @@ app.get("/make-server-104060a1/routine-assignments", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/routine-assignments", async (c) => {
+app.post("/routine-assignments", async (c) => {
   try {
     const assignmentData = await c.req.json();
     await supabase.from('user_routine_assignments').update({ is_active: false }).eq('user_id', assignmentData.user_id).eq('is_active', true);
@@ -514,7 +514,7 @@ app.post("/make-server-104060a1/routine-assignments", async (c) => {
   }
 });
 
-app.get("/make-server-104060a1/stats", async (c) => {
+app.get("/stats", async (c) => {
   try {
     const { count: totalUsers } = await supabase.from('users').select('*', { count: 'exact', head: true });
     const { count: activeUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
@@ -531,7 +531,7 @@ app.get("/make-server-104060a1/stats", async (c) => {
   }
 });
 
-app.post("/make-server-104060a1/seed", async (c) => {
+app.post("/seed", async (c) => {
   try {
     console.log('🌱 Iniciando seed de datos de prueba...');
     const staffUsers = [
