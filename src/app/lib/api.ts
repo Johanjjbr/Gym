@@ -8,7 +8,7 @@ const projectId = import.meta.env.VITE_SUPABASE_URL;
 const publicAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 import { supabase } from './supabase';
 
-const API_BASE_URL = `${projectId}/functions/v1/make-server-104060a1`;
+const API_BASE_URL = `${projectId}/functions/v1/server`;
 
 // =============================================
 // Tipos de respuesta
