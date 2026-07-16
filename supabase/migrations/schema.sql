@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS users (
   height DECIMAL(5,2),
   imc DECIMAL(4,2),
   photo TEXT,
+  address TEXT,
+  birth_date TEXT,
+  emergency_contact TEXT,
+  notes TEXT,
+  medical_notes TEXT,
   activation_token TEXT,
   is_activated BOOLEAN DEFAULT false,
   auth_user_id UUID UNIQUE,
@@ -231,6 +236,70 @@ CREATE TRIGGER update_routine_templates_updated_at BEFORE UPDATE ON routine_temp
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =============================================
+-- FUNCIONES HELPER SECURITY DEFINER (evitan recursión RLS)
+-- =============================================
+
+CREATE OR REPLACE FUNCTION public.is_staff_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM staff
+    WHERE auth_user_id = auth.uid()
+    AND role = 'Administrador'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_staff_any()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM staff
+    WHERE auth_user_id = auth.uid()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_staff_reception()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM staff
+    WHERE auth_user_id = auth.uid()
+    AND role IN ('Administrador', 'Recepción')
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_staff_trainer()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM staff
+    WHERE auth_user_id = auth.uid()
+    AND role IN ('Administrador', 'Entrenador')
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_staff_owner_or_admin(owner_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM staff
+    WHERE auth_user_id = auth.uid()
+    AND (role = 'Administrador' OR id = owner_id)
+  );
+$$;
+
+-- =============================================
 -- ROW LEVEL SECURITY (RLS)
 -- =============================================
 
@@ -240,6 +309,8 @@ ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE physical_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
+
 -- RLS deshabilitado para rutinas (el servidor usa SERVICE_ROLE_KEY)
 -- ALTER TABLE routine_templates ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE routine_exercises ENABLE ROW LEVEL SECURITY;
@@ -247,272 +318,123 @@ ALTER TABLE physical_progress ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE workout_sessions ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE workout_exercise_logs ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE set_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
-
--- Políticas para STAFF (administrador tiene acceso total)
-CREATE POLICY "Administradores tienen acceso total a staff"
-  ON staff FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff s
-      WHERE s.auth_user_id = auth.uid()
-      AND s.role = 'Administrador'
-    )
-  );
 
 -- Políticas para USERS
 CREATE POLICY "Staff puede ver todos los usuarios"
   ON users FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Administrador y Recepción pueden crear usuarios"
   ON users FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Recepción')
-    )
-  );
+  WITH CHECK (public.is_staff_reception());
 
 CREATE POLICY "Administrador y Recepción pueden actualizar usuarios"
   ON users FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Recepción')
-    )
-  );
+  USING (public.is_staff_reception());
 
 CREATE POLICY "Solo Administrador puede eliminar usuarios"
   ON users FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role = 'Administrador'
-    )
-  );
+  USING (public.is_staff_admin());
+
+-- Políticas para STAFF
+CREATE POLICY "Administradores tienen acceso total a staff"
+  ON staff FOR ALL
+  USING (public.is_staff_admin());
 
 -- Políticas para PAYMENTS
 CREATE POLICY "Staff puede ver todos los pagos"
   ON payments FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Administrador y Recepción pueden gestionar pagos"
   ON payments FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Recepción')
-    )
-  );
+  USING (public.is_staff_reception());
 
 -- Políticas para ATTENDANCE
 CREATE POLICY "Staff puede ver asistencia"
   ON attendance FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Recepción puede registrar asistencia"
   ON attendance FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Recepción')
-    )
-  );
+  WITH CHECK (public.is_staff_reception());
 
 -- Políticas para ROUTINE TEMPLATES
 CREATE POLICY "Staff puede ver rutinas"
   ON routine_templates FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Entrenadores y Administradores pueden crear rutinas"
   ON routine_templates FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Entrenador')
-    )
-  );
+  WITH CHECK (public.is_staff_trainer());
 
 CREATE POLICY "Entrenadores pueden actualizar sus rutinas"
   ON routine_templates FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff s
-      WHERE s.auth_user_id = auth.uid()
-      AND (s.role = 'Administrador' OR (s.role = 'Entrenador' AND routine_templates.created_by = s.id))
-    )
-  );
+  USING (public.is_staff_owner_or_admin(COALESCE(created_by, '00000000-0000-0000-0000-000000000000'::UUID)));
 
 CREATE POLICY "Entrenadores pueden eliminar sus rutinas"
   ON routine_templates FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff s
-      WHERE s.auth_user_id = auth.uid()
-      AND (s.role = 'Administrador' OR (s.role = 'Entrenador' AND routine_templates.created_by = s.id))
-    )
-  );
+  USING (public.is_staff_owner_or_admin(COALESCE(created_by, '00000000-0000-0000-0000-000000000000'::UUID)));
 
 -- Políticas para ROUTINE EXERCISES
 CREATE POLICY "Staff puede ver ejercicios"
   ON routine_exercises FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Entrenadores pueden gestionar ejercicios"
   ON routine_exercises FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Entrenador')
-    )
-  );
+  USING (public.is_staff_trainer());
 
 -- Políticas para USER ROUTINE ASSIGNMENTS
 CREATE POLICY "Staff puede ver asignaciones"
   ON user_routine_assignments FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Entrenadores pueden asignar rutinas"
   ON user_routine_assignments FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Entrenador')
-    )
-  );
+  USING (public.is_staff_trainer());
 
 -- Políticas para WORKOUT SESSIONS
 CREATE POLICY "Staff puede ver sesiones"
   ON workout_sessions FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Cualquier staff puede crear sesiones"
   ON workout_sessions FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  WITH CHECK (public.is_staff_any());
 
 -- Políticas para WORKOUT EXERCISE LOGS
 CREATE POLICY "Staff puede ver logs de ejercicios"
   ON workout_exercise_logs FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Staff puede crear logs"
   ON workout_exercise_logs FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  WITH CHECK (public.is_staff_any());
 
 -- Políticas para SET LOGS
 CREATE POLICY "Staff puede ver logs de series"
   ON set_logs FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Staff puede crear logs de series"
   ON set_logs FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  WITH CHECK (public.is_staff_any());
 
 -- Políticas para PHYSICAL PROGRESS
 CREATE POLICY "Staff puede ver progreso físico"
   ON physical_progress FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Entrenadores pueden registrar progreso"
   ON physical_progress FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Entrenador')
-    )
-  );
+  USING (public.is_staff_trainer());
 
 -- Políticas para INVOICES
 CREATE POLICY "Staff puede ver facturas"
   ON invoices FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-    )
-  );
+  USING (public.is_staff_any());
 
 CREATE POLICY "Administrador y Recepción pueden gestionar facturas"
   ON invoices FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff
-      WHERE auth_user_id = auth.uid()
-      AND role IN ('Administrador', 'Recepción')
-    )
-  );
+  USING (public.is_staff_reception());

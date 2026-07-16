@@ -53,10 +53,14 @@ export function useCreateUser() {
       const activationToken = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
       
       // Crear el usuario directamente en Supabase con el token
+      const defaultNextPayment = new Date();
+      defaultNextPayment.setMonth(defaultNextPayment.getMonth() + 1);
+      
       const { data: newUser, error } = await supabase
         .from('users')
         .insert([{
           ...data,
+          next_payment: data.next_payment || defaultNextPayment.toISOString(),
           activation_token: activationToken,
           is_activated: false,
           member_number: `GYM${Date.now().toString().slice(-6)}`, // Generar número de miembro
