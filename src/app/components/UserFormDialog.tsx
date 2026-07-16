@@ -104,8 +104,12 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
         address: user.address || '',
         plan: user.plan || '',
         status: user.status || 'Activo',
-        start_date: user.start_date || new Date().toISOString().split('T')[0],
-        next_payment: user.next_payment || '',
+        start_date: user.start_date
+          ? new Date(user.start_date).toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0],
+        next_payment: user.next_payment
+          ? new Date(user.next_payment).toISOString().split('T')[0]
+          : '',
         weight: user.weight?.toString() || '',
         height: user.height?.toString() || '',
         emergency_contact: user.emergency_contact || '',
