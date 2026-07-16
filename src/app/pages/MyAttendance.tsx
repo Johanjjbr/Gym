@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { formatDate } from '../lib/format';
 
 interface AttendanceRecord {
   id: string;
@@ -52,16 +53,6 @@ export function MyAttendance() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('es-ES', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
   };
 
   const formatTime = (timeStr: string) => {

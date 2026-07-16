@@ -1,49 +1,48 @@
 import { useState, useEffect } from 'react';
-import { CreditCard, Calendar, CheckCircle, AlertCircle, Clock, DollarSign } from 'lucide-react';
+import { CreditCard, Calendar, CheckCircle, AlertCircle, Clock, DollarSign, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { formatDate } from '../lib/format';
 
-interface Payment {
+interface Invoice {
   id: string;
+  invoice_number: string;
   amount: number;
-  date: string;
-  next_payment: string;
-  status: 'Pagado' | 'Pendiente' | 'Vencido';
-  method: 'Efectivo' | 'Transferencia' | 'Tarjeta';
+  due_date: string;
+  paid_at: string | null;
+  status: 'Pagada' | 'Pendiente' | 'Vencida';
+  method: string | null;
+  plans: { name: string } | null;
 }
 
 export function MyPayments() {
   const { user } = useAuth();
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [nextPaymentDate, setNextPaymentDate] = useState<string | null>(null);
 
   useEffect(() => {
-    loadPayments();
+    loadInvoices();
     loadUserData();
   }, [user]);
 
-  const loadPayments = async () => {
+  const loadInvoices = async () => {
     if (!user?.id) return;
-
     try {
       setLoading(true);
-      
       const { data, error } = await supabase
-        .from('payments')
-        .select('*')
+        .from('invoices')
+        .select('*, plans (name)')
         .eq('user_id', user.id)
-        .order('date', { ascending: false });
-
+        .order('created_at', { ascending: false });
       if (error) throw error;
-
-      setPayments(data || []);
+      setInvoices(data || []);
     } catch (error: any) {
-      console.error('Error cargando pagos:', error);
-      toast.error('Error al cargar el historial de pagos');
+      console.error('Error cargando facturas:', error);
+      toast.error('Error al cargar el historial de facturas');
     } finally {
       setLoading(false);
     }
@@ -51,29 +50,17 @@ export function MyPayments() {
 
   const loadUserData = async () => {
     if (!user?.id) return;
-
     try {
       const { data, error } = await supabase
         .from('users')
         .select('next_payment')
         .eq('id', user.id)
         .single();
-
       if (error) throw error;
-
       setNextPaymentDate(data?.next_payment || null);
     } catch (error: any) {
       console.error('Error cargando datos de usuario:', error);
     }
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('es-ES', { 
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric'
-    });
   };
 
   const formatCurrency = (amount: number) => {
@@ -85,107 +72,73 @@ export function MyPayments() {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive'> = {
-      'Pagado': 'default',
-      'Pendiente': 'secondary',
-      'Vencido': 'destructive',
-    };
-    return variants[status] || 'secondary';
+    switch (status) {
+      case 'Pagada': return 'default' as const;
+      case 'Pendiente': return 'secondary' as const;
+      case 'Vencida': return 'destructive' as const;
+      default: return 'secondary' as const;
+    }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'Pagado':
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
-      case 'Pendiente':
-        return <Clock className="w-4 h-4 text-yellow-500" />;
-      case 'Vencido':
-        return <AlertCircle className="w-4 h-4 text-red-500" />;
-      default:
-        return <Clock className="w-4 h-4" />;
+      case 'Pagada': return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 'Pendiente': return <Clock className="w-4 h-4 text-yellow-500" />;
+      case 'Vencida': return <AlertCircle className="w-4 h-4 text-red-500" />;
+      default: return <Clock className="w-4 h-4" />;
     }
   };
 
-  const getMethodIcon = (method: string) => {
-    switch (method) {
-      case 'Efectivo':
-        return '💵';
-      case 'Transferencia':
-        return '🏦';
-      case 'Tarjeta':
-        return '💳';
-      default:
-        return '💰';
-    }
-  };
-
-  const totalPaid = payments
-    .filter(p => p.status === 'Pagado')
-    .reduce((sum, p) => sum + p.amount, 0);
+  const totalPaid = invoices
+    .filter(i => i.status === 'Pagada')
+    .reduce((sum, i) => sum + Number(i.amount), 0);
 
   const isPaymentDue = () => {
     if (!nextPaymentDate) return false;
-    const dueDate = new Date(nextPaymentDate);
-    const today = new Date();
-    return dueDate <= today;
+    return new Date(nextPaymentDate) <= new Date();
   };
 
   const daysUntilPayment = () => {
     if (!nextPaymentDate) return null;
-    const dueDate = new Date(nextPaymentDate);
-    const today = new Date();
-    const diffTime = dueDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+    const diffTime = new Date(nextPaymentDate).getTime() - new Date().getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
   const days = daysUntilPayment();
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-3xl mb-2">Mis Pagos</h1>
+        <h1 className="text-3xl mb-2">Mis Facturas</h1>
         <p className="text-muted-foreground">
-          Historial de pagos y próximo vencimiento
+          Historial de facturas y próximo vencimiento
         </p>
       </div>
 
-      {/* Próximo Pago */}
       {nextPaymentDate && (
         <Card className={isPaymentDue() ? 'border-destructive' : ''}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calendar className="w-5 h-5" />
-              Próximo Pago
+              Próximo Vencimiento
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-2xl font-bold">
-                    {formatDate(nextPaymentDate)}
-                  </p>
+                  <p className="text-2xl font-bold">{formatDate(nextPaymentDate)}</p>
                   {days !== null && (
                     <p className={`text-sm mt-1 ${
-                      days < 0 
-                        ? 'text-destructive' 
-                        : days <= 7 
-                        ? 'text-yellow-500' 
-                        : 'text-muted-foreground'
+                      days < 0 ? 'text-destructive' : days <= 7 ? 'text-yellow-500' : 'text-muted-foreground'
                     }`}>
-                      {days < 0 
-                        ? `Vencido hace ${Math.abs(days)} días` 
-                        : days === 0 
-                        ? 'Vence hoy' 
-                        : `Faltan ${days} días`}
+                      {days < 0
+                        ? `Vencido hace ${Math.abs(days)} días`
+                        : days === 0 ? 'Vence hoy' : `Faltan ${days} días`}
                     </p>
                   )}
                 </div>
-                {isPaymentDue() && (
-                  <Badge variant="destructive">Pago Vencido</Badge>
-                )}
+                {isPaymentDue() && <Badge variant="destructive">Vencido</Badge>}
               </div>
               <p className="text-sm text-muted-foreground">
                 Recuerda realizar tu pago antes de la fecha de vencimiento para mantener tu membresía activa.
@@ -196,7 +149,6 @@ export function MyPayments() {
         </Card>
       )}
 
-      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -204,30 +156,24 @@ export function MyPayments() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">
-              {formatCurrency(totalPaid)}
-            </div>
+            <div className="text-2xl font-bold text-primary">{formatCurrency(totalPaid)}</div>
             <p className="text-xs text-muted-foreground">
-              en {payments.filter(p => p.status === 'Pagado').length} pagos
+              en {invoices.filter(i => i.status === 'Pagada').length} facturas
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Último Pago</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Última Factura</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-primary">
-              {payments.length > 0 
-                ? formatCurrency(payments[0].amount)
-                : 'N/A'}
+              {invoices.length > 0 ? formatCurrency(invoices[0].amount) : 'N/A'}
             </div>
             <p className="text-xs text-muted-foreground">
-              {payments.length > 0 
-                ? formatDate(payments[0].date)
-                : 'Sin pagos registrados'}
+              {invoices.length > 0 ? invoices[0].invoice_number : 'Sin facturas'}
             </p>
           </CardContent>
         </Card>
@@ -245,48 +191,39 @@ export function MyPayments() {
                 <span className="text-green-500">Al Día</span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              {user?.status || 'Inactivo'}
-            </p>
+            <p className="text-xs text-muted-foreground">{user?.status || 'Inactivo'}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Historial */}
       <Card>
         <CardHeader>
-          <CardTitle>Historial de Pagos</CardTitle>
+          <CardTitle>Historial de Facturas</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-center text-muted-foreground py-8">Cargando...</p>
-          ) : payments.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">
-              Aún no tienes pagos registrados
-            </p>
+          ) : invoices.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No tienes facturas registradas</p>
           ) : (
             <div className="space-y-3">
-              {payments.map((payment) => (
-                <div
-                  key={payment.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
-                >
+              {invoices.map((inv) => (
+                <div key={inv.id}
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
                   <div className="flex items-center gap-4">
-                    {getStatusIcon(payment.status)}
+                    {getStatusIcon(inv.status)}
                     <div>
-                      <p className="font-medium">{formatDate(payment.date)}</p>
+                      <p className="font-medium">{inv.invoice_number}</p>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span>{getMethodIcon(payment.method)}</span>
-                        <span>{payment.method}</span>
+                        <span>{formatDate(inv.due_date)}</span>
+                        {inv.plans?.name && <span>• {inv.plans.name}</span>}
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-lg">
-                      {formatCurrency(payment.amount)}
-                    </p>
-                    <Badge variant={getStatusBadge(payment.status)} className="mt-1">
-                      {payment.status}
+                    <p className="font-bold text-lg">{formatCurrency(Number(inv.amount))}</p>
+                    <Badge variant={getStatusBadge(inv.status)} className="mt-1">
+                      {inv.status}
                     </Badge>
                   </div>
                 </div>

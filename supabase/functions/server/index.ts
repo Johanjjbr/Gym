@@ -1,7 +1,6 @@
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
-import * as kv from "./kv_store.tsx";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const app = new Hono().basePath('/server');
@@ -220,7 +219,7 @@ app.get("/trainers", async (c) => {
 app.get("/users/without-trainer", async (c) => {
   try {
     const { data, error } = await supabase
-      .from('users').select('id, name, email, phone, member_number, status, plan').is('assigned_trainer', null).eq('status', 'Activo').order('created_at', { ascending: false });
+      .from('users').select('id, name, email, phone, member_number, status, plan, plan_id').is('assigned_trainer', null).eq('status', 'Activo').order('created_at', { ascending: false });
     if (error) throw error;
     return c.json(data);
   } catch (error) {
@@ -228,42 +227,121 @@ app.get("/users/without-trainer", async (c) => {
   }
 });
 
-app.get("/payments", async (c) => {
+app.get("/plans", async (c) => {
   try {
-    const { user_id } = c.req.query();
-    let query = supabase.from('payments').select('*, users (name, member_number)').order('date', { ascending: false });
+    const { data, error } = await supabase.from('plans').select('*').order('name');
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo planes' }, 500);
+  }
+});
+
+app.post("/plans", async (c) => {
+  try {
+    const planData = await c.req.json();
+    const { data, error } = await supabase.from('plans').insert(planData).select().single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error creando plan' }, 500);
+  }
+});
+
+app.put("/plans/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const planData = await c.req.json();
+    const { data, error } = await supabase.from('plans').update(planData).eq('id', id).select().single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error actualizando plan' }, 500);
+  }
+});
+
+app.delete("/plans/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const { count: userCount } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('plan_id', id);
+    if (userCount && userCount > 0) {
+      return c.json({ error: 'No se puede eliminar el plan porque tiene usuarios asignados' }, 400);
+    }
+    const { error } = await supabase.from('plans').delete().eq('id', id);
+    if (error) throw error;
+    return c.json({ message: 'Plan eliminado' });
+  } catch (error) {
+    return c.json({ error: 'Error eliminando plan' }, 500);
+  }
+});
+
+app.get("/invoices", async (c) => {
+  try {
+    const { user_id, status } = c.req.query();
+    let query = supabase.from('invoices').select('*, users (name, member_number), plans (name)').order('created_at', { ascending: false });
     if (user_id) query = query.eq('user_id', user_id);
+    if (status) query = query.eq('status', status);
     const { data, error } = await query;
     if (error) throw error;
     return c.json(data);
   } catch (error) {
-    return c.json({ error: 'Error obteniendo pagos' }, 500);
+    return c.json({ error: 'Error obteniendo facturas' }, 500);
   }
 });
 
-app.get("/users/:userId/payments", async (c) => {
+app.get("/users/:userId/invoices", async (c) => {
   try {
     const userId = c.req.param('userId');
     const { data, error } = await supabase
-      .from('payments').select('*, users (name, member_number)').eq('user_id', userId).order('date', { ascending: false });
+      .from('invoices').select('*, plans (name)').eq('user_id', userId).order('created_at', { ascending: false });
     if (error) throw error;
     return c.json(data || []);
   } catch (error) {
-    return c.json({ error: 'Error obteniendo pagos del usuario' }, 500);
+    return c.json({ error: 'Error obteniendo facturas del usuario' }, 500);
   }
 });
 
-app.post("/payments", async (c) => {
+app.put("/invoices/:id/pay", async (c) => {
   try {
-    const paymentData = await c.req.json();
-    const { data, error } = await supabase.from('payments').insert(paymentData).select().single();
-    if (error) throw error;
-    if (paymentData.user_id && paymentData.next_payment) {
-      await supabase.from('users').update({ next_payment: paymentData.next_payment, status: 'Activo' }).eq('id', paymentData.user_id);
+    const { id } = c.req.param();
+    const { method, reference, notes } = await c.req.json();
+    
+    const { data: invoice, error: getError } = await supabase
+      .from('invoices').select('*, plans(name)').eq('id', id).single();
+    if (getError) throw getError;
+    if (!invoice) return c.json({ error: 'Factura no encontrada' }, 404);
+    if (invoice.status === 'Pagada') return c.json({ error: 'La factura ya está pagada' }, 400);
+
+    const paidAt = new Date().toISOString();
+    
+    const { data, error: updateError } = await supabase
+      .from('invoices').update({ 
+        status: 'Pagada', paid_at: paidAt, method, reference, notes 
+      }).eq('id', id).select('*, users (name, member_number), plans (name)').single();
+    if (updateError) throw updateError;
+
+    const planId = invoice.plan_id;
+    if (planId) {
+      const { data: plan } = await supabase.from('plans').select('duration_days').eq('id', planId).single();
+      if (plan) {
+        const { data: user } = await supabase.from('users').select('plan_id').eq('id', invoice.user_id).single();
+        const effectivePlanId = user?.plan_id || planId;
+        if (effectivePlanId) {
+          const { data: effectivePlan } = await supabase.from('plans').select('duration_days').eq('id', effectivePlanId).single();
+          if (effectivePlan) {
+            const nextPayment = new Date();
+            nextPayment.setDate(nextPayment.getDate() + effectivePlan.duration_days);
+            await supabase.from('users').update({ 
+              next_payment: nextPayment.toISOString(), status: 'Activo', updated_at: new Date().toISOString() 
+            }).eq('id', invoice.user_id);
+          }
+        }
+      }
     }
+    
     return c.json(data);
   } catch (error) {
-    return c.json({ error: 'Error creando pago' }, 500);
+    return c.json({ error: 'Error registrando pago de factura' }, 500);
   }
 });
 
@@ -518,10 +596,10 @@ app.get("/stats", async (c) => {
   try {
     const { count: totalUsers } = await supabase.from('users').select('*', { count: 'exact', head: true });
     const { count: activeUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
-    const { count: delinquentUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Moroso');
+    const { count: delinquentUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Suspendido');
     const firstDayOfMonth = new Date(); firstDayOfMonth.setDate(1); firstDayOfMonth.setHours(0, 0, 0, 0);
-    const { data: monthlyPayments } = await supabase.from('payments').select('amount').eq('status', 'Pagado').gte('date', firstDayOfMonth.toISOString());
-    const monthlyRevenue = monthlyPayments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+    const { data: monthlyInvoices } = await supabase.from('invoices').select('amount').eq('status', 'Pagada').gte('paid_at', firstDayOfMonth.toISOString());
+    const monthlyRevenue = monthlyInvoices?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
     const today = new Date().toISOString().split('T')[0];
     const { count: todayAttendance } = await supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('date', today).eq('type', 'Entrada');
     const { count: totalStaff } = await supabase.from('staff').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
@@ -552,7 +630,7 @@ app.post("/seed", async (c) => {
     const members = [
       { member_number: 'GYM-001', cedula: 'V-12345678', name: 'Carlos Rodríguez', email: 'carlos@example.com', phone: '0414-1234567', status: 'Activo', plan: 'Plan Mensual', start_date: '2025-02-01', next_payment: '2025-03-01', weight: 75.5, height: 1.75, imc: 24.65 },
       { member_number: 'GYM-002', cedula: 'V-23456789', name: 'María González', email: 'maria@example.com', phone: '0424-2345678', status: 'Activo', plan: 'Plan Trimestral', start_date: '2025-01-15', next_payment: '2025-04-15', weight: 62.0, height: 1.65, imc: 22.77 },
-      { member_number: 'GYM-003', cedula: 'V-34567890', name: 'José Pérez', email: 'jose@example.com', phone: '0412-3456789', status: 'Moroso', plan: 'Plan Mensual', start_date: '2024-12-01', next_payment: '2025-02-01', weight: 80.0, height: 1.80, imc: 24.69 },
+      { member_number: 'GYM-003', cedula: 'V-34567890', name: 'José Pérez', email: 'jose@example.com', phone: '0412-3456789', status: 'Suspendido', plan: 'Plan Mensual', start_date: '2024-12-01', next_payment: '2025-02-01', weight: 80.0, height: 1.80, imc: 24.69 },
       { member_number: 'GYM-004', cedula: 'V-45678901', name: 'Ana Martínez', email: 'ana@example.com', phone: '0426-4567890', status: 'Activo', plan: 'Plan Anual', start_date: '2025-01-01', next_payment: '2026-01-01', weight: 58.5, height: 1.62, imc: 22.30 },
       { member_number: 'GYM-005', cedula: 'V-56789012', name: 'Luis Hernández', email: 'luis@example.com', phone: '0414-5678901', status: 'Inactivo', plan: 'Plan Mensual', start_date: '2024-11-15', next_payment: '2024-12-15', weight: 88.0, height: 1.78, imc: 27.76 }
     ];
@@ -565,11 +643,22 @@ app.post("/seed", async (c) => {
       }
     }
     if (createdMembers.length > 0) {
-      const payments = [
-        { user_id: createdMembers[0]?.id, amount: 50.00, date: '2025-02-01', next_payment: '2025-03-01', status: 'Pagado', method: 'Efectivo' },
-        { user_id: createdMembers[1]?.id, amount: 135.00, date: '2025-01-15', next_payment: '2025-04-15', status: 'Pagado', method: 'Transferencia' }
-      ];
-      for (const payment of payments) { if (payment.user_id) await supabase.from('payments').insert(payment); }
+      for (const member of createdMembers) {
+        if (!member.id || !member.next_payment) continue;
+        const { data: plan } = await supabase.from('plans').select('id, price').eq('name', 'Mensual').maybeSingle();
+        if (!plan) continue;
+        const invoiceNumber = 'FAC-2025-' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
+        await supabase.from('invoices').insert({
+          user_id: member.id,
+          plan_id: plan.id,
+          invoice_number: invoiceNumber,
+          amount: plan.price,
+          due_date: member.next_payment,
+          paid_at: member.start_date,
+          status: 'Pagada',
+          method: 'Efectivo',
+        });
+      }
     }
     return c.json({ success: true, message: 'Seed completado exitosamente', created: { staff: createdStaff.length, members: createdMembers.length }, credentials: { admin: 'admin@gymteques.com / Admin123!', trainer: 'trainer@gymteques.com / Trainer123!', reception: 'recepcion@gymteques.com / Recepcion123!' } });
   } catch (error) {

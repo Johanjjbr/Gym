@@ -1,13 +1,9 @@
-/**
- * Componente de ejemplo: Formulario de Usuario con Zod + React Query
- * Muestra cómo integrar validación y mutaciones correctamente
- */
-
 import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { userSchema, type UserFormData } from '../lib/validations';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
+import { usePlans } from '../hooks/usePlans';
 import { useStaff } from '../hooks/useStaff';
 import { ActivationModal } from './ActivationModal';
 import {
@@ -35,6 +31,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   const isEdit = !!user;
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
+  const { data: plans } = usePlans();
   const [calculatedBMI, setCalculatedBMI] = useState<number | null>(null);
   const [activationData, setActivationData] = useState<{
     token: string;
@@ -94,6 +91,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   useEffect(() => {
     if (user && open) {
       // Resetear el formulario con los datos del usuario
+      const selectedPlan = plans?.find((p: any) => p.id === user.plan_id) || plans?.find((p: any) => p.name === user.plan);
       reset({
         cedula: user.cedula || '',
         name: user.name || '',
@@ -102,7 +100,8 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
         birth_date: user.birth_date || '',
         gender: user.gender || '',
         address: user.address || '',
-        plan: user.plan || '',
+        plan_id: user.plan_id || (selectedPlan?.id || ''),
+        plan: selectedPlan?.name || user.plan || '',
         status: user.status || 'Activo',
         start_date: user.start_date
           ? new Date(user.start_date).toISOString().split('T')[0]
@@ -129,14 +128,19 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
   const onSubmit = async (data: UserFormData) => {
     try {
-      // El número de miembro se genera automáticamente en el backend
-      // No es necesario enviarlo en la creación
+      const selectedPlan = plans?.find((p: any) => p.id === data.plan_id);
+      const submitData = {
+        ...data,
+        plan: selectedPlan?.name || data.plan,
+        plan_id: data.plan_id || null,
+        start_date: data.start_date || new Date().toISOString().split('T')[0],
+      };
       if (isEdit) {
-        await updateUser.mutateAsync({ id: user.id, data });
+        await updateUser.mutateAsync({ id: user.id, data: submitData });
         reset();
         onOpenChange(false);
       } else {
-        const result = await createUser.mutateAsync(data);
+        const result = await createUser.mutateAsync(submitData);
         reset();
         onOpenChange(false);
         
@@ -308,22 +312,24 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="plan" className="text-gray-300">
+                  <Label htmlFor="plan_id" className="text-gray-300">
                     Tipo de Membresía <span className="text-[#ff3b5c]">*</span>
                   </Label>
                   <select
-                    id="plan"
-                    {...register('plan')}
+                    id="plan_id"
+                    {...register('plan_id')}
                     disabled={isSubmitting}
                     className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
                   >
-                    <option value="Mensual">Mensual</option>
-                    <option value="Trimestral">Trimestral</option>
-                    <option value="Semestral">Semestral</option>
-                    <option value="Anual">Anual</option>
+                    <option value="">Seleccionar plan</option>
+                    {plans?.filter((p: any) => p.is_active !== false).map((plan: any) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.name} — Bs {plan.price.toLocaleString()}
+                      </option>
+                    ))}
                   </select>
-                  {errors.plan && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.plan.message}</p>
+                  {errors.plan_id && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.plan_id.message}</p>
                   )}
                 </div>
 

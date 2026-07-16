@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { formatDate } from '../lib/format';
 
 interface ProgressRecord {
   id: string;
@@ -45,14 +46,6 @@ export function MyProgress() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('es-ES', { 
-      day: '2-digit',
-      month: 'short'
-    });
   };
 
   const getLatestRecord = () => {
@@ -233,12 +226,7 @@ export function MyProgress() {
                   >
                     <div className="flex items-center justify-between">
                       <p className="font-medium">
-                        {new Date(record.date).toLocaleDateString('es-ES', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
+                        {formatDate(record.date)}
                       </p>
                     </div>
                     <div className="grid grid-cols-3 gap-4 text-sm">

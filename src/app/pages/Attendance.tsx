@@ -12,6 +12,7 @@ import { useAttendance, useCreateAttendance } from '../hooks/useAttendance';
 import { useUsers } from '../hooks/useUsers';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router';
+import { formatDate } from '../lib/format';
 
 export function Attendance() {
   const navigate = useNavigate();
@@ -217,7 +218,7 @@ export function Attendance() {
                           {record.users?.name || 'Usuario desconocido'}
                         </div>
                       </td>
-                      <td className="py-4 px-4">{new Date(record.date).toLocaleDateString('es-ES')}</td>
+                      <td className="py-4 px-4">{formatDate(record.date)}</td>
                       <td className="py-4 px-4">
                         <span className="text-primary">{record.time}</span>
                       </td>

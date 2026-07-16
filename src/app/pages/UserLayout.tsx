@@ -3,6 +3,7 @@ import { User, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Men
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
+import { Toaster } from '../components/ui/sonner';
 import { useState } from 'react';
 
 const menuItems = [
@@ -10,7 +11,7 @@ const menuItems = [
   { icon: User, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
   { icon: TrendingUp, label: 'Progreso Físico', path: '/usuario/progreso' },
   { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
-  { icon: CreditCard, label: 'Mis Pagos', path: '/usuario/pagos' },
+  { icon: CreditCard, label: 'Mis Facturas', path: '/usuario/facturas' },
 ];
 
 export function UserLayout() {
@@ -41,6 +42,7 @@ export function UserLayout() {
   return (
     <ProtectedRoute allowedRoles={['Usuario']}>
       <div className="min-h-screen bg-background">
+        <Toaster position="bottom-right" richColors />
         {/* Mobile Header */}
         <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-[#0f0f16] border-b border-border">
           <div className="flex items-center justify-between p-4">

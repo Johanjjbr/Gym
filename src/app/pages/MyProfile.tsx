@@ -5,6 +5,7 @@ import { usePhysicalProgress } from '../hooks/usePhysicalProgress';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { formatDate } from '../lib/format';
 
 export function MyProfile() {
   const { user: authUser } = useAuth();
@@ -25,7 +26,7 @@ export function MyProfile() {
   // Preparar datos para el gráfico de peso
   const weightChartData = progressData
     .map(p => ({
-      date: new Date(p.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+      date: formatDate(p.date),
       peso: p.weight,
     }))
     .reverse();
@@ -112,11 +113,7 @@ export function MyProfile() {
                   <span>Fecha de Inicio</span>
                 </div>
                 <p className="font-medium">
-                  {new Date(user.startDate).toLocaleDateString('es-ES', { 
-                    day: 'numeric', 
-                    month: 'long', 
-                    year: 'numeric' 
-                  })}
+                  {formatDate(user.startDate)}
                 </p>
               </div>
 
@@ -129,7 +126,7 @@ export function MyProfile() {
                   <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
                     user.status === 'Activo' 
                       ? 'bg-primary/10 text-primary' 
-                      : user.status === 'Moroso'
+                      : user.status === 'Suspendido'
                       ? 'bg-destructive/10 text-destructive'
                       : 'bg-muted text-muted-foreground'
                   }`}>
@@ -156,11 +153,7 @@ export function MyProfile() {
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Próximo Pago</p>
               <p className="text-lg font-medium">
-                {new Date(user.nextPayment).toLocaleDateString('es-ES', { 
-                  day: 'numeric', 
-                  month: 'long', 
-                  year: 'numeric' 
-                })}
+                {formatDate(user.nextPayment)}
               </p>
             </div>
             {user.trainer_name && (

@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Dumbbell, Loader2, AlertCircle, UserPlus, LogIn } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { Toaster } from '../components/ui/sonner';
 
 export function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -207,6 +208,7 @@ export function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
+      <Toaster position="bottom-right" richColors />
       <Card className="w-full max-w-md border-gray-700 bg-gray-900/50 backdrop-blur">
         <CardHeader className="space-y-4 text-center">
           <div className="flex justify-center">

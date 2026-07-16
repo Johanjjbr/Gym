@@ -18,6 +18,7 @@ import { Label } from '../components/ui/label';
 import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths } from 'date-fns';
 import { PrintPayment } from '../components/PrintPayment';
 import { useNavigate } from 'react-router';
+import { formatDate } from '../lib/format';
 
 type FilterType = 'all' | 'paid' | 'pending' | 'overdue';
 type TimeFilter = 'all' | 'thisMonth' | 'lastMonth';
@@ -172,7 +173,7 @@ export function Payments() {
         return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       case 'Activo':
         return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
-      case 'Moroso':
+      case 'Suspendido':
         return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       default:
         return 'bg-muted text-muted-foreground';
@@ -310,7 +311,7 @@ export function Payments() {
                           <span className="block text-xs">Vencimiento</span>
                           <span className="text-[#ff3b5c] font-semibold">
                             {user.next_payment 
-                              ? new Date(user.next_payment).toLocaleDateString('es-ES')
+                              ? formatDate(user.next_payment)
                               : 'N/A'}
                           </span>
                         </div>
@@ -532,7 +533,7 @@ export function Payments() {
                         </span>
                       </td>
                       <td className="py-4 px-4">
-                        {new Date(payment.date).toLocaleDateString('es-ES')}
+                        {formatDate(payment.date)}
                       </td>
                       <td className="py-4 px-4">
                         <span
@@ -540,7 +541,7 @@ export function Payments() {
                             payment.status === 'Vencido' ? 'text-[#ff3b5c] font-semibold' : ''
                           }
                         >
-                          {new Date(payment.next_payment).toLocaleDateString('es-ES')}
+                          {formatDate(payment.next_payment)}
                         </span>
                       </td>
                       <td className="py-4 px-4">{payment.method}</td>
@@ -755,12 +756,7 @@ export function Payments() {
                 <div>
                   <p className="text-sm text-gray-400 mb-1">Fecha de Pago</p>
                   <p className="text-white">
-                    {new Date(selectedPayment.date).toLocaleDateString('es-ES', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
+                    {formatDate(selectedPayment.date)}
                   </p>
                 </div>
                 <div>
@@ -772,12 +768,7 @@ export function Payments() {
                         : 'text-white'
                     }
                   >
-                    {new Date(selectedPayment.next_payment).toLocaleDateString('es-ES', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
+                    {formatDate(selectedPayment.next_payment, true)}
                   </p>
                 </div>
                 <div>

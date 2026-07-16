@@ -19,7 +19,7 @@ const reportTypes = [
   },
   {
     id: 3,
-    title: 'Reporte de Morosos',
+    title: 'Reporte de Suspendidos',
     description: 'Usuarios con pagos vencidos y pendientes',
     icon: FileText,
     color: 'text-[#ff3b5c]',

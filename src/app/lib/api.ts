@@ -392,38 +392,78 @@ export const users = {
 };
 
 // =============================================
-// PAGOS
+// PLANES
+// =============================================
+
+export const plans = {
+  getAll: async () => {
+    return apiRequest('/plans');
+  },
+
+  create: async (planData: {
+    name: string;
+    description?: string;
+    duration_days: number;
+    price: number;
+  }) => {
+    return apiRequest('/plans', {
+      method: 'POST',
+      body: JSON.stringify(planData),
+    });
+  },
+
+  update: async (id: string, planData: {
+    name?: string;
+    description?: string;
+    duration_days?: number;
+    price?: number;
+    is_active?: boolean;
+  }) => {
+    return apiRequest(`/plans/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(planData),
+    });
+  },
+
+  delete: async (id: string) => {
+    return apiRequest(`/plans/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// =============================================
+// PAGOS (DEPRECATED - mantener compatibilidad)
 // =============================================
 
 export const payments = {
-  /**
-   * Obtener todos los pagos
-   */
-  getAll: async () => {
-    return apiRequest('/payments');
+  getAll: async () => { throw new Error('Payments table was replaced by invoices. Use invoices API instead.'); },
+  getByUser: async (_userId: string) => { throw new Error('Payments table was replaced by invoices. Use invoices API instead.'); },
+  create: async (_data: any) => { throw new Error('Payments table was replaced by invoices. Use invoices API instead.'); },
+};
+
+// =============================================
+// FACTURAS (unificado - reemplaza pagos)
+// =============================================
+
+export const invoices = {
+  getAll: async (params?: { user_id?: string; status?: string }) => {
+    const query = params ? '?' + new URLSearchParams(params as any).toString() : '';
+    return apiRequest(`/invoices${query}`);
   },
 
-  /**
-   * Obtener pagos de un usuario específico
-   */
   getByUser: async (userId: string) => {
-    return apiRequest(`/users/${userId}/payments`);
+    return apiRequest(`/users/${userId}/invoices`);
   },
 
-  /**
-   * Registrar nuevo pago
-   */
-  create: async (paymentData: {
-    user_id: string;
-    amount: number;
-    date: string;
-    next_payment: string;
-    status: 'Pagado' | 'Pendiente' | 'Vencido';
-    method: 'Efectivo' | 'Transferencia' | 'Tarjeta';
+  pay: async (id: string, data: {
+    method: string;
+    reference?: string;
+    notes?: string;
   }) => {
-    return apiRequest('/payments', {
-      method: 'POST',
-      body: JSON.stringify(paymentData),
+    return apiRequest(`/invoices/${id}/pay`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     });
   },
 };
@@ -1501,6 +1541,8 @@ export const utils = {
 export default {
   auth,
   users,
+  plans,
+  invoices,
   payments,
   staff,
   attendance,

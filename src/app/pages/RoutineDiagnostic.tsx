@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { RefreshCw, Calendar, Dumbbell, CheckCircle, XCircle, ArrowRight } from 'lucide-react';
+import { formatDate } from '../lib/format';
 
 export function RoutineDiagnostic() {
   const { user } = useAuth();
@@ -240,7 +241,7 @@ export function RoutineDiagnostic() {
                 <div>
                   <p className="text-muted-foreground">Fecha de Inicio</p>
                   <p className="font-medium">
-                    {new Date(data.activeRoutine.start_date).toLocaleDateString('es-ES')}
+                    {formatDate(data.activeRoutine.start_date)}
                   </p>
                 </div>
                 <div>
@@ -373,11 +374,7 @@ export function RoutineDiagnostic() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">
-                        {new Date(session.date).toLocaleDateString('es-ES', {
-                          weekday: 'long',
-                          day: 'numeric',
-                          month: 'long',
-                        })}
+                        {formatDate(session.date)}
                       </p>
                       <p className="text-xs text-muted-foreground font-mono">
                         ID: {session.id}

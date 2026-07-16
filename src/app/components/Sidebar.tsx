@@ -9,7 +9,8 @@ import {
   Dumbbell,
   ClipboardList,
   LogOut,
-  Database
+  Database,
+  Package
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,7 +18,8 @@ import { useAuth } from '../contexts/AuthContext';
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: Users, label: 'Usuarios', path: '/usuarios' },
-  { icon: CreditCard, label: 'Pagos', path: '/pagos' },
+  { icon: CreditCard, label: 'Facturas', path: '/facturas' },
+  { icon: Package, label: 'Planes', path: '/planes' },
   { icon: UserCog, label: 'Personal', path: '/personal' },
   { icon: QrCode, label: 'Asistencia', path: '/asistencia' },
   { icon: ClipboardList, label: 'Rutinas', path: '/rutinas' },
@@ -36,7 +38,7 @@ export function Sidebar() {
   };
 
   // Restringir items del menú para el rol "Entrenador"
-  const restrictedPathsForTrainer = ['/', '/pagos', '/personal', '/reportes'];
+  const restrictedPathsForTrainer = ['/', '/facturas', '/planes', '/personal', '/reportes'];
   const filteredMenuItems = user?.role === 'Entrenador'
     ? menuItems.filter(item => !restrictedPathsForTrainer.includes(item.path))
     : menuItems;

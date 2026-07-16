@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
 import { useRoutines, useDeleteRoutine, useRoutine, useRoutineAssignedUsers, useToggleRoutineActive } from '../hooks/useRoutines';
 import { useAuth } from '../contexts/AuthContext';
+import { formatDate } from '../lib/format';
 
 type RoutineLevel = 'Principiante' | 'Intermedio' | 'Avanzado';
 
@@ -244,7 +245,7 @@ export function Routines() {
                   </div>
                   <div>
                     <p className="text-muted-foreground">Creada</p>
-                    <p className="text-xs">{new Date(routine.created_at).toLocaleDateString()}</p>
+                    <p className="text-xs">{formatDate(routine.created_at)}</p>
                   </div>
                 </div>
 
@@ -502,12 +503,12 @@ export function Routines() {
                               {assignment.user?.phone && <p>📱 {assignment.user.phone}</p>}
                               <p className="mt-2">
                                 <span className="text-gray-400">Inicio:</span>{' '}
-                                {new Date(assignment.start_date).toLocaleDateString()}
+                                {formatDate(assignment.start_date)}
                               </p>
                               {assignment.end_date && (
                                 <p>
                                   <span className="text-gray-400">Fin:</span>{' '}
-                                  {new Date(assignment.end_date).toLocaleDateString()}
+                                  {formatDate(assignment.end_date)}
                                 </p>
                               )}
                               {assignment.assigner && (

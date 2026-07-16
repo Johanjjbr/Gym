@@ -7,7 +7,8 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Database, ExternalLink } from 'lucide-react';
 import { useDashboardStats } from '../hooks/useStats';
 import { useUsers } from '../hooks/useUsers';
-import { usePayments } from '../hooks/usePayments';
+import { useInvoices } from '../hooks/useInvoices';
+import { formatDate } from '../lib/format';
 
 // Mock data para los gráficos
 const monthlyRevenueData = [
@@ -35,7 +36,7 @@ export function Dashboard() {
   // Usar React Query para obtener datos reales
   const { data: stats, isLoading: loadingStats, error: statsError } = useDashboardStats();
   const { data: users, isLoading: loadingUsers } = useUsers();
-  const { data: payments, isLoading: loadingPayments } = usePayments();
+  const { data: invoicesData, isLoading: loadingPayments } = useInvoices();
 
   const isLoading = loadingStats || loadingUsers || loadingPayments;
 
@@ -45,7 +46,7 @@ export function Dashboard() {
   const inactiveUsers = users?.filter((u: any) => u.status === 'Inactivo').length || 0;
   const suspendedUsers = users?.filter((u: any) => u.status === 'Suspendido').length || 0;
   
-  const monthlyRevenue = payments?.reduce((sum: number, p: any) => sum + p.amount, 0) || 0;
+  const monthlyRevenue = invoicesData?.filter((i: any) => i.status === 'Pagada').reduce((sum: number, i: any) => sum + Number(i.amount), 0) || 0;
   const totalStaff = stats?.totalStaff || 0;
   const todayAttendance = stats?.todayAttendance || 0;
 
@@ -277,7 +278,7 @@ export function Dashboard() {
                     <div>
                       <p className="text-sm font-medium">{paymentUser?.name || 'Usuario'}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(payment.date).toLocaleDateString('es-ES')}
+                        {formatDate(payment.date)}
                       </p>
                     </div>
                     <div className="text-right">

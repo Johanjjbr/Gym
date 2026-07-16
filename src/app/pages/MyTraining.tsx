@@ -35,6 +35,7 @@ import {
   useWorkoutHistory,
 } from '../hooks/useRoutineAssignments';
 import { toast } from 'sonner';
+import { formatDate } from '../lib/format';
 
 export function MyTraining() {
   const { user } = useAuth();
@@ -102,7 +103,7 @@ export function MyTraining() {
     hasSession: !!session,
     sessionId: session?.id,
     today,
-    todayDate: new Date().toLocaleDateString('es-ES'),
+    todayDate: formatDate(new Date()),
     dayOfWeek,
     selectedDay,
     isPending: createSession.isPending,
@@ -398,10 +399,7 @@ export function MyTraining() {
                 <div className="flex-1">
                   <p className="text-xs font-['Inter'] text-muted-foreground uppercase">Inicio</p>
                   <p className="font-['Rajdhani'] font-bold text-lg">
-                    {new Date(assignment.start_date).toLocaleDateString('es-ES', { 
-                      day: 'numeric', 
-                      month: 'short' 
-                    })}
+                    {formatDate(assignment.start_date)}
                   </p>
                 </div>
               </div>
@@ -540,7 +538,7 @@ export function MyTraining() {
                 </CardTitle>
                 <p className="text-sm font-['Inter'] text-muted-foreground mt-1">
                   {selectedDay === dayOfWeek 
-                    ? `Hoy, ${new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                    ? `Hoy, ${formatDate(new Date())}`
                     : getDayName(selectedDay)
                   }
                 </p>
@@ -812,11 +810,7 @@ export function MyTraining() {
               {workoutHistory.map((sessionData: any) => {
                 const date = parseLocalDate(sessionData.date);
                 const dayName = getDayName(date.getDay());
-                const formattedDate = date.toLocaleDateString('es-ES', { 
-                  day: 'numeric', 
-                  month: 'short',
-                  year: 'numeric'
-                });
+                const formattedDate = formatDate(date);
                 const isExpanded = expandedSessions.has(sessionData.id);
                 const exercises = sessionData.exercises || [];
                 const completedExercises = exercises.filter((ex: any) => ex.is_completed);

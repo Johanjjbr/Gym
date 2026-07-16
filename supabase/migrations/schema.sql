@@ -16,8 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   phone TEXT NOT NULL,
   gender TEXT CHECK (gender IN ('Masculino', 'Femenino', 'Otro')),
-  status TEXT NOT NULL DEFAULT 'Activo' CHECK (status IN ('Activo', 'Inactivo', 'Moroso')),
+  status TEXT NOT NULL DEFAULT 'Activo' CHECK (status IN ('Activo', 'Inactivo', 'Suspendido')),
   plan TEXT NOT NULL,
+  plan_id UUID REFERENCES plans(id),
   start_date TIMESTAMP NOT NULL DEFAULT NOW(),
   next_payment TIMESTAMP NOT NULL,
   weight DECIMAL(5,2),
@@ -55,17 +56,17 @@ CREATE TABLE IF NOT EXISTS staff (
 );
 
 -- =============================================
--- TABLA: payments (Pagos/Mensualidades)
+-- TABLA: plans (Planes de Membresía)
 -- =============================================
-CREATE TABLE IF NOT EXISTS payments (
+CREATE TABLE IF NOT EXISTS plans (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  amount DECIMAL(10,2) NOT NULL,
-  date TIMESTAMP NOT NULL DEFAULT NOW(),
-  next_payment TIMESTAMP NOT NULL,
-  status TEXT NOT NULL DEFAULT 'Pendiente' CHECK (status IN ('Pagado', 'Pendiente', 'Vencido')),
-  method TEXT NOT NULL CHECK (method IN ('Efectivo', 'Transferencia', 'Tarjeta')),
-  created_at TIMESTAMP DEFAULT NOW()
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  duration_days INTEGER NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- =============================================
@@ -183,17 +184,20 @@ CREATE TABLE IF NOT EXISTS set_logs (
 );
 
 -- =============================================
--- TABLA: invoices (Facturas)
+-- TABLA: invoices (Facturas unificadas)
 -- =============================================
 CREATE TABLE IF NOT EXISTS invoices (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  payment_id UUID REFERENCES payments(id) ON DELETE SET NULL,
+  plan_id UUID REFERENCES plans(id) ON DELETE SET NULL,
   invoice_number TEXT UNIQUE NOT NULL,
   amount DECIMAL(10,2) NOT NULL,
-  date TIMESTAMP NOT NULL DEFAULT NOW(),
-  concept TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'Pendiente' CHECK (status IN ('Pagada', 'Pendiente')),
+  due_date TIMESTAMP NOT NULL,
+  paid_at TIMESTAMP,
+  status TEXT NOT NULL DEFAULT 'Pendiente' CHECK (status IN ('Pendiente', 'Pagada', 'Vencida')),
+  method TEXT CHECK (method IN ('Efectivo', 'Transferencia', 'Tarjeta', 'Pago Móvil')),
+  reference TEXT,
+  notes TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -207,8 +211,11 @@ CREATE INDEX IF NOT EXISTS idx_users_activation_token ON users(activation_token)
 CREATE INDEX IF NOT EXISTS idx_users_auth_user_id ON users(auth_user_id);
 CREATE INDEX IF NOT EXISTS idx_staff_role ON staff(role);
 CREATE INDEX IF NOT EXISTS idx_staff_auth_user_id ON staff(auth_user_id);
-CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id);
-CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(date);
+CREATE INDEX IF NOT EXISTS idx_users_plan_id ON users(plan_id);
+CREATE INDEX IF NOT EXISTS idx_plans_is_active ON plans(is_active);
+CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date);
 CREATE INDEX IF NOT EXISTS idx_attendance_user_id ON attendance(user_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
 CREATE INDEX IF NOT EXISTS idx_routine_templates_created_by ON routine_templates(created_by);
@@ -233,6 +240,9 @@ CREATE TRIGGER update_staff_updated_at BEFORE UPDATE ON staff
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_routine_templates_updated_at BEFORE UPDATE ON routine_templates
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_plans_updated_at BEFORE UPDATE ON plans
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =============================================
@@ -306,7 +316,7 @@ $$;
 -- Habilitar RLS en todas las tablas
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE physical_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
@@ -341,13 +351,13 @@ CREATE POLICY "Administradores tienen acceso total a staff"
   ON staff FOR ALL
   USING (public.is_staff_admin());
 
--- Políticas para PAYMENTS
-CREATE POLICY "Staff puede ver todos los pagos"
-  ON payments FOR SELECT
+-- Políticas para PLANS
+CREATE POLICY "Staff puede ver planes"
+  ON plans FOR SELECT
   USING (public.is_staff_any());
 
-CREATE POLICY "Administrador y Recepción pueden gestionar pagos"
-  ON payments FOR ALL
+CREATE POLICY "Administrador y Recepción pueden gestionar planes"
+  ON plans FOR ALL
   USING (public.is_staff_reception());
 
 -- Políticas para ATTENDANCE
@@ -438,3 +448,33 @@ CREATE POLICY "Staff puede ver facturas"
 CREATE POLICY "Administrador y Recepción pueden gestionar facturas"
   ON invoices FOR ALL
   USING (public.is_staff_reception());
+
+-- =============================================
+-- AUTO-SUSPENDER USUARIOS VENCIDOS DIARIAMENTE
+-- =============================================
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
+
+CREATE OR REPLACE FUNCTION check_overdue_users()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  INSERT INTO invoices (user_id, plan_id, invoice_number, amount, due_date, status)
+  SELECT 
+    u.id,
+    u.plan_id,
+    'FAC-' || TO_CHAR(NOW(), 'YYYY') || '-' || LPAD(NEXTVAL('invoice_number_seq')::TEXT, 4, '0'),
+    COALESCE(p.price, 0),
+    u.next_payment,
+    'Vencida'
+  FROM users u
+  LEFT JOIN plans p ON p.id = u.plan_id
+  WHERE u.status = 'Activo' AND u.next_payment < CURRENT_DATE;
+
+  UPDATE users
+  SET status = 'Suspendido', updated_at = NOW()
+  WHERE status = 'Activo' AND next_payment < CURRENT_DATE;
+END;
+$$;
+
+SELECT cron.schedule('check-overdue-users', '0 0 * * *', 'SELECT check_overdue_users();');

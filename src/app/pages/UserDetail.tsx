@@ -13,13 +13,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
-import { useUserPayments, useCreatePayment } from '../hooks/usePayments';
+import { useUserInvoices, usePayInvoice } from '../hooks/useInvoices';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
 import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
-import { PrintPayment } from '../components/PrintPayment';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { formatDate } from '../lib/format';
 
 export function UserDetail() {
   const { id } = useParams();
@@ -35,18 +35,12 @@ export function UserDetail() {
   const [endDate, setEndDate] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   
-  // Estados para el formulario de pago
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentNextDate, setPaymentNextDate] = useState(() => {
-    const nextMonth = new Date();
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-    return nextMonth.toISOString().split('T')[0];
-  });
-  const [paymentStatus, setPaymentStatus] = useState<'Pagado' | 'Pendiente' | 'Vencido'>('Pagado');
-  const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
-  const [paymentReference, setPaymentReference] = useState('');
-  const [paymentNotes, setPaymentNotes] = useState('');
+  // Estados para el formulario de pago de factura
+  const [payInvoiceAmount, setPayInvoiceAmount] = useState('');
+  const [payInvoiceMethod, setPayInvoiceMethod] = useState('Efectivo');
+  const [payInvoiceReference, setPayInvoiceReference] = useState('');
+  const [payInvoiceNotes, setPayInvoiceNotes] = useState('');
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   
   // Estados para el formulario de progreso físico
   const [progressWeight, setProgressWeight] = useState('');
@@ -58,8 +52,8 @@ export function UserDetail() {
   // Usar React Query en lugar de mockData
   const { data: user, isLoading, error } = useUser(id || '');
   
-  // Obtener pagos reales del usuario
-  const { data: userPayments, isLoading: loadingPayments } = useUserPayments(id || '');
+  // Obtener facturas reales del usuario
+  const { data: userInvoices, isLoading: loadingPayments } = useUserInvoices(id || '');
   
   // Obtener rutinas disponibles y asignaciones del usuario
   const { data: availableRoutines, isLoading: loadingRoutines } = useRoutines();
@@ -70,8 +64,8 @@ export function UserDetail() {
   const { data: trainers, isLoading: loadingTrainers } = useTrainers();
   const assignTrainerMutation = useAssignTrainer();
   
-  // Hook para crear pagos
-  const createPaymentMutation = useCreatePayment();
+  // Hook para pagar facturas
+  const payInvoiceMutation = usePayInvoice();
   
   // Obtener usuario actual del staff usando el contexto de autenticación
   const { user: currentUser } = useAuth();
@@ -123,14 +117,13 @@ export function UserDetail() {
 
   // Datos reales obtenidos de los hooks
   const userProgress = userPhysicalProgress || [];
-  const userInvoices: any[] = []; // Facturas se manejan desde payments
-  const payments = userPayments || [];
+  const invoices = userInvoices || [];
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Activo':
         return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
-      case 'Moroso':
+      case 'Suspendido':
         return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       default:
         return 'bg-muted text-muted-foreground';
@@ -139,10 +132,12 @@ export function UserDetail() {
 
   const getPaymentStatusColor = (status: string) => {
     switch (status) {
+      case 'Pagada':
       case 'Pagado':
         return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
       case 'Pendiente':
         return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
+      case 'Vencida':
       case 'Vencido':
         return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       default:
@@ -150,12 +145,37 @@ export function UserDetail() {
     }
   };
 
-  const generateInvoice = (payment: any) => {
-    const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(payments?.length || 0 + 1).padStart(3, '0')}`;
-    toast.success('Factura generada exitosamente', {
-      description: `Factura ${invoiceNumber} lista para descargar`,
-    });
-    setIsInvoiceDialogOpen(false);
+  const generateInvoice = async () => {
+    if (!id || !user?.plan_id) {
+      toast.error('El usuario no tiene un plan asignado');
+      return;
+    }
+    try {
+      const { data: plan } = await supabase.from('plans').select('price, name').eq('id', user.plan_id).single();
+      if (!plan) {
+        toast.error('Plan no encontrado');
+        return;
+      }
+      const { data: existing } = await supabase.from('invoices').select('id').order('created_at', { ascending: false }).limit(1);
+      const nextNum = (existing?.length || 0) + 1;
+      const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}`;
+      const { error } = await supabase.from('invoices').insert({
+        user_id: id,
+        plan_id: user.plan_id,
+        invoice_number: invoiceNumber,
+        amount: plan.price,
+        due_date: new Date().toISOString(),
+        status: 'Pendiente',
+        notes: plan.name,
+      });
+      if (error) throw error;
+      toast.success('Factura generada exitosamente', {
+        description: `Factura ${invoiceNumber} creada para ${user.name}`,
+      });
+      setIsInvoiceDialogOpen(false);
+    } catch (error: any) {
+      toast.error('Error al generar factura', { description: error.message });
+    }
   };
 
   const assignRoutine = () => {
@@ -204,35 +224,26 @@ export function UserDetail() {
     });
   };
 
-  const createPayment = () => {
-    if (!id || !paymentAmount || !paymentDate || !paymentNextDate || !paymentStatus || !paymentMethod) {
-      toast.error('Por favor completa todos los campos del pago');
+  const handlePayInvoice = () => {
+    if (!selectedInvoiceId || !payInvoiceAmount || !payInvoiceMethod) {
+      toast.error('Por favor completa todos los campos');
       return;
     }
-
-    createPaymentMutation.mutate({
-      user_id: id,
-      amount: parseFloat(paymentAmount),
-      date: paymentDate,
-      next_payment: paymentNextDate,
-      status: paymentStatus,
-      method: paymentMethod,
-      reference: paymentReference,
-      notes: paymentNotes,
+    payInvoiceMutation.mutate({
+      id: selectedInvoiceId,
+      data: {
+        method: payInvoiceMethod,
+        reference: payInvoiceReference || undefined,
+        notes: payInvoiceNotes || undefined,
+      },
     }, {
       onSuccess: () => {
         setIsCreatePaymentDialogOpen(false);
-        setPaymentAmount('');
-        setPaymentDate(new Date().toISOString().split('T')[0]);
-        setPaymentNextDate(() => {
-          const nextMonth = new Date();
-          nextMonth.setMonth(nextMonth.getMonth() + 1);
-          return nextMonth.toISOString().split('T')[0];
-        });
-        setPaymentStatus('Pagado');
-        setPaymentMethod('Efectivo');
-        setPaymentReference('');
-        setPaymentNotes('');
+        setSelectedInvoiceId(null);
+        setPayInvoiceAmount('');
+        setPayInvoiceMethod('Efectivo');
+        setPayInvoiceReference('');
+        setPayInvoiceNotes('');
       },
     });
   };
@@ -272,7 +283,7 @@ export function UserDetail() {
 
   // Prepare chart data - usar datos reales
   const weightChartData = (userPhysicalProgress || []).map((p: any) => ({
-    date: new Date(p.date).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }),
+    date: formatDate(p.date),
     peso: p.weight,
     grasa: p.body_fat || 0,
     musculo: p.muscle_mass || 0,
@@ -370,7 +381,7 @@ export function UserDetail() {
                 <p className="text-sm text-muted-foreground">Próximo Pago</p>
                 <p className="text-lg">
                   {user.next_payment 
-                    ? new Date(user.next_payment).toLocaleDateString('es-ES')
+                    ? formatDate(user.next_payment)
                     : 'No definido'}
                 </p>
               </div>
@@ -386,7 +397,7 @@ export function UserDetail() {
           <TabsTrigger value="attendance">Asistencia</TabsTrigger>
           <TabsTrigger value="progress">Progreso Físico</TabsTrigger>
           <TabsTrigger value="routines">Rutinas</TabsTrigger>
-          <TabsTrigger value="payments">Pagos</TabsTrigger>
+          <TabsTrigger value="payments">Facturas</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -422,7 +433,7 @@ export function UserDetail() {
                     <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
                     <p>
                       {user.start_date 
-                        ? new Date(user.start_date).toLocaleDateString('es-ES')
+                        ? formatDate(user.start_date)
                         : 'No definido'}
                     </p>
                   </div>
@@ -533,12 +544,12 @@ export function UserDetail() {
               </CardContent>
             </Card>
 
-            {/* Último Pago */}
+            {/* Última Factura */}
             <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5" />
-                  Último Pago
+                  Última Factura
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -546,23 +557,23 @@ export function UserDetail() {
                   <div className="text-center py-8">
                     <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
                   </div>
-                ) : userPayments && userPayments.length > 0 ? (
+                ) : invoices && invoices.length > 0 ? (
                   <div className="space-y-3">
                     <div className="p-4 bg-muted rounded-lg">
                       <div className="flex items-center gap-4 mb-2">
-                        <p className="text-2xl text-primary">Bs {userPayments[0].amount.toLocaleString()}</p>
-                        <Badge variant="outline" className={getPaymentStatusColor(userPayments[0].status)}>
-                          {userPayments[0].status}
+                        <p className="text-2xl text-primary">Bs {Number(invoices[0].amount).toLocaleString()}</p>
+                        <Badge variant="outline" className={getPaymentStatusColor(invoices[0].status)}>
+                          {invoices[0].status}
                         </Badge>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
-                          <p className="text-muted-foreground">Fecha</p>
-                          <p>{new Date(userPayments[0].date).toLocaleDateString('es-ES')}</p>
+                          <p className="text-muted-foreground">Factura</p>
+                          <p className="font-mono text-xs">{invoices[0].invoice_number}</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Método</p>
-                          <p>{userPayments[0].method}</p>
+                          <p className="text-muted-foreground">Vencimiento</p>
+                          <p>{formatDate(invoices[0].due_date)}</p>
                         </div>
                       </div>
                     </div>
@@ -570,7 +581,7 @@ export function UserDetail() {
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     <CreditCard className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>No hay pagos registrados</p>
+                    <p>No hay facturas registradas</p>
                   </div>
                 )}
               </CardContent>
@@ -601,12 +612,7 @@ export function UserDetail() {
                           <Calendar className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <p>{new Date(attendance.date).toLocaleDateString('es-ES', { 
-                            weekday: 'long', 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric' 
-                          })}</p>
+                          <p>{formatDate(attendance.date)}</p>
                           <p className="text-sm text-muted-foreground">{attendance.time}</p>
                         </div>
                       </div>
@@ -711,7 +717,7 @@ export function UserDetail() {
                       <div className="grid grid-cols-4 gap-4 flex-1">
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">Fecha</p>
-                          <p>{new Date(progress.date).toLocaleDateString('es-ES')}</p>
+                          <p>{formatDate(progress.date)}</p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">Peso</p>
@@ -782,7 +788,7 @@ export function UserDetail() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
-                      <p>{assignment.start_date ? new Date(assignment.start_date).toLocaleDateString('es-ES') : 'N/A'}</p>
+                      <p>{assignment.start_date ? formatDate(assignment.start_date) : 'N/A'}</p>
                     </div>
                   </div>
                   
@@ -838,116 +844,75 @@ export function UserDetail() {
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5" />
-                  Historial de Pagos
+                  Facturas
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-primary text-primary hover:bg-primary/10"
-                  onClick={() => setIsCreatePaymentDialogOpen(true)}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Registrar Pago
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-primary text-primary hover:bg-primary/10"
+                    onClick={() => setIsCreatePaymentDialogOpen(true)}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Pagar Factura
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
               {loadingPayments ? (
                 <div className="text-center py-8">
                   <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto mb-2" />
-                  <p className="text-muted-foreground text-sm">Cargando pagos...</p>
+                  <p className="text-muted-foreground text-sm">Cargando facturas...</p>
                 </div>
-              ) : userPayments && userPayments.length > 0 ? (
+              ) : invoices && invoices.length > 0 ? (
                 <div className="space-y-3">
-                  {userPayments.map((payment: any) => (
-                    <div
-                      key={payment.id}
+                  {invoices.map((inv: any) => (
+                    <div key={inv.id}
                       className="flex items-center justify-between p-4 bg-muted rounded-lg"
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-4 mb-2">
-                          <p className="text-2xl text-primary">Bs {payment.amount.toLocaleString()}</p>
-                          <Badge variant="outline" className={getPaymentStatusColor(payment.status)}>
-                            {payment.status}
+                          <p className="text-2xl text-primary">Bs {Number(inv.amount).toLocaleString()}</p>
+                          <Badge variant="outline" className={getPaymentStatusColor(inv.status)}>
+                            {inv.status}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-3 gap-4 text-sm">
                           <div>
-                            <p className="text-muted-foreground">Fecha de Pago</p>
-                            <p>{new Date(payment.date).toLocaleDateString('es-ES')}</p>
+                            <p className="text-muted-foreground">Factura</p>
+                            <p className="font-mono text-xs">{inv.invoice_number}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Vencimiento</p>
+                            <p>{formatDate(inv.due_date)}</p>
                           </div>
                           <div>
                             <p className="text-muted-foreground">Método</p>
-                            <p>{payment.method}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Próximo Pago</p>
-                            <p>{new Date(payment.next_payment).toLocaleDateString('es-ES')}</p>
+                            <p>{inv.method || '-'}</p>
                           </div>
                         </div>
                       </div>
-                      <PrintPayment
-                        payment={payment}
-                        userName={user.name}
-                        userMemberNumber={user.member_number}
-                      />
+                      {inv.status !== 'Pagada' && (
+                        <Button size="sm"
+                          className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"
+                          onClick={() => {
+                            setSelectedInvoiceId(inv.id);
+                            setPayInvoiceAmount(String(inv.amount));
+                            setIsCreatePaymentDialogOpen(true);
+                          }}
+                        >
+                          <CreditCard className="w-4 h-4 mr-1" />
+                          Pagar
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
                   <CreditCard className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p>No hay registros de pagos</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Facturas Generadas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {userInvoices.length > 0 ? (
-                <div className="space-y-3">
-                  {userInvoices.map((invoice) => (
-                    <div
-                      key={invoice.id}
-                      className="flex items-center justify-between p-4 bg-muted rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-2">
-                          <p className="text-primary">{invoice.invoiceNumber}</p>
-                          <Badge variant="outline" className="bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30">
-                            {invoice.status}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{invoice.concept}</p>
-                        <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
-                          <div>
-                            <p className="text-muted-foreground">Fecha</p>
-                            <p>{new Date(invoice.date).toLocaleDateString('es-ES')}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Monto</p>
-                            <p className="text-lg">Bs {invoice.amount.toLocaleString()}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary/10">
-                        <Download className="w-4 h-4 mr-2" />
-                        Descargar
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No hay facturas generadas</p>
+                  <p>No hay facturas registradas</p>
                 </div>
               )}
             </CardContent>
@@ -1166,66 +1131,32 @@ export function UserDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Payment Dialog */}
+      {/* Pay Invoice Dialog */}
       <Dialog open={isCreatePaymentDialogOpen} onOpenChange={setIsCreatePaymentDialogOpen}>
         <DialogContent className="bg-card border-border max-w-md">
           <DialogHeader>
-            <DialogTitle>Registrar Pago</DialogTitle>
+            <DialogTitle>Pagar Factura</DialogTitle>
             <DialogDescription>
-              Registrar un nuevo pago para {user.name}
+              Registrar pago de factura para {user.name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Monto (Bs)</Label>
+              <Label>Monto (Bs) <span className="text-[#ff3b5c]">*</span></Label>
               <Input
                 type="number"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-                placeholder="450"
-                className="bg-input border-border"
+                step="0.01"
+                value={payInvoiceAmount}
+                onChange={(e) => setPayInvoiceAmount(e.target.value)}
+                placeholder="300"
+                className="bg-input border-border text-lg font-bold"
               />
             </div>
             <div>
-              <Label>Fecha de Pago</Label>
-              <Input
-                type="date"
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Próximo Pago</Label>
-              <Input
-                type="date"
-                value={paymentNextDate}
-                onChange={(e) => setPaymentNextDate(e.target.value)}
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Estado</Label>
+              <Label>Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
               <Select
-                value={paymentStatus}
-                onValueChange={setPaymentStatus}
-                className="bg-input border-border"
-              >
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Selecciona un estado" />
-                </SelectTrigger>
-                <SelectContent className="bg-input border-border">
-                  <SelectItem value="Pagado">Pagado</SelectItem>
-                  <SelectItem value="Pendiente">Pendiente</SelectItem>
-                  <SelectItem value="Vencido">Vencido</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Método de Pago</Label>
-              <Select
-                value={paymentMethod}
-                onValueChange={setPaymentMethod}
+                value={payInvoiceMethod}
+                onValueChange={setPayInvoiceMethod}
                 className="bg-input border-border"
               >
                 <SelectTrigger className="bg-input border-border">
@@ -1242,17 +1173,17 @@ export function UserDetail() {
             <div>
               <Label>Referencia (Opcional)</Label>
               <Input
-                value={paymentReference}
-                onChange={(e) => setPaymentReference(e.target.value)}
-                placeholder="Nro. de transferencia, etc."
+                value={payInvoiceReference}
+                onChange={(e) => setPayInvoiceReference(e.target.value)}
+                placeholder="Nro. de referencia"
                 className="bg-input border-border"
               />
             </div>
             <div>
               <Label>Notas (Opcional)</Label>
               <Textarea
-                value={paymentNotes}
-                onChange={(e) => setPaymentNotes(e.target.value)}
+                value={payInvoiceNotes}
+                onChange={(e) => setPayInvoiceNotes(e.target.value)}
                 placeholder="Información adicional..."
                 className="bg-input border-border"
                 rows={3}
@@ -1267,18 +1198,18 @@ export function UserDetail() {
               </Button>
               <Button
                 className="bg-primary hover:bg-primary/90"
-                onClick={createPayment}
-                disabled={createPaymentMutation.isPending}
+                onClick={handlePayInvoice}
+                disabled={payInvoiceMutation.isPending}
               >
-                {createPaymentMutation.isPending ? (
+                {payInvoiceMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Registrando...
+                    Procesando...
                   </>
                 ) : (
                   <>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Registrar Pago
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Confirmar Pago
                   </>
                 )}
               </Button>

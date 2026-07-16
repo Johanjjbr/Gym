@@ -4,7 +4,8 @@ import { UserLayout } from './pages/UserLayout';
 import { Dashboard } from './pages/Dashboard';
 import { Users } from './pages/Users';
 import { UserDetail } from './pages/UserDetail';
-import { Payments } from './pages/Payments';
+import { Invoices } from './pages/Invoices';
+import { Plans } from './pages/Plans';
 import { StaffPage } from './pages/Staff';
 import { Attendance } from './pages/Attendance';
 import { Reports } from './pages/Reports';
@@ -71,7 +72,7 @@ export const router = createBrowserRouter([
       { path: 'mi-perfil', Component: MyProfile },
       { path: 'progreso', Component: MyProgress },
       { path: 'asistencia', Component: MyAttendance },
-      { path: 'pagos', Component: MyPayments },
+      { path: 'facturas', Component: MyPayments },
       { path: 'diagnostico-rutina', Component: RoutineDiagnostic },
       { path: 'migrar-rutinas', Component: MigrateRoutines },
       { path: 'debug-asignaciones', Component: RoutineAssignmentDebug },
@@ -85,7 +86,8 @@ export const router = createBrowserRouter([
       { index: true, Component: Dashboard },
       { path: 'usuarios', Component: Users },
       { path: 'usuarios/:id', Component: UserDetail },
-      { path: 'pagos', Component: Payments },
+      { path: 'facturas', Component: Invoices },
+      { path: 'planes', Component: Plans },
       { path: 'personal', Component: StaffPage },
       { path: 'asistencia', Component: Attendance },
       { path: 'rutinas', Component: Routines },
