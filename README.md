@@ -18,7 +18,7 @@
 
 ## 🎯 Descripción
 
-Sistema administrativo moderno y completo para la gestión del **Gimnasio Los Teques** (Sector Lagunetica). Incluye control de usuarios, pagos, asistencia, rutinas de ejercicio, seguimiento físico y gestión de personal.
+Sistema administrativo moderno y completo para la gestión del **Gimnasio Los Teques** (Sector Lagunetica). Incluye control de usuarios, pagos, asistencia, rutinas de ejercicio, seguimiento físico y gestión de personal
 
 ### ✨ Características Principales
 
