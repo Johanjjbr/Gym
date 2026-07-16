@@ -45,7 +45,8 @@ export function Users() {
   const filteredUsers = users?.filter((user: any) => {
     const matchesSearch =
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase());
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.cedula && user.cedula.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesStatus = statusFilter === 'Todos' || user.status === statusFilter;
 
@@ -181,7 +182,7 @@ export function Users() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder="Buscar por nombre o email..."
+                placeholder="Buscar por nombre, email o cédula..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 bg-input border-border"
@@ -227,6 +228,7 @@ export function Users() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
+                    <th className="text-left py-3 px-4 text-muted-foreground">Cédula</th>
                     <th className="text-left py-3 px-4 text-muted-foreground">Nombre</th>
                     <th className="text-left py-3 px-4 text-muted-foreground">Email</th>
                     <th className="text-left py-3 px-4 text-muted-foreground">Teléfono</th>
@@ -241,6 +243,9 @@ export function Users() {
                       key={user.id}
                       className="border-b border-border hover:bg-muted/50 transition-colors"
                     >
+                      <td className="py-4 px-4">
+                        <p className="text-sm font-mono text-primary">{user.cedula || '-'}</p>
+                      </td>
                       <td className="py-4 px-4">
                         <p className="font-medium">{user.name}</p>
                       </td>

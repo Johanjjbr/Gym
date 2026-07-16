@@ -95,6 +95,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     if (user && open) {
       // Resetear el formulario con los datos del usuario
       reset({
+        cedula: user.cedula || '',
         name: user.name || '',
         email: user.email || '',
         phone: user.phone || '',
@@ -171,6 +172,22 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cedula" className="text-gray-300">
+                    Cédula <span className="text-[#ff3b5c]">*</span>
+                  </Label>
+                  <Input
+                    id="cedula"
+                    {...register('cedula')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    placeholder="V-12345678"
+                  />
+                  {errors.cedula && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.cedula.message}</p>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="name" className="text-gray-300">
                     Nombre Completo <span className="text-[#ff3b5c]">*</span>

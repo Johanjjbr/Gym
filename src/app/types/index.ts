@@ -2,6 +2,7 @@ export type UserRole = 'Administrador' | 'Entrenador' | 'Recepción' | 'Usuario'
 
 export interface User {
   id: string;
+  cedula: string;
   name: string;
   email: string;
   phone: string;
@@ -107,6 +108,10 @@ export interface ExerciseTemplate {
   weight?: string; // ej: "Peso corporal", "5kg"
   instructions?: string;
   videoUrl?: string;
+  imageUrl?: string;
+  gifUrl?: string;
+  target?: string;
+  equipment?: string;
   order: number;
 }
 

@@ -154,11 +154,23 @@ export function ExerciseCombobox({ value, onValueChange, placeholder = "Seleccio
                             value === exercise.name ? 'opacity-100' : 'opacity-0'
                           )}
                         />
-                        <div className="flex-1">
-                          <div className="font-medium">{exercise.name}</div>
-                          <div className="text-xs text-muted-foreground">
+                        {exercise.image_url ? (
+                          <img
+                            src={exercise.image_url}
+                            alt={exercise.name}
+                            className="mr-2 h-8 w-8 rounded object-cover"
+                          />
+                        ) : (
+                          <div className="mr-2 h-8 w-8 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                            💪
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate">{exercise.name}</div>
+                          <div className="text-xs text-muted-foreground truncate">
                             {exercise.muscle_group}
                             {exercise.equipment && ` • ${exercise.equipment}`}
+                            {exercise.target && ` • ${exercise.target}`}
                           </div>
                         </div>
                       </CommandItem>

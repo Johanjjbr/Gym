@@ -11,6 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   member_number TEXT UNIQUE NOT NULL,
+  cedula TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   phone TEXT NOT NULL,
@@ -23,6 +24,10 @@ CREATE TABLE IF NOT EXISTS users (
   height DECIMAL(5,2),
   imc DECIMAL(4,2),
   photo TEXT,
+  activation_token TEXT,
+  is_activated BOOLEAN DEFAULT false,
+  auth_user_id UUID UNIQUE,
+  assigned_trainer UUID REFERENCES staff(id),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -192,6 +197,9 @@ CREATE TABLE IF NOT EXISTS invoices (
 -- =============================================
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
 CREATE INDEX IF NOT EXISTS idx_users_member_number ON users(member_number);
+CREATE INDEX IF NOT EXISTS idx_users_cedula ON users(cedula);
+CREATE INDEX IF NOT EXISTS idx_users_activation_token ON users(activation_token);
+CREATE INDEX IF NOT EXISTS idx_users_auth_user_id ON users(auth_user_id);
 CREATE INDEX IF NOT EXISTS idx_staff_role ON staff(role);
 CREATE INDEX IF NOT EXISTS idx_staff_auth_user_id ON staff(auth_user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id);

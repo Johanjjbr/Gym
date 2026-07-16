@@ -10,6 +10,11 @@ import { z } from 'zod';
 // =============================================
 
 export const userSchema = z.object({
+  cedula: z.string()
+    .min(1, 'La cédula es requerida')
+    .max(20, 'Cédula demasiado larga')
+    .regex(/^[VEJ]?[-]?\d{5,10}$/, 'Formato inválido (ej: V-12345678)'),
+  
   member_number: z.string()
     .max(50, 'Número de miembro demasiado largo')
     .optional()

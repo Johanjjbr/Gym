@@ -92,6 +92,14 @@ export function MyProfile() {
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Hash className="w-4 h-4" />
+                  <span>Cédula</span>
+                </div>
+                <p className="font-medium">{user.cedula || 'No registrada'}</p>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
                   <CreditCard className="w-4 h-4" />
                   <span>N° Miembro</span>
                 </div>

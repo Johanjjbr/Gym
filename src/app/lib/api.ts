@@ -652,6 +652,17 @@ export const exercises = {
     description?: string;
     muscle_group: string;
     equipment?: string;
+    category?: string;
+    body_part?: string;
+    target?: string;
+    secondary_muscles?: string[];
+    instructions_es?: string;
+    instructions_en?: string;
+    image_url?: string;
+    gif_url?: string;
+    media_id?: string;
+    external_id?: string;
+    attribution?: string;
   }) => {
     try {
       return await apiRequest('/exercises', {
@@ -696,6 +707,17 @@ export const exercises = {
     description?: string;
     muscle_group?: string;
     equipment?: string;
+    category?: string;
+    body_part?: string;
+    target?: string;
+    secondary_muscles?: string[];
+    instructions_es?: string;
+    instructions_en?: string;
+    image_url?: string;
+    gif_url?: string;
+    media_id?: string;
+    external_id?: string;
+    attribution?: string;
   }) => {
     try {
       return await apiRequest(`/exercises/${id}`, {

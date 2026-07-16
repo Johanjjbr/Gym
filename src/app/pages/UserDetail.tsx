@@ -427,6 +427,10 @@ export function UserDetail() {
                     </p>
                   </div>
                   <div>
+                    <p className="text-sm text-muted-foreground mb-1">Cédula</p>
+                    <p className="text-primary">{user.cedula || 'No registrada'}</p>
+                  </div>
+                  <div>
                     <p className="text-sm text-muted-foreground mb-1">Miembro #</p>
                     <p className="text-primary">{user.member_number || user.id || 'N/A'}</p>
                   </div>

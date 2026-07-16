@@ -16,6 +16,7 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [cedula, setCedula] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -69,6 +70,11 @@ export function Login() {
       return;
     }
 
+    if (!cedula.trim()) {
+      setError('La cédula es requerida');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -100,6 +106,7 @@ export function Login() {
       const { error: userError } = await supabase
         .from('users')
         .insert([{
+          cedula: cedula,
           name: name,
           email: email,
           phone: phone || null,
@@ -124,6 +131,7 @@ export function Login() {
       setPassword('');
       setConfirmPassword('');
       setName('');
+      setCedula('');
       setPhone('');
       
     } catch (error: any) {
@@ -320,6 +328,24 @@ export function Login() {
                   placeholder="Juan Pérez"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  required
+                  disabled={isLoading}
+                  className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                />
+              </div>
+            )}
+
+            {mode === 'register' && (
+              <div className="space-y-2">
+                <Label htmlFor="cedula" className="text-gray-300">
+                  Cédula <span className="text-[#ff3b5c]">*</span>
+                </Label>
+                <Input
+                  id="cedula"
+                  type="text"
+                  placeholder="V-12345678"
+                  value={cedula}
+                  onChange={(e) => setCedula(e.target.value)}
                   required
                   disabled={isLoading}
                   className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"

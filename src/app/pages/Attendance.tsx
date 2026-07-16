@@ -30,7 +30,8 @@ export function Attendance() {
   
   // Filtrar asistencia por búsqueda
   const filteredAttendance = attendance && attendance.length > 0 ? attendance.filter((a: any) =>
-    a.users?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    a.users?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (a.users?.cedula && a.users.cedula.toLowerCase().includes(searchTerm.toLowerCase()))
   ) : [];
   
   // Calcular asistencia de hoy
@@ -276,7 +277,7 @@ export function Attendance() {
                   ) : users && users.length > 0 ? (
                     users.map((user: any) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.name} - {user.member_number || user.id.slice(0, 8)}
+                        {user.name} - {user.cedula || user.member_number || user.id.slice(0, 8)}
                       </SelectItem>
                     ))
                   ) : (
@@ -366,7 +367,7 @@ export function Attendance() {
                   ) : users && users.length > 0 ? (
                     users.map((user: any) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.name} - {user.member_number || user.id.slice(0, 8)}
+                        {user.name} - {user.cedula || user.member_number || user.id.slice(0, 8)}
                       </SelectItem>
                     ))
                   ) : (

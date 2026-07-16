@@ -550,11 +550,11 @@ app.post("/seed", async (c) => {
       } else { console.log(`⏭️  Staff ya existe: ${staffData.email}`); }
     }
     const members = [
-      { member_number: 'GYM-001', name: 'Carlos Rodríguez', email: 'carlos@example.com', phone: '0414-1234567', status: 'Activo', plan: 'Plan Mensual', start_date: '2025-02-01', next_payment: '2025-03-01', weight: 75.5, height: 1.75, imc: 24.65 },
-      { member_number: 'GYM-002', name: 'María González', email: 'maria@example.com', phone: '0424-2345678', status: 'Activo', plan: 'Plan Trimestral', start_date: '2025-01-15', next_payment: '2025-04-15', weight: 62.0, height: 1.65, imc: 22.77 },
-      { member_number: 'GYM-003', name: 'José Pérez', email: 'jose@example.com', phone: '0412-3456789', status: 'Moroso', plan: 'Plan Mensual', start_date: '2024-12-01', next_payment: '2025-02-01', weight: 80.0, height: 1.80, imc: 24.69 },
-      { member_number: 'GYM-004', name: 'Ana Martínez', email: 'ana@example.com', phone: '0426-4567890', status: 'Activo', plan: 'Plan Anual', start_date: '2025-01-01', next_payment: '2026-01-01', weight: 58.5, height: 1.62, imc: 22.30 },
-      { member_number: 'GYM-005', name: 'Luis Hernández', email: 'luis@example.com', phone: '0414-5678901', status: 'Inactivo', plan: 'Plan Mensual', start_date: '2024-11-15', next_payment: '2024-12-15', weight: 88.0, height: 1.78, imc: 27.76 }
+      { member_number: 'GYM-001', cedula: 'V-12345678', name: 'Carlos Rodríguez', email: 'carlos@example.com', phone: '0414-1234567', status: 'Activo', plan: 'Plan Mensual', start_date: '2025-02-01', next_payment: '2025-03-01', weight: 75.5, height: 1.75, imc: 24.65 },
+      { member_number: 'GYM-002', cedula: 'V-23456789', name: 'María González', email: 'maria@example.com', phone: '0424-2345678', status: 'Activo', plan: 'Plan Trimestral', start_date: '2025-01-15', next_payment: '2025-04-15', weight: 62.0, height: 1.65, imc: 22.77 },
+      { member_number: 'GYM-003', cedula: 'V-34567890', name: 'José Pérez', email: 'jose@example.com', phone: '0412-3456789', status: 'Moroso', plan: 'Plan Mensual', start_date: '2024-12-01', next_payment: '2025-02-01', weight: 80.0, height: 1.80, imc: 24.69 },
+      { member_number: 'GYM-004', cedula: 'V-45678901', name: 'Ana Martínez', email: 'ana@example.com', phone: '0426-4567890', status: 'Activo', plan: 'Plan Anual', start_date: '2025-01-01', next_payment: '2026-01-01', weight: 58.5, height: 1.62, imc: 22.30 },
+      { member_number: 'GYM-005', cedula: 'V-56789012', name: 'Luis Hernández', email: 'luis@example.com', phone: '0414-5678901', status: 'Inactivo', plan: 'Plan Mensual', start_date: '2024-11-15', next_payment: '2024-12-15', weight: 88.0, height: 1.78, imc: 27.76 }
     ];
     const createdMembers = [];
     for (const memberData of members) {
