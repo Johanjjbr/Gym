@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Plus, Eye, Trash2, Dumbbell, Calendar, Loader2, Edit, Users, Power } from 'lucide-react';
+import { Search, Plus, Eye, Trash2, Dumbbell, Calendar, Loader2, Edit, Users, Power, Play } from 'lucide-react';
+import { ExerciseDetailModal } from '../components/ExerciseDetailModal';
+import { useExercises, type Exercise } from '../hooks/useExercises';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -57,12 +59,14 @@ export function Routines() {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingRoutineId, setViewingRoutineId] = useState<string | null>(null);
   const [viewingAssignedUsersRoutineId, setViewingAssignedUsersRoutineId] = useState<string | null>(null);
+  const [detailExercise, setDetailExercise] = useState<Exercise | null>(null);
 
   // Auth context
   const { user } = useAuth();
 
   // React Query Hooks
   const { data: routines = [], isLoading, error } = useRoutines();
+  const { data: allExercises = [] } = useExercises();
   const { data: viewingRoutine, isLoading: isLoadingRoutine } = useRoutine(viewingRoutineId || '');
   const { data: assignedUsers = [], isLoading: isLoadingAssignedUsers } = useRoutineAssignedUsers(viewingAssignedUsersRoutineId || '');
   const deleteRoutineMutation = useDeleteRoutine();

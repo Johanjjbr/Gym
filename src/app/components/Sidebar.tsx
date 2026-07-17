@@ -34,6 +34,7 @@ const menuItems = [
   { icon: UserCog, label: 'Personal', path: '/personal' },
   { icon: QrCode, label: 'Asistencia', path: '/asistencia' },
   { icon: ClipboardList, label: 'Rutinas', path: '/rutinas' },
+  { icon: Dumbbell, label: 'Ejercicios', path: '/ejercicios' },
   { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/mi-entrenamiento' },
   { icon: FileText, label: 'Reportes', path: '/reportes' },
 ];

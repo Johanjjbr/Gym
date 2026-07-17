@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Plus, Trash2, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Save, Loader2, Play, Image } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -13,8 +13,10 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { ExerciseCombobox } from '../components/ExerciseCombobox';
+import { ExerciseDetailModal } from '../components/ExerciseDetailModal';
 import { toast } from 'sonner';
 import { useCreateRoutine, useUpdateRoutine, useRoutine } from '../hooks/useRoutines';
+import { useExercises, type Exercise } from '../hooks/useExercises';
 import { useAuth } from '../contexts/AuthContext';
 
 const DAYS_MAP = [
@@ -47,6 +49,8 @@ export function RoutineBuilder() {
   const updateRoutineMutation = useUpdateRoutine();
   const { data: routineData, isLoading: isLoadingRoutine } = useRoutine(routineId || '');
   const { user } = useAuth();
+  const { data: allExercises = [] } = useExercises();
+  const [detailExercise, setDetailExercise] = useState<Exercise | null>(null);
 
   // Datos de la rutina (maestro)
   const [name, setName] = useState('');
@@ -351,11 +355,37 @@ export function RoutineBuilder() {
                               <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                 <div className="lg:col-span-2 space-y-2">
                                   <Label className="text-xs">Nombre del Ejercicio *</Label>
-                                  <ExerciseCombobox
-                                    value={exercise.exercise_name}
-                                    onValueChange={(value) => handleExerciseChange(exercise.id, 'exercise_name', value)}
-                                    placeholder="Seleccionar o crear ejercicio"
-                                  />
+                                  <div className="flex gap-2">
+                                    <div className="flex-1">
+                                      <ExerciseCombobox
+                                        value={exercise.exercise_name}
+                                        onValueChange={(value) => handleExerciseChange(exercise.id, 'exercise_name', value)}
+                                        placeholder="Seleccionar o crear ejercicio"
+                                      />
+                                    </div>
+                                    {(() => {
+                                      const found = allExercises.find((e) => e.name === exercise.exercise_name);
+                                      return found ? (
+                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                          {found.image_url && (
+                                            <img src={found.image_url} alt="" className="w-9 h-9 rounded object-cover border border-border" />
+                                          )}
+                                          {found.gif_url && (
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="icon"
+                                              className="w-9 h-9"
+                                              onClick={() => setDetailExercise(found)}
+                                              title="Ver GIF animado"
+                                            >
+                                              <Play className="w-4 h-4" />
+                                            </Button>
+                                          )}
+                                        </div>
+                                      ) : null;
+                                    })()}
+                                  </div>
                                 </div>
 
                                 <div className="space-y-2">
@@ -469,6 +499,12 @@ export function RoutineBuilder() {
           </Button>
         </div>
       </form>
+
+      <ExerciseDetailModal
+        exercise={detailExercise}
+        open={!!detailExercise}
+        onOpenChange={(open) => { if (!open) setDetailExercise(null); }}
+      />
     </div>
   );
 }

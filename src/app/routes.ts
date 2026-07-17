@@ -24,6 +24,7 @@ import { DatabaseDiagnostic } from './pages/DatabaseDiagnostic';
 import { RoutineDiagnostic } from './pages/RoutineDiagnostic';
 import { MigrateRoutines } from './pages/MigrateRoutines';
 import { RoutineAssignmentDebug } from './pages/RoutineAssignmentDebug';
+import { Exercises } from './pages/Exercises';
 
 export const router = createBrowserRouter([
   // Ruta pública - Login
@@ -90,6 +91,7 @@ export const router = createBrowserRouter([
       { path: 'planes', Component: Plans },
       { path: 'personal', Component: StaffPage },
       { path: 'asistencia', Component: Attendance },
+      { path: 'ejercicios', Component: Exercises },
       { path: 'rutinas', Component: Routines },
       { path: 'rutinas/crear', Component: RoutineBuilder },
       { path: 'rutinas/:id/editar', Component: RoutineBuilder },

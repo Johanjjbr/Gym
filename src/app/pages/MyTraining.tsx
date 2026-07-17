@@ -16,8 +16,11 @@ import {
   BarChart3,
   Award,
   X,
-  AlertCircle
+  AlertCircle,
+  Play
 } from 'lucide-react';
+import { ExerciseDetailModal } from '../components/ExerciseDetailModal';
+import { useExercises, type Exercise } from '../hooks/useExercises';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -86,6 +89,7 @@ export function MyTraining() {
   };
   const [selectedDay, setSelectedDay] = useState<number>(getStoredDay);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [detailExercise, setDetailExercise] = useState<Exercise | null>(null);
 
   // Queries - TODOS los hooks deben estar al principio
   const { data: assignment, isLoading: loadingAssignment, error: assignmentError } = useRoutineAssignment(user?.id || '');
@@ -108,6 +112,7 @@ export function MyTraining() {
     user?.id || '',
     assignment?.routine_templates?.id || ''
   );
+  const { data: allExercises = [] } = useExercises();
   
   // Mutations
   const createSession = useCreateSession();
@@ -368,6 +373,7 @@ export function MyTraining() {
   }
 
   return (
+    <>
     <div className="space-y-6 p-4 sm:p-6">
       {/* Header */}
       <div>
@@ -646,12 +652,34 @@ export function MyTraining() {
                         </div>
                         
                         <div className="flex-1 min-w-0">
-                          <h4 className={`
-                            font-['Rajdhani'] font-bold text-lg mb-1
-                            ${isCompleted ? 'text-primary' : 'text-foreground'}
-                          `}>
-                            {exercise.exercise_name}
-                          </h4>
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className={`
+                              font-['Rajdhani'] font-bold text-lg
+                              ${isCompleted ? 'text-primary' : 'text-foreground'}
+                            `}>
+                              {exercise.exercise_name}
+                            </h4>
+                            {(() => {
+                              const found = allExercises.find((e) => e.name === exercise.exercise_name);
+                              return found ? (
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  {found.image_url && (
+                                    <img src={found.image_url} alt="" className="w-7 h-7 rounded object-cover border border-border" />
+                                  )}
+                                  {found.gif_url && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); setDetailExercise(found); }}
+                                      className="p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                                      title="Ver GIF animado"
+                                    >
+                                      <Play className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              ) : null;
+                            })()}
+                          </div>
                           <div className="flex flex-wrap items-center gap-3 text-sm font-['Inter'] text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <BarChart3 className="w-4 h-4" />
@@ -1027,5 +1055,12 @@ export function MyTraining() {
         </CardContent>
       </Card>
     </div>
+
+      <ExerciseDetailModal
+        exercise={detailExercise}
+        open={!!detailExercise}
+        onOpenChange={(open) => { if (!open) setDetailExercise(null); }}
+      />
+    </>
   );
 }
