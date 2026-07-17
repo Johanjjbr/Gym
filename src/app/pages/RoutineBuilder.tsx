@@ -189,7 +189,7 @@ export function RoutineBuilder() {
       <div className="container mx-auto p-4 md:p-6 max-w-6xl">
         <Card className="bg-gray-900 border-gray-800">
           <CardContent className="py-12 text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#10f94e]" />
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
             <p className="text-muted-foreground">Cargando rutina...</p>
           </CardContent>
         </Card>
@@ -225,7 +225,7 @@ export function RoutineBuilder() {
         {/* Información General */}
         <Card className="bg-gray-900 border-gray-800">
           <CardHeader>
-            <CardTitle className="text-[#10f94e]">Información General</CardTitle>
+            <CardTitle className="text-primary">Información General</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -306,7 +306,7 @@ export function RoutineBuilder() {
         <Card className="bg-gray-900 border-gray-800">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-[#10f94e]">Ejercicios</CardTitle>
+              <CardTitle className="text-primary">Ejercicios</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
                 {exercises.length} ejercicio{exercises.length !== 1 ? 's' : ''} agregado{exercises.length !== 1 ? 's' : ''}
               </p>
@@ -314,7 +314,7 @@ export function RoutineBuilder() {
             <Button
               type="button"
               onClick={handleAddExercise}
-              className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <Plus className="h-4 w-4 mr-2" />
               Añadir Ejercicio
@@ -345,7 +345,7 @@ export function RoutineBuilder() {
                             className="p-4 bg-gray-800/50 rounded-lg border border-gray-700 space-y-3"
                           >
                             <div className="flex items-start gap-2">
-                              <span className="text-sm font-mono text-[#10f94e] mt-2">
+                              <span className="text-sm font-mono text-primary mt-2">
                                 #{idx + 1}
                               </span>
                               <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -424,7 +424,7 @@ export function RoutineBuilder() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleRemoveExercise(exercise.id)}
-                                className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -452,7 +452,7 @@ export function RoutineBuilder() {
           </Button>
           <Button
             type="submit"
-            className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
             disabled={createRoutineMutation.isPending || updateRoutineMutation.isPending}
           >
             {(createRoutineMutation.isPending || updateRoutineMutation.isPending) ? (

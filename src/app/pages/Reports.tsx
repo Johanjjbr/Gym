@@ -1,6 +1,9 @@
 import { Download, FileText, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Label } from '../components/ui/label';
+import { Input } from '../components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const reportTypes = [
   {
@@ -8,7 +11,7 @@ const reportTypes = [
     title: 'Reporte de Ingresos Mensual',
     description: 'Detalle completo de todos los pagos recibidos en el mes',
     icon: FileText,
-    color: 'text-[#10f94e]',
+    color: 'text-primary',
   },
   {
     id: 2,
@@ -22,7 +25,7 @@ const reportTypes = [
     title: 'Reporte de Suspendidos',
     description: 'Usuarios con pagos vencidos y pendientes',
     icon: FileText,
-    color: 'text-[#ff3b5c]',
+    color: 'text-destructive',
   },
   {
     id: 4,
@@ -43,7 +46,7 @@ const reportTypes = [
     title: 'Reporte Financiero Anual',
     description: 'Resumen financiero completo del año',
     icon: FileText,
-    color: 'text-[#10f94e]',
+    color: 'text-primary',
   },
 ];
 
@@ -143,37 +146,47 @@ export function Reports() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">Fecha Inicio</label>
-              <input
+              <Label className="text-muted-foreground">Fecha Inicio</Label>
+              <Input
                 type="date"
-                className="w-full p-2 bg-input border border-border rounded-lg"
+                className="bg-input border-border"
                 defaultValue="2026-02-01"
               />
             </div>
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">Fecha Fin</label>
-              <input
+              <Label className="text-muted-foreground">Fecha Fin</Label>
+              <Input
                 type="date"
-                className="w-full p-2 bg-input border border-border rounded-lg"
+                className="bg-input border-border"
                 defaultValue="2026-02-24"
               />
             </div>
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">Tipo de Reporte</label>
-              <select className="w-full p-2 bg-input border border-border rounded-lg">
-                <option>Ingresos</option>
-                <option>Usuarios</option>
-                <option>Asistencia</option>
-                <option>Personal</option>
-              </select>
+              <Label className="text-muted-foreground">Tipo de Reporte</Label>
+              <Select>
+                <SelectTrigger className="w-full bg-input border-border">
+                  <SelectValue placeholder="Ingresos" />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="Ingresos">Ingresos</SelectItem>
+                  <SelectItem value="Usuarios">Usuarios</SelectItem>
+                  <SelectItem value="Asistencia">Asistencia</SelectItem>
+                  <SelectItem value="Personal">Personal</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">Formato</label>
-              <select className="w-full p-2 bg-input border border-border rounded-lg">
-                <option>PDF</option>
-                <option>Excel</option>
-                <option>CSV</option>
-              </select>
+              <Label className="text-muted-foreground">Formato</Label>
+              <Select>
+                <SelectTrigger className="w-full bg-input border-border">
+                  <SelectValue placeholder="PDF" />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="PDF">PDF</SelectItem>
+                  <SelectItem value="Excel">Excel</SelectItem>
+                  <SelectItem value="CSV">CSV</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">

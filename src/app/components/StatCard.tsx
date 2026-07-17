@@ -14,8 +14,8 @@ interface StatCardProps {
 
 export function StatCard({ title, value, icon: Icon, trend, color = 'green' }: StatCardProps) {
   const colorClasses = {
-    green: 'text-[#10f94e]',
-    red: 'text-[#ff3b5c]',
+    green: 'text-primary',
+    red: 'text-destructive',
     blue: 'text-[#3b82f6]',
     purple: 'text-[#a855f7]',
   };
@@ -28,7 +28,7 @@ export function StatCard({ title, value, icon: Icon, trend, color = 'green' }: S
             <p className="text-muted-foreground text-sm mb-2">{title}</p>
             <p className="text-3xl tracking-tight mb-1">{value}</p>
             {trend && (
-              <p className={`text-sm ${trend.isPositive ? 'text-[#10f94e]' : 'text-[#ff3b5c]'}`}>
+              <p className={`text-sm ${trend.isPositive ? 'text-primary' : 'text-destructive'}`}>
                 {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}% vs mes anterior
               </p>
             )}

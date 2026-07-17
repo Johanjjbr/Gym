@@ -3,8 +3,9 @@
  * Permite seleccionar ejercicios existentes de la biblioteca o crear nuevos
  */
 
-import { useState } from 'react';
-import { Check, ChevronsUpDown, Plus, Loader2 } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Check, ChevronsUpDown, Plus, Loader2, Image, FileVideo } from 'lucide-react';
+import { uploadFile } from '../lib/upload';
 import { Button } from './ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
@@ -15,6 +16,7 @@ import { Textarea } from './ui/textarea';
 import { useExercises, useCreateExercise, type Exercise } from '../hooks/useExercises';
 import { cn } from './ui/utils';
 import { toast } from 'sonner';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface ExerciseComboboxProps {
   value: string;
@@ -45,6 +47,35 @@ export function ExerciseCombobox({ value, onValueChange, placeholder = "Seleccio
   const [newExerciseMuscleGroup, setNewExerciseMuscleGroup] = useState('General');
   const [newExerciseEquipment, setNewExerciseEquipment] = useState('');
   const [newExerciseDescription, setNewExerciseDescription] = useState('');
+  const [newExerciseImage, setNewExerciseImage] = useState('');
+  const [newExerciseGif, setNewExerciseGif] = useState('');
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const gifInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingMedia(true);
+    try {
+      const url = await uploadFile(file, 'exercise-media', 'images');
+      setNewExerciseImage(url);
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  const handleUploadGif = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingMedia(true);
+    try {
+      const url = await uploadFile(file, 'exercise-media', 'gifs');
+      setNewExerciseGif(url);
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
 
   const { data: exercises = [], isLoading } = useExercises();
   const createExerciseMutation = useCreateExercise();
@@ -61,6 +92,8 @@ export function ExerciseCombobox({ value, onValueChange, placeholder = "Seleccio
         muscle_group: newExerciseMuscleGroup,
         equipment: newExerciseEquipment.trim() || undefined,
         description: newExerciseDescription.trim() || undefined,
+        image_url: newExerciseImage || undefined,
+        gif_url: newExerciseGif || undefined,
       });
 
       // Seleccionar el ejercicio recién creado
@@ -75,6 +108,8 @@ export function ExerciseCombobox({ value, onValueChange, placeholder = "Seleccio
       setNewExerciseMuscleGroup('General');
       setNewExerciseEquipment('');
       setNewExerciseDescription('');
+      setNewExerciseImage('');
+      setNewExerciseGif('');
       setSearchValue('');
     } catch (error) {
       // El error ya se muestra en el hook
@@ -127,7 +162,7 @@ export function ExerciseCombobox({ value, onValueChange, placeholder = "Seleccio
                     </p>
                     <Button
                       size="sm"
-                      className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={handleOpenNewDialog}
                     >
                       <Plus className="h-4 w-4 mr-2" />
@@ -218,18 +253,16 @@ export function ExerciseCombobox({ value, onValueChange, placeholder = "Seleccio
 
             <div className="space-y-2">
               <Label htmlFor="muscle-group">Grupo Muscular *</Label>
-              <select
-                id="muscle-group"
-                value={newExerciseMuscleGroup}
-                onChange={(e) => setNewExerciseMuscleGroup(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                {MUSCLE_GROUPS.map((group) => (
-                  <option key={group} value={group}>
-                    {group}
-                  </option>
-                ))}
-              </select>
+              <Select value={newExerciseMuscleGroup} onValueChange={setNewExerciseMuscleGroup}>
+                <SelectTrigger id="muscle-group" className="w-full border-border bg-background">
+                  <SelectValue placeholder="Seleccionar..." />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  {MUSCLE_GROUPS.map((group) => (
+                    <SelectItem key={group} value={group}>{group}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -252,6 +285,39 @@ export function ExerciseCombobox({ value, onValueChange, placeholder = "Seleccio
                 rows={3}
               />
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Imagen</Label>
+                <div className="flex items-center gap-2">
+                  <input ref={imageInputRef} type="file" accept="image/*" onChange={handleUploadImage} className="hidden" id="exercise-image-upload" />
+                  <Label htmlFor="exercise-image-upload" className="cursor-pointer">
+                    <div className="flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-input bg-background hover:bg-accent">
+                      <Image className="w-4 h-4" />
+                      {uploadingMedia ? 'Subiendo...' : (newExerciseImage ? 'Cambiar' : 'Subir')}
+                    </div>
+                  </Label>
+                </div>
+                {newExerciseImage && (
+                  <img src={newExerciseImage} alt="Preview" className="mt-2 w-20 h-20 rounded object-cover" />
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>GIF animado</Label>
+                <div className="flex items-center gap-2">
+                  <input ref={gifInputRef} type="file" accept="image/gif,image/webp,video/mp4" onChange={handleUploadGif} className="hidden" id="exercise-gif-upload" />
+                  <Label htmlFor="exercise-gif-upload" className="cursor-pointer">
+                    <div className="flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-input bg-background hover:bg-accent">
+                      <FileVideo className="w-4 h-4" />
+                      {uploadingMedia ? 'Subiendo...' : (newExerciseGif ? 'Cambiar' : 'Subir')}
+                    </div>
+                  </Label>
+                </div>
+                {newExerciseGif && (
+                  <img src={newExerciseGif} alt="Preview" className="mt-2 w-20 h-20 rounded object-cover" />
+                )}
+              </div>
+            </div>
           </div>
 
           <DialogFooter>
@@ -265,7 +331,7 @@ export function ExerciseCombobox({ value, onValueChange, placeholder = "Seleccio
             </Button>
             <Button
               type="button"
-              className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={handleCreateExercise}
               disabled={createExerciseMutation.isPending}
             >

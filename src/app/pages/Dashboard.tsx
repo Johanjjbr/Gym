@@ -62,8 +62,8 @@ export function Dashboard() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
-          <p className="text-gray-400">Cargando estadísticas...</p>
+          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
+          <p className="text-muted-foreground">Cargando estadísticas...</p>
         </div>
       </div>
     );
@@ -79,11 +79,11 @@ export function Dashboard() {
 
       {/* Bienvenida */}
       {statsError ? (
-        <Alert className="border-[#ff3b5c]/30 bg-[#ff3b5c]/5">
-          <AlertCircle className="h-5 w-5 text-[#ff3b5c]" />
-          <AlertDescription className="text-gray-300 ml-2">
+        <Alert className="border-destructive/30 bg-destructive/5">
+          <AlertCircle className="h-5 w-5 text-destructive" />
+          <AlertDescription className="text-foreground/80 ml-2">
             <div className="space-y-2">
-              <p className="font-semibold text-white">
+              <p className="font-semibold text-foreground">
                 ⚠️ No se pudo conectar con Supabase
               </p>
               <p className="text-sm">
@@ -92,33 +92,33 @@ export function Dashboard() {
               <div className="flex items-center gap-2 mt-3">
                 <a 
                   href="/test-supabase" 
-                  className="text-[#10f94e] hover:underline inline-flex items-center gap-1 text-sm"
+                  className="text-primary hover:underline inline-flex items-center gap-1 text-sm"
                 >
                   🧪 Ejecutar pruebas de conexión <ExternalLink className="h-3 w-3 inline" />
                 </a>
               </div>
-              <p className="text-xs text-gray-400 mt-2">
-                📖 Consulta <code className="bg-gray-800 px-1 py-0.5 rounded">ARQUITECTURA_SUPABASE.md</code> para instrucciones de configuración
+              <p className="text-xs text-muted-foreground mt-2">
+                📖 Consulta <code className="bg-muted px-1 py-0.5 rounded">ARQUITECTURA_SUPABASE.md</code> para instrucciones de configuración
               </p>
             </div>
           </AlertDescription>
         </Alert>
       ) : (
-        <Alert className="border-[#10f94e]/30 bg-[#10f94e]/5">
-          <Database className="h-5 w-5 text-[#10f94e]" />
-          <AlertDescription className="text-gray-300 ml-2">
+        <Alert className="border-primary/30 bg-primary/5">
+          <Database className="h-5 w-5 text-primary" />
+          <AlertDescription className="text-foreground/80 ml-2">
             <div className="space-y-1">
-              <p className="font-semibold text-white">
+              <p className="font-semibold text-foreground">
                 ✅ ¡Bienvenido, {user?.name}!
               </p>
               <p className="text-sm">
                 Sistema conectado correctamente a Supabase. Mostrando datos en tiempo real.
               </p>
               <div className="flex items-center gap-4 mt-2">
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-muted-foreground">
                   📊 <strong>{totalUsers}</strong> usuarios registrados
                 </span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-muted-foreground">
                   💰 <strong>Bs {monthlyRevenue.toLocaleString()}</strong> cobrados
                 </span>
               </div>
@@ -271,21 +271,21 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {payments?.slice(0, 6).map((payment: any) => {
-                const paymentUser = users?.find((u: any) => u.id === payment.user_id);
+              {invoicesData?.filter((inv: any) => inv.status === 'Pagada').slice(0, 6).map((inv: any) => {
+                const paymentUser = users?.find((u: any) => u.id === inv.user_id);
                 return (
-                  <div key={payment.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                  <div key={inv.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                     <div>
                       <p className="text-sm font-medium">{paymentUser?.name || 'Usuario'}</p>
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(payment.date)}
+                        {formatDate(inv.paid_at || inv.due_date)}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-[#10f94e] font-semibold">
-                        Bs {payment.amount.toLocaleString()}
+                      <p className="text-sm text-primary font-semibold">
+                        Bs {inv.amount.toLocaleString()}
                       </p>
-                      <p className="text-xs text-muted-foreground">{payment.method}</p>
+                      <p className="text-xs text-muted-foreground">{inv.method}</p>
                     </div>
                   </div>
                 );

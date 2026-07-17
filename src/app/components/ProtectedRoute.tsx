@@ -16,8 +16,8 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
-          <p className="text-gray-400">Verificando sesión...</p>
+          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
+          <p className="text-muted-foreground">Verificando sesión...</p>
         </div>
       </div>
     );
@@ -33,9 +33,9 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
         <div className="text-center space-y-4 max-w-md">
-          <div className="p-4 bg-[#ff3b5c]/10 rounded-full inline-block">
+          <div className="p-4 bg-destructive/10 rounded-full inline-block">
             <svg
-              className="h-12 w-12 text-[#ff3b5c]"
+              className="h-12 w-12 text-destructive"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -48,13 +48,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
               />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-white">Acceso Denegado</h2>
-          <p className="text-gray-400">
+          <h2 className="text-2xl font-bold text-foreground">Acceso Denegado</h2>
+          <p className="text-muted-foreground">
             No tienes permisos para acceder a esta sección.
           </p>
           <button
             onClick={() => window.history.back()}
-            className="mt-4 px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+            className="mt-4 px-6 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-colors"
           >
             Volver
           </button>

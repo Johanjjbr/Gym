@@ -60,7 +60,7 @@ const runSeed = async () => {
       <Card className="w-full max-w-2xl border-gray-700 bg-gray-900/50 backdrop-blur">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <Database className="h-12 w-12 text-[#10f94e]" />
+            <Database className="h-12 w-12 text-primary" />
           </div>
           <CardTitle className="text-3xl font-bold text-white">
             Configuración de Base de Datos
@@ -83,7 +83,7 @@ const runSeed = async () => {
 
               <div className="space-y-4 bg-gray-800/50 rounded-lg p-6 border border-gray-700">
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Users className="h-5 w-5 text-[#10f94e]" />
+                  <Users className="h-5 w-5 text-primary" />
                   Usuarios que se crearán:
                 </h3>
                 
@@ -107,7 +107,7 @@ const runSeed = async () => {
                   </div>
 
                   <div className="flex items-start gap-3 p-3 bg-gray-900/50 rounded border border-gray-700">
-                    <div className="w-2 h-2 rounded-full bg-[#10f94e] mt-1.5 flex-shrink-0" />
+                    <div className="w-2 h-2 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="font-semibold text-white">Recepción</p>
                       <p className="text-gray-400">recepcion@gymteques.com / Recepcion123!</p>
@@ -125,7 +125,7 @@ const runSeed = async () => {
 
               <Button 
                 onClick={runSeed}
-                className="w-full bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold text-lg h-14 rounded-xl shadow-lg shadow-[#10f94e]/20"
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-lg h-14 rounded-xl shadow-lg shadow-primary/20"
               >
                 <Play className="mr-2 h-5 w-5" />
                 Inicializar Base de Datos
@@ -136,7 +136,7 @@ const runSeed = async () => {
           {/* Estado Running */}
           {status === 'running' && (
             <div className="flex flex-col items-center justify-center py-12 space-y-4">
-              <Loader2 className="h-16 w-16 text-[#10f94e] animate-spin" />
+              <Loader2 className="h-16 w-16 text-primary animate-spin" />
               <p className="text-white text-lg font-medium">{message}</p>
               <p className="text-gray-400 text-sm">Esto puede tomar unos segundos...</p>
             </div>
@@ -145,9 +145,9 @@ const runSeed = async () => {
           {/* Estado Success */}
           {status === 'success' && (
             <>
-              <Alert className="border-[#10f94e]/50 bg-[#10f94e]/10">
-                <CheckCircle2 className="h-5 w-5 text-[#10f94e]" />
-                <AlertDescription className="text-[#10f94e] ml-2 font-medium">
+              <Alert className="border-primary/50 bg-primary/10">
+                <CheckCircle2 className="h-5 w-5 text-primary" />
+                <AlertDescription className="text-primary ml-2 font-medium">
                   {message}
                 </AlertDescription>
               </Alert>
@@ -159,13 +159,13 @@ const runSeed = async () => {
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div className="bg-gray-900/50 p-4 rounded border border-gray-700">
                       <p className="text-gray-400">Personal Creado</p>
-                      <p className="text-2xl font-bold text-[#10f94e] mt-1">
+                      <p className="text-2xl font-bold text-primary mt-1">
                         {details.created?.staff || 0}
                       </p>
                     </div>
                     <div className="bg-gray-900/50 p-4 rounded border border-gray-700">
                       <p className="text-gray-400">Miembros Creados</p>
-                      <p className="text-2xl font-bold text-[#10f94e] mt-1">
+                      <p className="text-2xl font-bold text-primary mt-1">
                         {details.created?.members || 0}
                       </p>
                     </div>
@@ -190,7 +190,7 @@ const runSeed = async () => {
 
               <Button 
                 onClick={() => window.location.reload()}
-                className="w-full bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold text-lg h-12 rounded-xl"
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-lg h-12 rounded-xl"
               >
                 Recargar Página
               </Button>
@@ -200,9 +200,9 @@ const runSeed = async () => {
           {/* Estado Error */}
           {status === 'error' && (
             <>
-              <Alert className="border-[#ff3b5c]/50 bg-[#ff3b5c]/10">
-                <AlertCircle className="h-5 w-5 text-[#ff3b5c]" />
-                <AlertDescription className="text-[#ff3b5c] ml-2">
+              <Alert className="border-destructive/50 bg-destructive/10">
+                <AlertCircle className="h-5 w-5 text-destructive" />
+                <AlertDescription className="text-destructive ml-2">
                   {message}
                 </AlertDescription>
               </Alert>

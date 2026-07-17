@@ -11,6 +11,7 @@ interface AuthUser {
   phone: string;
   shift: string;
   status: string;
+  photo?: string;
   memberNumber?: string;
 }
 
@@ -47,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Usuario regular
           const { data: regularUser, error: userError } = await supabase
             .from('users')
-            .select('id, name, email, phone, member_number, status')
+            .select('id, name, email, phone, photo, member_number, status')
             .eq('auth_user_id', session.user.id)
             .single();
 
@@ -60,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               role: 'Usuario' as UserRole,
               shift: '',
               status: regularUser.status || 'Activo',
+              photo: regularUser.photo || undefined,
               memberNumber: regularUser.member_number,
             };
             setUser(userData);
@@ -138,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Obtener datos del usuario regular
           const { data: regularUser } = await supabase
             .from('users')
-            .select('id, name, email, phone, member_number, status')
+            .select('id, name, email, phone, photo, member_number, status')
             .eq('auth_user_id', authData.user.id)
             .single();
 
@@ -151,6 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               role: 'Usuario' as UserRole,
               shift: '',
               status: regularUser.status || 'Activo',
+              photo: regularUser.photo || undefined,
               memberNumber: regularUser.member_number,
             };
             

@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/format';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 interface AttendanceRecord {
   id: string;
@@ -159,24 +160,26 @@ export function MyAttendance() {
         </CardHeader>
         <CardContent>
           <div className="flex gap-3">
-            <select 
-              value={filterMonth}
-              onChange={(e) => setFilterMonth(Number(e.target.value))}
-              className="flex-1 h-10 rounded-md border border-input bg-background px-3 py-2"
-            >
-              {months.map((month, index) => (
-                <option key={index} value={index}>{month}</option>
-              ))}
-            </select>
-            <select 
-              value={filterYear}
-              onChange={(e) => setFilterYear(Number(e.target.value))}
-              className="w-32 h-10 rounded-md border border-input bg-background px-3 py-2"
-            >
-              {[2024, 2025, 2026, 2027].map(year => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
+            <Select value={String(filterMonth)} onValueChange={(v) => setFilterMonth(Number(v))}>
+              <SelectTrigger className="flex-1 border-border bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-popover border-border">
+                {months.map((month, index) => (
+                  <SelectItem key={index} value={String(index)}>{month}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={String(filterYear)} onValueChange={(v) => setFilterYear(Number(v))}>
+              <SelectTrigger className="w-32 border-border bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-popover border-border">
+                {[2024, 2025, 2026, 2027].map(year => (
+                  <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

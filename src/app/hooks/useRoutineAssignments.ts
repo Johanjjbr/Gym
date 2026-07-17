@@ -15,9 +15,6 @@ interface RoutineAssignment {
     description: string;
     days_per_week: number;
     created_by: string;
-    staff: {
-      name: string;
-    };
   };
 }
 
@@ -88,10 +85,7 @@ export function useRoutineAssignment(userId: string) {
             name,
             description,
             days_per_week,
-            created_by,
-            staff (
-              name
-            )
+            created_by
           )
         `)
         .eq('user_id', userId)
@@ -153,6 +147,7 @@ export function useWorkoutSession(userId: string, routineId: string, date: strin
         .select('*')
         .eq('user_id', userId)
         .eq('date', date)
+        .limit(1)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
@@ -240,10 +235,10 @@ export function useSaveExerciseLog() {
       session_id: string;
       exercise_id: string;
       exercise_name: string;
-      muscle_group: string;
       weight: number;
       reps: number;
       notes: string | null;
+      assigned_day_of_week?: number;
     }) => {
       // 1. Buscar si ya existe el log del ejercicio
       const { data: existingLog, error: checkError } = await supabase
@@ -279,9 +274,9 @@ export function useSaveExerciseLog() {
             session_id: log.session_id,
             exercise_id: log.exercise_id,
             exercise_name: log.exercise_name,
-            muscle_group: log.muscle_group,
             is_completed: true,
             notes: log.notes,
+            assigned_day_of_week: log.assigned_day_of_week,
           }])
           .select()
           .single();
@@ -333,9 +328,11 @@ export function useSaveExerciseLog() {
       queryClient.invalidateQueries({ 
         queryKey: ['exerciseLogs', variables.session_id] 
       });
-      // También invalidar el historial para que se actualice
       queryClient.invalidateQueries({ 
         queryKey: ['workoutHistory'] 
+      });
+      queryClient.invalidateQueries({ 
+        queryKey: ['pendingExercises'] 
       });
     },
   });
@@ -350,7 +347,6 @@ export function useToggleExerciseComplete() {
       session_id: string;
       exercise_id: string;
       exercise_name: string;
-      muscle_group: string;
       is_completed: boolean;
     }) => {
       // Buscar el log existente
@@ -379,7 +375,6 @@ export function useToggleExerciseComplete() {
             session_id: params.session_id,
             exercise_id: params.exercise_id,
             exercise_name: params.exercise_name,
-            muscle_group: params.muscle_group,
             is_completed: params.is_completed,
           }]);
 
@@ -390,6 +385,9 @@ export function useToggleExerciseComplete() {
       queryClient.invalidateQueries({ 
         queryKey: ['exerciseLogs', variables.session_id] 
       });
+      queryClient.invalidateQueries({ 
+        queryKey: ['pendingExercises'] 
+      });
     },
   });
 }
@@ -399,9 +397,13 @@ export function useWorkoutHistory(userId: string, limit: number = 10) {
   return useQuery({
     queryKey: ['workoutHistory', userId, limit],
     queryFn: async () => {
-      if (!userId) return [];
+      if (!userId) {
+        console.log('⚠️ [useWorkoutHistory] userId vacío');
+        return [];
+      }
 
-      // Obtener las últimas sesiones
+      console.log(`🔍 [useWorkoutHistory] Buscando historial para userId="${userId}" limit=${limit}`);
+
       const { data: sessions, error: sessionsError } = await supabase
         .from('workout_sessions')
         .select('*')
@@ -409,10 +411,18 @@ export function useWorkoutHistory(userId: string, limit: number = 10) {
         .order('date', { ascending: false })
         .limit(limit);
 
-      if (sessionsError) throw sessionsError;
-      if (!sessions || sessions.length === 0) return [];
+      if (sessionsError) {
+        console.error('❌ [useWorkoutHistory] Error sessions:', sessionsError);
+        throw sessionsError;
+      }
 
-      // Para cada sesión, obtener sus ejercicios con sets
+      if (!sessions || sessions.length === 0) {
+        console.log('📭 [useWorkoutHistory] Sin sesiones');
+        return [];
+      }
+
+      console.log(`📊 [useWorkoutHistory] ${sessions.length} sesiones encontradas:`, sessions.map(s => ({ id: s.id, date: s.date })));
+
       const sessionsWithExercises = await Promise.all(
         sessions.map(async (session) => {
           const { data: exerciseLogs, error: logsError } = await supabase
@@ -425,7 +435,7 @@ export function useWorkoutHistory(userId: string, limit: number = 10) {
             .order('created_at', { ascending: true });
 
           if (logsError) {
-            console.error('Error loading exercise logs:', logsError);
+            console.error('❌ [useWorkoutHistory] Error logs para sesión', session.id, logsError);
             return { ...session, exercises: [] };
           }
 
@@ -439,5 +449,67 @@ export function useWorkoutHistory(userId: string, limit: number = 10) {
       return sessionsWithExercises;
     },
     enabled: !!userId,
+  });
+}
+
+// Hook para obtener ejercicios pendientes de la semana actual
+export function usePendingExercises(userId: string, routineId: string) {
+  return useQuery<RoutineExercise[]>({
+    queryKey: ['pendingExercises', userId, routineId],
+    queryFn: async () => {
+      if (!userId || !routineId) return [];
+
+      // Calcular inicio y fin de la semana actual (Lunes a Domingo)
+      const now = new Date();
+      const dayOfWeek = now.getDay(); // 0 = Sun
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() + mondayOffset);
+      const mondayStr = monday.toISOString().split('T')[0];
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const sundayStr = sunday.toISOString().split('T')[0];
+
+      // 1. Obtener todos los ejercicios de la rutina
+      const { data: allExercises, error: exError } = await supabase
+        .from('routine_exercises')
+        .select('*')
+        .eq('routine_id', routineId)
+        .order('day_of_week', { ascending: true })
+        .order('order_index', { ascending: true });
+
+      if (exError) throw exError;
+      if (!allExercises || allExercises.length === 0) return [];
+
+      // 2. Obtener sesiones de esta semana
+      const { data: weekSessions, error: sessError } = await supabase
+        .from('workout_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .gte('date', mondayStr)
+        .lte('date', sundayStr);
+
+      if (sessError) throw sessError;
+
+      if (!weekSessions || weekSessions.length === 0) {
+        // No hay ninguna sesión esta semana → todos los ejercicios están pendientes
+        return allExercises;
+      }
+
+      const sessionIds = weekSessions.map(s => s.id);
+
+      // 3. Obtener exercise_logs de esas sesiones
+      const { data: exerciseLogs, error: logError } = await supabase
+        .from('workout_exercise_logs')
+        .select('exercise_id')
+        .in('session_id', sessionIds);
+
+      if (logError) throw logError;
+
+      // 4. Filtrar ejercicios no logeados
+      const loggedIds = new Set((exerciseLogs || []).map(log => log.exercise_id));
+      return allExercises.filter(ex => !loggedIds.has(ex.id));
+    },
+    enabled: !!userId && !!routineId,
   });
 }

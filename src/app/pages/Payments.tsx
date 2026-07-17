@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, DollarSign, Loader2, AlertCircle, Eye, Calendar, Filter, Printer, X, Users } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { paymentSchema, type PaymentFormData } from '../lib/validations';
 import { usePayments, useCreatePayment } from '../hooks/usePayments';
@@ -13,6 +13,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths } from 'date-fns';
@@ -166,15 +174,15 @@ export function Payments() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Pagado':
-        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
+        return 'bg-primary/20 text-primary border-primary/30';
       case 'Pendiente':
         return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
       case 'Vencido':
-        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
+        return 'bg-destructive/20 text-destructive border-destructive/30';
       case 'Activo':
-        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
+        return 'bg-primary/20 text-primary border-primary/30';
       case 'Suspendido':
-        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
+        return 'bg-destructive/20 text-destructive border-destructive/30';
       default:
         return 'bg-muted text-muted-foreground';
     }
@@ -213,7 +221,7 @@ export function Payments() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
+          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
           <p className="text-gray-400">Cargando pagos...</p>
         </div>
       </div>
@@ -231,12 +239,12 @@ export function Payments() {
           </div>
         </div>
 
-        <Card className="bg-card border-[#ff3b5c]/30">
+        <Card className="bg-card border-destructive/30">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">
-              <AlertCircle className="h-5 w-5 text-[#ff3b5c] mt-0.5" />
+              <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
               <div>
-                <p className="font-semibold text-[#ff3b5c]">Error al cargar pagos</p>
+                <p className="font-semibold text-destructive">Error al cargar pagos</p>
                 <p className="text-sm text-gray-400 mt-1">{paymentsError.message}</p>
               </div>
             </div>
@@ -257,14 +265,14 @@ export function Payments() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            className={`border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c]/10 ${showOverdueUsers ? 'bg-[#ff3b5c]/10' : ''}`}
+            className={`border-destructive text-destructive hover:bg-destructive/10 ${showOverdueUsers ? 'bg-destructive/10' : ''}`}
             onClick={() => setShowOverdueUsers(!showOverdueUsers)}
           >
             <Users className="w-4 h-4 mr-2" />
             Usuarios Morosos ({overdueUsers.length})
           </Button>
           <Button
-            className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
             onClick={() => setIsRegisterOpen(true)}
           >
             <Plus className="w-4 h-4 mr-2" />
@@ -275,9 +283,9 @@ export function Payments() {
 
       {/* Vista de Usuarios Morosos */}
       {showOverdueUsers && (
-        <Card className="bg-card border-[#ff3b5c]/30">
+        <Card className="bg-card border-destructive/30">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-[#ff3b5c]">
+            <CardTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="w-5 h-5" />
               Usuarios con Pagos Vencidos ({overdueUsers.length})
             </CardTitle>
@@ -288,7 +296,7 @@ export function Payments() {
                 {overdueUsers.map((user: any) => (
                   <div
                     key={user.id}
-                    className="flex items-center justify-between p-4 bg-[#ff3b5c]/5 border border-[#ff3b5c]/20 rounded-lg hover:bg-[#ff3b5c]/10 transition-colors cursor-pointer"
+                    className="flex items-center justify-between p-4 bg-destructive/5 border border-destructive/20 rounded-lg hover:bg-destructive/10 transition-colors cursor-pointer"
                     onClick={() => navigate(`/usuarios/${user.id}`)}
                   >
                     <div className="flex-1">
@@ -309,7 +317,7 @@ export function Payments() {
                         </div>
                         <div>
                           <span className="block text-xs">Vencimiento</span>
-                          <span className="text-[#ff3b5c] font-semibold">
+                          <span className="text-destructive font-semibold">
                             {user.next_payment 
                               ? formatDate(user.next_payment)
                               : 'N/A'}
@@ -319,7 +327,7 @@ export function Payments() {
                     </div>
                     <Button
                       size="sm"
-                      className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={(e) => {
                         e.stopPropagation();
                         setValue('user_id', user.id);
@@ -345,12 +353,12 @@ export function Payments() {
         <Card className="bg-card border-border">
           <CardContent className="p-6">
             <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-[#10f94e]/10">
-                <DollarSign className="w-6 h-6 text-[#10f94e]" />
+              <div className="p-3 rounded-lg bg-primary/10">
+                <DollarSign className="w-6 h-6 text-primary" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Cobrado</p>
-                <p className="text-2xl font-bold text-[#10f94e]">
+                <p className="text-2xl font-bold text-primary">
                   Bs {(hasActiveFilters ? filteredTotals.paid : generalTotals.paid).toLocaleString()}
                 </p>
               </div>
@@ -360,12 +368,12 @@ export function Payments() {
         <Card className="bg-card border-border">
           <CardContent className="p-6">
             <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-[#ff3b5c]/10">
-                <DollarSign className="w-6 h-6 text-[#ff3b5c]" />
+              <div className="p-3 rounded-lg bg-destructive/10">
+                <DollarSign className="w-6 h-6 text-destructive" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Vencidos</p>
-                <p className="text-2xl font-bold text-[#ff3b5c]">
+                <p className="text-2xl font-bold text-destructive">
                   Bs {(hasActiveFilters ? filteredTotals.overdue : generalTotals.overdue).toLocaleString()}
                 </p>
               </div>
@@ -413,7 +421,7 @@ export function Payments() {
                     size="sm"
                     variant={filterStatus === 'all' ? 'default' : 'outline'}
                     onClick={() => setFilterStatus('all')}
-                    className={filterStatus === 'all' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                    className={filterStatus === 'all' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}
                   >
                     Todos
                   </Button>
@@ -421,7 +429,7 @@ export function Payments() {
                     size="sm"
                     variant={filterStatus === 'paid' ? 'default' : 'outline'}
                     onClick={() => setFilterStatus('paid')}
-                    className={filterStatus === 'paid' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                    className={filterStatus === 'paid' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}
                   >
                     Pagados
                   </Button>
@@ -429,7 +437,7 @@ export function Payments() {
                     size="sm"
                     variant={filterStatus === 'overdue' ? 'default' : 'outline'}
                     onClick={() => setFilterStatus('overdue')}
-                    className={filterStatus === 'overdue' ? 'bg-[#ff3b5c] text-white hover:bg-[#ff3b5c]/90' : ''}
+                    className={filterStatus === 'overdue' ? 'bg-destructive text-white hover:bg-destructive/90' : ''}
                   >
                     Vencidos
                   </Button>
@@ -443,7 +451,7 @@ export function Payments() {
                     size="sm"
                     variant={timeFilter === 'all' ? 'default' : 'outline'}
                     onClick={() => setTimeFilter('all')}
-                    className={timeFilter === 'all' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                    className={timeFilter === 'all' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}
                   >
                     Todos
                   </Button>
@@ -451,7 +459,7 @@ export function Payments() {
                     size="sm"
                     variant={timeFilter === 'thisMonth' ? 'default' : 'outline'}
                     onClick={() => setTimeFilter('thisMonth')}
-                    className={timeFilter === 'thisMonth' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                    className={timeFilter === 'thisMonth' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}
                   >
                     Este Mes
                   </Button>
@@ -459,7 +467,7 @@ export function Payments() {
                     size="sm"
                     variant={timeFilter === 'lastMonth' ? 'default' : 'outline'}
                     onClick={() => setTimeFilter('lastMonth')}
-                    className={timeFilter === 'lastMonth' ? 'bg-[#10f94e] text-black hover:bg-[#0ed145]' : ''}
+                    className={timeFilter === 'lastMonth' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}
                   >
                     Mes Pasado
                   </Button>
@@ -507,74 +515,69 @@ export function Payments() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 text-muted-foreground">Usuario</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Monto</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Fecha de Pago</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Próximo Pago</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Método</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Estado</th>
-                    <th className="text-right py-3 px-4 text-muted-foreground">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPayments.map((payment: any) => (
-                    <tr
-                      key={payment.id}
-                      className="border-b border-border hover:bg-muted/50 transition-colors"
-                    >
-                      <td className="py-4 px-4">{getUserName(payment.user_id)}</td>
-                      <td className="py-4 px-4">
-                        <span className="text-[#10f94e] font-semibold">
-                          Bs {payment.amount.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4">
-                        {formatDate(payment.date)}
-                      </td>
-                      <td className="py-4 px-4">
-                        <span
-                          className={
-                            payment.status === 'Vencido' ? 'text-[#ff3b5c] font-semibold' : ''
-                          }
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-left text-muted-foreground">Usuario</TableHead>
+                  <TableHead className="text-left text-muted-foreground">Monto</TableHead>
+                  <TableHead className="text-left text-muted-foreground">Fecha de Pago</TableHead>
+                  <TableHead className="text-left text-muted-foreground">Próximo Pago</TableHead>
+                  <TableHead className="text-left text-muted-foreground">Método</TableHead>
+                  <TableHead className="text-left text-muted-foreground">Estado</TableHead>
+                  <TableHead className="text-right text-muted-foreground">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPayments.map((payment: any) => (
+                  <TableRow key={payment.id}>
+                    <TableCell className="py-4">{getUserName(payment.user_id)}</TableCell>
+                    <TableCell className="py-4">
+                      <span className="text-primary font-semibold">
+                        Bs {payment.amount.toLocaleString()}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-4">
+                      {formatDate(payment.date)}
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <span
+                        className={
+                          payment.status === 'Vencido' ? 'text-destructive font-semibold' : ''
+                        }
+                      >
+                        {formatDate(payment.next_payment)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-4">{payment.method}</TableCell>
+                    <TableCell className="py-4">
+                      <Badge variant="outline" className={getStatusColor(payment.status)}>
+                        {payment.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <PrintPayment
+                          payment={payment}
+                          userName={getUserName(payment.user_id)}
+                          userMemberNumber={getUserMemberNumber(payment.user_id)}
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="hover:bg-primary/10 hover:text-primary"
+                          onClick={() => {
+                            setSelectedPayment(payment);
+                            setIsDetailsOpen(true);
+                          }}
                         >
-                          {formatDate(payment.next_payment)}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4">{payment.method}</td>
-                      <td className="py-4 px-4">
-                        <Badge variant="outline" className={getStatusColor(payment.status)}>
-                          {payment.status}
-                        </Badge>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <PrintPayment
-                            payment={payment}
-                            userName={getUserName(payment.user_id)}
-                            userMemberNumber={getUserMemberNumber(payment.user_id)}
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="hover:bg-[#10f94e]/10 hover:text-[#10f94e]"
-                            onClick={() => {
-                              setSelectedPayment(payment);
-                              setIsDetailsOpen(true);
-                            }}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
@@ -591,21 +594,28 @@ export function Payments() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="user_id" className="text-gray-300">
-                Usuario <span className="text-[#ff3b5c]">*</span>
+                Usuario <span className="text-destructive">*</span>
               </Label>
-              <select
-                {...register('user_id')}
-                className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-              >
-                <option value="">Seleccionar usuario</option>
-                {users?.map((user: any) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name} - {user.plan || user.membership_type || 'Sin plan'}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                name="user_id"
+                control={control}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger className="w-full bg-gray-800 border-gray-700 text-white">
+                      <SelectValue placeholder="Seleccionar usuario" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-800 border-gray-700">
+                      {users?.map((user: any) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name} - {user.plan || user.membership_type || 'Sin plan'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               {errors.user_id && (
-                <p className="text-xs text-[#ff3b5c]">{errors.user_id.message}</p>
+                <p className="text-xs text-destructive">{errors.user_id.message}</p>
               )}
             </div>
 
@@ -619,7 +629,7 @@ export function Payments() {
 
             <div className="space-y-2">
               <Label htmlFor="amount" className="text-gray-300">
-                Monto (Bs) <span className="text-[#ff3b5c]">*</span>
+                Monto (Bs) <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="amount"
@@ -630,14 +640,14 @@ export function Payments() {
                 placeholder="300.00"
               />
               {errors.amount && (
-                <p className="text-xs text-[#ff3b5c]">{errors.amount.message}</p>
+                <p className="text-xs text-destructive">{errors.amount.message}</p>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="date" className="text-gray-300">
-                  Fecha de Pago <span className="text-[#ff3b5c]">*</span>
+                  Fecha de Pago <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="date"
@@ -646,13 +656,13 @@ export function Payments() {
                   className="bg-gray-800 border-gray-700 text-white"
                 />
                 {errors.date && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.date.message}</p>
+                  <p className="text-xs text-destructive">{errors.date.message}</p>
                 )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="next_payment" className="text-gray-300 flex items-center gap-2">
-                  Próximo Pago <Calendar className="h-3 w-3 text-[#10f94e]" />
+                  Próximo Pago <Calendar className="h-3 w-3 text-primary" />
                 </Label>
                 <Input
                   id="next_payment"
@@ -666,19 +676,27 @@ export function Payments() {
 
             <div className="space-y-2">
               <Label htmlFor="method" className="text-gray-300">
-                Método de Pago <span className="text-[#ff3b5c]">*</span>
+                Método de Pago <span className="text-destructive">*</span>
               </Label>
-              <select
-                {...register('method')}
-                className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-              >
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Tarjeta">Tarjeta</option>
-                <option value="Pago Móvil">Pago Móvil</option>
-              </select>
+              <Controller
+                name="method"
+                control={control}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger className="w-full bg-gray-800 border-gray-700 text-white">
+                      <SelectValue placeholder="Seleccionar método" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-800 border-gray-700">
+                      <SelectItem value="Efectivo">Efectivo</SelectItem>
+                      <SelectItem value="Transferencia">Transferencia</SelectItem>
+                      <SelectItem value="Tarjeta">Tarjeta</SelectItem>
+                      <SelectItem value="Pago Móvil">Pago Móvil</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               {errors.method && (
-                <p className="text-xs text-[#ff3b5c]">{errors.method.message}</p>
+                <p className="text-xs text-destructive">{errors.method.message}</p>
               )}
             </div>
 
@@ -709,7 +727,7 @@ export function Payments() {
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
               >
                 {isSubmitting ? (
                   <>
@@ -749,7 +767,7 @@ export function Payments() {
                 </div>
                 <div className="col-span-2">
                   <p className="text-sm text-gray-400 mb-1">Monto</p>
-                  <p className="text-3xl text-[#10f94e] font-bold">
+                  <p className="text-3xl text-primary font-bold">
                     Bs {selectedPayment.amount.toLocaleString()}
                   </p>
                 </div>
@@ -764,7 +782,7 @@ export function Payments() {
                   <p
                     className={
                       selectedPayment.status === 'Vencido'
-                        ? 'text-[#ff3b5c] font-semibold'
+                        ? 'text-destructive font-semibold'
                         : 'text-white'
                     }
                   >
@@ -774,8 +792,8 @@ export function Payments() {
                 <div>
                   <p className="text-sm text-gray-400 mb-1">Método de Pago</p>
                   <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-lg bg-[#10f94e]/10">
-                      <DollarSign className="w-4 h-4 text-[#10f94e]" />
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <DollarSign className="w-4 h-4 text-primary" />
                     </div>
                     <p className="text-white">{selectedPayment.method}</p>
                   </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { 
   Calendar, 
   Dumbbell, 
@@ -33,6 +34,7 @@ import {
   useSaveExerciseLog,
   useToggleExerciseComplete,
   useWorkoutHistory,
+  usePendingExercises,
 } from '../hooks/useRoutineAssignments';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/format';
@@ -61,40 +63,63 @@ export function MyTraining() {
   const today = getTodayLocal();
   const dayOfWeek = new Date().getDay(); // 0 = Domingo, 1 = Lunes, etc.
 
+  // Obtener la fecha correspondiente a un día de la semana (dentro de la semana actual)
+  const getDateForDay = (targetDay: number) => {
+    const now = new Date();
+    const diff = targetDay - now.getDay();
+    const d = new Date(now);
+    d.setDate(now.getDate() + diff);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   // Estado local - PRIMERO (antes de cualquier hook que use estos valores)
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
   const [exerciseData, setExerciseData] = useState<Record<string, { weight: string; reps: string; notes: string }>>({});
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
-  const [selectedDay, setSelectedDay] = useState<number>(dayOfWeek);
+  const getStoredDay = () => {
+    const stored = localStorage.getItem('selectedDay');
+    if (stored !== null) return parseInt(stored, 10);
+    return dayOfWeek;
+  };
+  const [selectedDay, setSelectedDay] = useState<number>(getStoredDay);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   // Queries - TODOS los hooks deben estar al principio
   const { data: assignment, isLoading: loadingAssignment, error: assignmentError } = useRoutineAssignment(user?.id || '');
   
-  // Ejercicios del día actual (para hoy)
-  const { data: exercises = [], isLoading: loadingExercises } = useRoutineExercises(
-    assignment?.routine_templates?.id || '',
-    dayOfWeek
-  );
-  
   // Ejercicios del día seleccionado
-  const { data: selectedDayExercises = [] } = useRoutineExercises(
+  const { data: exercises = [], isLoading: loadingExercises } = useRoutineExercises(
     assignment?.routine_templates?.id || '',
     selectedDay
   );
   
+  const selectedDayDate = getDateForDay(selectedDay);
   const { data: session, refetch: refetchSession } = useWorkoutSession(
     user?.id || '',
     assignment?.routine_templates?.id || '',
-    today
+    selectedDayDate
   );
-  const { data: exerciseLogs = [] } = useExerciseLogs(session?.id || '');
-  const { data: workoutHistory = [] } = useWorkoutHistory(user?.id || '', 5);
+  const { data: exerciseLogs = [] } = useExerciseLogs(activeSessionId || session?.id || '');
+  const { data: workoutHistory = [], refetch: refetchHistory } = useWorkoutHistory(user?.id || '', 5);
+  const { data: pendingExercises = [] } = usePendingExercises(
+    user?.id || '',
+    assignment?.routine_templates?.id || ''
+  );
   
   // Mutations
   const createSession = useCreateSession();
   const saveExercise = useSaveExerciseLog();
   const toggleComplete = useToggleExerciseComplete();
-  
+  const queryClient = useQueryClient();
+
+  // Persistir día seleccionado al recargar
+  useEffect(() => {
+    localStorage.setItem('selectedDay', selectedDay.toString());
+  }, [selectedDay]);
+
   // Debug: Log session info
   console.log('🏋️ [Session Debug]', {
     hasUser: !!user?.id,
@@ -108,32 +133,6 @@ export function MyTraining() {
     selectedDay,
     isPending: createSession.isPending,
   });
-
-  // Crear sesión automáticamente si no existe (solo para el día actual)
-  useEffect(() => {
-    // Solo crear sesión si estamos viendo el día actual
-    if (selectedDay !== dayOfWeek) {
-      console.log('⚠️ No se crea sesión porque el día seleccionado no es hoy');
-      return;
-    }
-
-    if (user?.id && assignment?.routine_templates?.id && exercises.length > 0 && !session && !createSession.isPending) {
-      console.log('✅ Creando sesión automáticamente...');
-      createSession.mutate({
-        user_id: user.id,
-        routine_id: assignment.routine_templates.id,
-        date: today,
-      }, {
-        onSuccess: (newSession) => {
-          console.log('✅ Sesión creada:', newSession);
-          refetchSession();
-        },
-        onError: (error) => {
-          console.error('❌ Error creando sesión:', error);
-        }
-      });
-    }
-  }, [user?.id, assignment?.routine_templates?.id, exercises.length, session, today, selectedDay, dayOfWeek]);
 
   const getDayName = (day: number) => {
     const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -175,18 +174,26 @@ export function MyTraining() {
     }
   };
 
-  const handleSaveExercise = async (exerciseId: string, exerciseName: string, muscleGroup: string) => {
+  const handleSaveExercise = async (exerciseId: string, exerciseName: string) => {
     console.log('💾 Intentando guardar ejercicio:', { session, selectedDay, dayOfWeek });
-    
-    if (selectedDay !== dayOfWeek) {
-      toast.error('Solo puedes registrar ejercicios del día actual');
-      return;
-    }
-    
-    if (!session?.id) {
-      toast.error('No hay sesión activa. Espera un momento...');
-      console.error('❌ No hay sesión activa:', { session, user, assignment });
-      return;
+
+    let currentSession = session;
+
+    if (!currentSession?.id) {
+      try {
+        currentSession = await createSession.mutateAsync({
+          user_id: user!.id,
+          routine_id: assignment!.routine_templates!.id,
+          date: selectedDayDate,
+        });
+        setActiveSessionId(currentSession.id);
+        refetchSession();
+        toast.success('Sesión iniciada correctamente');
+      } catch (error: any) {
+        console.error('❌ Error creando sesión:', error);
+        toast.error('Error al iniciar la sesión de entrenamiento');
+        return;
+      }
     }
 
     const data = getExerciseData(exerciseId, '');
@@ -195,53 +202,71 @@ export function MyTraining() {
       return;
     }
 
-    // Validar que muscle_group no sea null/undefined
-    const validMuscleGroup = muscleGroup || 'General';
-    console.log('💾 Guardando ejercicio con muscle_group:', validMuscleGroup);
+    // Buscar el ejercicio para conocer su día asignado
+    const exercise = exercises.find(e => e.id === exerciseId);
+    const assignedDayOfWeek = exercise?.day_of_week;
 
     try {
       await saveExercise.mutateAsync({
-        session_id: session.id,
+        session_id: currentSession.id,
         exercise_id: exerciseId,
         exercise_name: exerciseName,
-        muscle_group: validMuscleGroup,
         weight: parseFloat(data.weight),
         reps: parseInt(data.reps),
         notes: data.notes || null,
+        assigned_day_of_week: assignedDayOfWeek,
       });
+
+      queryClient.invalidateQueries({ queryKey: ['exerciseLogs', currentSession.id] });
+      queryClient.invalidateQueries({ queryKey: ['pendingExercises'] });
+      await refetchHistory();
 
       toast.success('Ejercicio registrado correctamente');
       setSelectedExercise(null);
-      setExerciseData(prev => ({
-        ...prev,
-        [exerciseId]: { weight: '', reps: '', notes: '' }
-      }));
+      setExerciseData(prev => {
+        const next = { ...prev };
+        delete next[exerciseId];
+        return next;
+      });
     } catch (error: any) {
       console.error('Error guardando ejercicio:', error);
       toast.error('Error al guardar el ejercicio');
     }
   };
 
-  const handleMarkComplete = async (exerciseId: string, exerciseName: string, muscleGroup: string) => {
-    if (!session?.id) {
-      toast.error('No hay sesión activa');
-      return;
+  const handleMarkComplete = async (exerciseId: string, exerciseName: string) => {
+    let currentSession = session;
+
+    if (!currentSession?.id) {
+      try {
+        currentSession = await createSession.mutateAsync({
+          user_id: user!.id,
+          routine_id: assignment!.routine_templates!.id,
+          date: selectedDayDate,
+        });
+        setActiveSessionId(currentSession.id);
+        refetchSession();
+      } catch (error: any) {
+        console.error('❌ Error creando sesión:', error);
+        toast.error('Error al iniciar la sesión de entrenamiento');
+        return;
+      }
     }
 
     const log = getExerciseLog(exerciseId);
     const newStatus = !log?.is_completed;
     
-    // Validar que muscle_group no sea null/undefined
-    const validMuscleGroup = muscleGroup || 'General';
-    
     try {
       await toggleComplete.mutateAsync({
-        session_id: session.id,
+        session_id: currentSession.id,
         exercise_id: exerciseId,
         exercise_name: exerciseName,
-        muscle_group: validMuscleGroup,
         is_completed: newStatus,
       });
+
+      queryClient.invalidateQueries({ queryKey: ['exerciseLogs', currentSession.id] });
+      queryClient.invalidateQueries({ queryKey: ['pendingExercises'] });
+      await refetchHistory();
 
       toast.success(newStatus ? '✅ Completado' : '⚪ Desmarcado');
     } catch (error: any) {
@@ -264,8 +289,8 @@ export function MyTraining() {
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center space-y-4">
           <div className="relative">
-            <div className="w-20 h-20 border-4 border-[#10f94e]/20 border-t-[#10f94e] rounded-full animate-spin mx-auto"></div>
-            <Dumbbell className="w-8 h-8 text-[#10f94e] absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+            <div className="w-20 h-20 border-4 border-primary/20 border-t-[#10f94e] rounded-full animate-spin mx-auto"></div>
+            <Dumbbell className="w-8 h-8 text-primary absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
           </div>
           <p className="text-muted-foreground font-['Inter']">Cargando entrenamiento...</p>
         </div>
@@ -286,10 +311,10 @@ export function MyTraining() {
           </p>
         </div>
         
-        <Card className="border-[#ff3b5c]/30 bg-[#ff3b5c]/5">
+        <Card className="border-destructive/30 bg-destructive/5">
           <CardContent className="py-12 text-center">
-            <div className="w-20 h-20 bg-[#ff3b5c]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Bug className="w-10 h-10 text-[#ff3b5c]" />
+            <div className="w-20 h-20 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Bug className="w-10 h-10 text-destructive" />
             </div>
             <h3 className="text-xl font-['Rajdhani'] font-bold mb-2">Error de Conexión</h3>
             <p className="text-muted-foreground font-['Inter'] mb-4">
@@ -297,7 +322,7 @@ export function MyTraining() {
             </p>
             <Button
               variant="outline"
-              className="border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c] hover:text-white"
+              className="border-destructive text-destructive hover:bg-destructive hover:text-white"
               onClick={() => navigate('/diagnostico-rutinas')}
             >
               <Bug className="w-4 h-4 mr-2" />
@@ -347,7 +372,7 @@ export function MyTraining() {
       {/* Header */}
       <div>
         <h1 className="text-3xl sm:text-4xl font-['Rajdhani'] font-bold tracking-tight mb-2 flex items-center gap-3">
-          <span className="text-[#10f94e]">●</span>
+          <span className="text-primary">●</span>
           MI ENTRENAMIENTO
         </h1>
         <p className="text-muted-foreground font-['Inter']">
@@ -356,13 +381,13 @@ export function MyTraining() {
       </div>
 
       {/* Routine Info Card */}
-      <Card className="border-[#10f94e]/20 bg-gradient-to-br from-[#10f94e]/5 to-transparent">
+      <Card className="border-primary/20 bg-gradient-to-br from-[#10f94e]/5 to-transparent">
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-2 h-2 bg-[#10f94e] rounded-full animate-pulse"></div>
-                <span className="text-xs font-['Inter'] text-[#10f94e] uppercase tracking-wider">
+                <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                <span className="text-xs font-['Inter'] text-primary uppercase tracking-wider">
                   Activa
                 </span>
               </div>
@@ -378,11 +403,11 @@ export function MyTraining() {
                 Entrenador
               </span>
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-[#10f94e]/20 rounded-full flex items-center justify-center">
-                  <Award className="w-4 h-4 text-[#10f94e]" />
+                <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center">
+                  <Award className="w-4 h-4 text-primary" />
                 </div>
                 <span className="font-['Rajdhani'] font-bold text-lg">
-                  {assignment.routine_templates.staff?.name || 'No asignado'}
+                  Entrenador asignado
                 </span>
               </div>
             </div>
@@ -393,8 +418,8 @@ export function MyTraining() {
             {/* Fecha de inicio */}
             <div className="bg-background/50 backdrop-blur-sm rounded-lg p-4 border border-muted">
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-[#10f94e]/10 flex items-center justify-center">
-                  <Calendar className="w-5 h-5 text-[#10f94e]" />
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Calendar className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex-1">
                   <p className="text-xs font-['Inter'] text-muted-foreground uppercase">Inicio</p>
@@ -408,8 +433,8 @@ export function MyTraining() {
             {/* Frecuencia */}
             <div className="bg-background/50 backdrop-blur-sm rounded-lg p-4 border border-muted">
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-[#10f94e]/10 flex items-center justify-center">
-                  <Dumbbell className="w-5 h-5 text-[#10f94e]" />
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Dumbbell className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex-1">
                   <p className="text-xs font-['Inter'] text-muted-foreground uppercase">Frecuencia</p>
@@ -423,12 +448,12 @@ export function MyTraining() {
             {/* Progreso Hoy */}
             <div className="bg-background/50 backdrop-blur-sm rounded-lg p-4 border border-muted">
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-[#10f94e]/10 flex items-center justify-center">
-                  <Target className="w-5 h-5 text-[#10f94e]" />
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Target className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex-1">
                   <p className="text-xs font-['Inter'] text-muted-foreground uppercase">Hoy</p>
-                  <p className="font-['Rajdhani'] font-bold text-lg text-[#10f94e]">
+                  <p className="font-['Rajdhani'] font-bold text-lg text-primary">
                     {completedCount}/{exercises.length}
                   </p>
                 </div>
@@ -438,8 +463,8 @@ export function MyTraining() {
             {/* Total completado */}
             <div className="bg-background/50 backdrop-blur-sm rounded-lg p-4 border border-muted">
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-[#10f94e]/10 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-[#10f94e]" />
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Zap className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex-1">
                   <p className="text-xs font-['Inter'] text-muted-foreground uppercase">Progreso</p>
@@ -455,7 +480,7 @@ export function MyTraining() {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs font-['Inter']">
               <span className="text-muted-foreground">Progreso del día</span>
-              <span className="text-[#10f94e] font-bold">{completedCount} de {exercises.length} completados</span>
+              <span className="text-primary font-bold">{completedCount} de {exercises.length} completados</span>
             </div>
             <div className="h-3 bg-muted rounded-full overflow-hidden relative">
               <div 
@@ -472,7 +497,7 @@ export function MyTraining() {
       {/* Day Selector */}
       <div className="space-y-3">
         <h2 className="text-xl font-['Rajdhani'] font-bold flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-[#10f94e]" />
+          <Calendar className="w-5 h-5 text-primary" />
           Selecciona el Día
         </h2>
         <div className="grid grid-cols-7 gap-2">
@@ -487,22 +512,22 @@ export function MyTraining() {
                 className={`
                   relative p-3 rounded-lg border-2 transition-all duration-200 font-['Inter']
                   ${isSelected 
-                    ? 'border-[#10f94e] bg-[#10f94e]/10 shadow-lg shadow-[#10f94e]/20' 
-                    : 'border-muted hover:border-[#10f94e]/50 bg-background/50'
+                    ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20' 
+                    : 'border-muted hover:border-primary/50 bg-background/50'
                   }
                 `}
               >
                 {isToday && (
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-[#ff3b5c] rounded-full border-2 border-background"></div>
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full border-2 border-background"></div>
                 )}
                 <div className="text-center">
                   <p className={`text-xs uppercase tracking-wide mb-1 ${
-                    isSelected ? 'text-[#10f94e]' : 'text-muted-foreground'
+                    isSelected ? 'text-primary' : 'text-muted-foreground'
                   }`}>
                     {getDayShortName(day)}
                   </p>
                   <p className={`text-lg font-['Rajdhani'] font-bold ${
-                    isSelected ? 'text-[#10f94e]' : 'text-foreground'
+                    isSelected ? 'text-primary' : 'text-foreground'
                   }`}>
                     {day === dayOfWeek ? 'HOY' : ''}
                   </p>
@@ -514,7 +539,7 @@ export function MyTraining() {
       </div>
 
       {/* Today's Workout */}
-      {selectedDayExercises.length === 0 ? (
+      {exercises.length === 0 ? (
         <Card className="border-muted bg-card/50">
           <CardContent className="py-12 text-center">
             <div className="w-20 h-20 bg-muted/50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -522,8 +547,10 @@ export function MyTraining() {
             </div>
             <h3 className="text-2xl font-['Rajdhani'] font-bold mb-2">Día de Descanso</h3>
             <p className="text-muted-foreground font-['Inter'] max-w-md mx-auto">
-              {getDayName(selectedDay)} no tienes ejercicios programados.<br />
-              ¡Aprovecha para recuperarte y volver más fuerte!
+              {getDayName(selectedDay)} no tienes ejercicios programados.
+              {assignment && (
+                <> Tu rutina tiene una frecuencia de <strong>{assignment.routine_templates.days_per_week} días</strong> por semana. Selecciona otro día en el calendario para entrenar o ponerte al día.</>
+              )}
             </p>
           </CardContent>
         </Card>
@@ -533,7 +560,7 @@ export function MyTraining() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-2xl font-['Rajdhani'] font-bold flex items-center gap-2">
-                  <Dumbbell className="w-6 h-6 text-[#10f94e]" />
+                  <Dumbbell className="w-6 h-6 text-primary" />
                   Entrenamiento - {getDayName(selectedDay)}
                 </CardTitle>
                 <p className="text-sm font-['Inter'] text-muted-foreground mt-1">
@@ -545,30 +572,30 @@ export function MyTraining() {
               </div>
               <Badge 
                 variant="outline" 
-                className="border-[#10f94e] text-[#10f94e] font-['Rajdhani'] text-lg px-3 py-1"
+                className="border-primary text-primary font-['Rajdhani'] text-lg px-3 py-1"
               >
-                {selectedDayExercises.length} ejercicios
+                {exercises.length} ejercicios
               </Badge>
             </div>
           </CardHeader>
           <CardContent>
-            {/* Advertencia si no es el día actual */}
+            {/* Indicador de día */}
             {selectedDay !== dayOfWeek && (
               <div className="mb-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
                   <AlertCircle className="w-5 h-5 flex-shrink-0" />
                   <div className="font-['Inter'] text-sm">
-                    <p className="font-semibold">Estás viendo {getDayName(selectedDay)}</p>
+                    <p className="font-semibold">Poniéndote al día - {getDayName(selectedDay)}</p>
                     <p className="text-xs mt-1 opacity-90">
-                      Solo puedes registrar ejercicios del día actual. Selecciona "{getDayName(dayOfWeek)}" para entrenar.
+                      Estás registrando ejercicios de un día anterior. ¡Bien hecho por ponerte al día!
                     </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Mensaje si no hay sesión activa en el día actual */}
-            {selectedDay === dayOfWeek && !session && exercises.length > 0 && (
+            {/* Mensaje si no hay sesión activa */}
+            {!session && exercises.length > 0 && (
               <div className="mb-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                 <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
                   <Clock className="w-5 h-5 flex-shrink-0 animate-pulse" />
@@ -583,8 +610,8 @@ export function MyTraining() {
             )}
 
             <div className="space-y-3">
-              {selectedDayExercises.map((exercise, index) => {
-                const log = selectedDay === dayOfWeek ? getExerciseLog(exercise.id) : null;
+              {exercises.map((exercise, index) => {
+                const log = getExerciseLog(exercise.id);
                 const isCompleted = log?.is_completed || false;
                 const isExpanded = selectedExercise === exercise.id;
                 const data = getExerciseData(exercise.id, exercise.reps);
@@ -596,8 +623,8 @@ export function MyTraining() {
                     className={`
                       border-2 rounded-xl transition-all duration-200
                       ${isCompleted 
-                        ? 'bg-[#10f94e]/5 border-[#10f94e]/30 shadow-lg shadow-[#10f94e]/10' 
-                        : 'border-muted bg-background/50 hover:border-[#10f94e]/20'
+                        ? 'bg-primary/5 border-primary/30 shadow-lg shadow-primary/10' 
+                        : 'border-muted bg-background/50 hover:border-primary/20'
                       }
                     `}
                   >
@@ -605,14 +632,13 @@ export function MyTraining() {
                     <button
                       onClick={() => handleToggleExercise(exercise.id, exercise.reps)}
                       className="w-full p-4 flex items-center justify-between hover:bg-accent/30 transition-colors rounded-xl"
-                      disabled={selectedDay !== dayOfWeek}
                     >
                       <div className="flex items-center gap-4 flex-1 text-left">
                         {/* Número de ejercicio */}
                         <div className={`
                           w-12 h-12 rounded-lg flex items-center justify-center font-['Rajdhani'] font-bold text-xl
                           ${isCompleted 
-                            ? 'bg-[#10f94e] text-black' 
+                            ? 'bg-primary text-primary-foreground' 
                             : 'bg-muted text-muted-foreground'
                           }
                         `}>
@@ -622,7 +648,7 @@ export function MyTraining() {
                         <div className="flex-1 min-w-0">
                           <h4 className={`
                             font-['Rajdhani'] font-bold text-lg mb-1
-                            ${isCompleted ? 'text-[#10f94e]' : 'text-foreground'}
+                            ${isCompleted ? 'text-primary' : 'text-foreground'}
                           `}>
                             {exercise.exercise_name}
                           </h4>
@@ -653,30 +679,28 @@ export function MyTraining() {
                         {lastSet?.weight && (
                           <Badge 
                             variant="secondary" 
-                            className="bg-[#10f94e]/10 text-[#10f94e] border-[#10f94e]/20 font-['Rajdhani'] text-base px-3"
+                            className="bg-primary/10 text-primary border-primary/20 font-['Rajdhani'] text-base px-3"
                           >
                             {lastSet.weight} kg
                           </Badge>
                         )}
-                        {selectedDay === dayOfWeek && (
-                          isExpanded ? (
-                            <ChevronUp className="w-6 h-6 text-[#10f94e]" />
-                          ) : (
-                            <ChevronDown className="w-6 h-6 text-muted-foreground" />
-                          )
+                        {isExpanded ? (
+                          <ChevronUp className="w-6 h-6 text-primary" />
+                        ) : (
+                          <ChevronDown className="w-6 h-6 text-muted-foreground" />
                         )}
                       </div>
                     </button>
 
                     {/* Exercise Details (Expanded) */}
-                    {isExpanded && selectedDay === dayOfWeek && (
+                    {isExpanded && (
                       <div className="px-4 pb-4 space-y-4 border-t border-muted">
                         {exercise.notes && (
                           <div className="pt-4">
                             <p className="text-xs font-['Inter'] text-muted-foreground mb-2 uppercase tracking-wide">
                               Notas del entrenador
                             </p>
-                            <div className="bg-[#10f94e]/5 border border-[#10f94e]/20 p-3 rounded-lg">
+                            <div className="bg-primary/5 border border-primary/20 p-3 rounded-lg">
                               <p className="text-sm font-['Inter'] text-foreground">{exercise.notes}</p>
                             </div>
                           </div>
@@ -697,7 +721,7 @@ export function MyTraining() {
                                   ...prev,
                                   [exercise.id]: { ...data, weight: e.target.value }
                                 }))}
-                                className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-[#10f94e]"
+                                className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-primary"
                               />
                             </div>
 
@@ -713,7 +737,7 @@ export function MyTraining() {
                                   ...prev,
                                   [exercise.id]: { ...data, reps: e.target.value }
                                 }))}
-                                className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-[#10f94e]"
+                                className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-primary"
                               />
                             </div>
                           </div>
@@ -729,7 +753,7 @@ export function MyTraining() {
                                 ...prev,
                                 [exercise.id]: { ...data, notes: e.target.value }
                               }))}
-                              className="font-['Inter'] border-2 focus:border-[#10f94e] resize-none"
+                              className="font-['Inter'] border-2 focus:border-primary resize-none"
                               rows={2}
                             />
                           </div>
@@ -737,9 +761,9 @@ export function MyTraining() {
 
                         <div className="flex gap-2 pt-2">
                           <Button
-                            onClick={() => handleSaveExercise(exercise.id, exercise.exercise_name, exercise.muscle_group)}
+                            onClick={() => handleSaveExercise(exercise.id, exercise.exercise_name)}
                             disabled={saveExercise.isPending}
-                            className="flex-1 bg-[#10f94e] hover:bg-[#0dd943] text-black font-['Rajdhani'] font-bold text-lg h-12"
+                            className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-['Rajdhani'] font-bold text-lg h-12"
                           >
                             {saveExercise.isPending ? (
                               <>
@@ -754,9 +778,9 @@ export function MyTraining() {
                             )}
                           </Button>
                           <Button
-                            onClick={() => handleMarkComplete(exercise.id, exercise.exercise_name, exercise.muscle_group)}
+                            onClick={() => handleMarkComplete(exercise.id, exercise.exercise_name)}
                             variant="outline"
-                            className="border-2 border-[#10f94e] text-[#10f94e] hover:bg-[#10f94e] hover:text-black font-['Rajdhani'] font-bold text-lg h-12"
+                            className="border-2 border-primary text-primary hover:bg-primary hover:text-primary-foreground font-['Rajdhani'] font-bold text-lg h-12"
                           >
                             {isCompleted ? 'Desmarcar' : 'Marcar'}
                           </Button>
@@ -779,13 +803,66 @@ export function MyTraining() {
         </Card>
       )}
 
+      {/* Ejercicios Pendientes */}
+      {pendingExercises.length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl font-['Rajdhani'] font-bold flex items-center gap-2">
+                  <Clock className="w-6 h-6 text-amber-400" />
+                  Ejercicios Pendientes
+                </CardTitle>
+                <p className="text-sm font-['Inter'] text-muted-foreground mt-1">
+                  {pendingExercises.length} ejercicio{pendingExercises.length > 1 ? 's' : ''} de esta semana aún sin registrar
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {pendingExercises.map((exercise) => {
+                const suggestedDay = getDayName(exercise.day_of_week);
+                return (
+                  <div
+                    key={exercise.id}
+                    className="flex items-center justify-between p-3 rounded-lg border-2 border-amber-500/20 bg-background/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                        <Dumbbell className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <p className="font-['Rajdhani'] font-bold text-base">{exercise.exercise_name}</p>
+                        <p className="text-xs font-['Inter'] text-muted-foreground">
+                          Sugerido: {suggestedDay} · {exercise.sets}×{exercise.reps}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => setSelectedDay(exercise.day_of_week)}
+                      variant="outline"
+                      size="sm"
+                      className="border-amber-500/50 text-amber-400 hover:bg-amber-500 hover:text-white font-['Rajdhani'] font-bold"
+                    >
+                      <Target className="w-4 h-4 mr-1" />
+                      Ir
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Workout History */}
       <Card className="border-muted">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-2xl font-['Rajdhani'] font-bold flex items-center gap-2">
-                <History className="w-6 h-6 text-[#10f94e]" />
+                <History className="w-6 h-6 text-primary" />
                 Historial Reciente
               </CardTitle>
               <p className="text-sm font-['Inter'] text-muted-foreground mt-1">
@@ -853,7 +930,7 @@ export function MyTraining() {
 
                       <div className="flex items-center gap-3 flex-shrink-0">
                         <div className="text-right">
-                          <p className="text-sm font-['Rajdhani'] font-bold text-[#10f94e]">
+                          <p className="text-sm font-['Rajdhani'] font-bold text-primary">
                             {completionRate.toFixed(0)}%
                           </p>
                           <p className="text-xs font-['Inter'] text-muted-foreground">
@@ -875,13 +952,17 @@ export function MyTraining() {
                           const sets = exercise.set_logs || [];
                           const lastSet = sets.length > 0 ? sets[0] : null;
 
+                          const sessionDateObj = parseLocalDate(sessionData.date);
+                          const sessionDBDay = sessionDateObj.getDay() === 0 ? 7 : sessionDateObj.getDay();
+                          const isCompensated = exercise.assigned_day_of_week && exercise.assigned_day_of_week !== sessionDBDay;
+
                           return (
                             <div
                               key={exercise.id}
                               className={`
                                 p-3 rounded-lg border-2 transition-all
                                 ${exercise.is_completed 
-                                  ? 'bg-[#10f94e]/5 border-[#10f94e]/20' 
+                                  ? 'bg-primary/5 border-primary/20' 
                                   : 'bg-muted/30 border-muted'
                                 }
                               `}
@@ -889,7 +970,7 @@ export function MyTraining() {
                               <div className="flex items-start gap-3">
                                 <div className="flex-shrink-0 mt-1">
                                   {exercise.is_completed ? (
-                                    <CheckCircle className="w-5 h-5 text-[#10f94e]" />
+                                    <CheckCircle className="w-5 h-5 text-primary" />
                                   ) : (
                                     <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
                                   )}
@@ -903,9 +984,20 @@ export function MyTraining() {
                                     {exercise.exercise_name}
                                   </h5>
 
+                                  {isCompensated && (
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-['Inter'] border-amber-400/40 text-amber-500 bg-amber-500/5">
+                                        Compensado
+                                      </Badge>
+                                      <span className="text-[10px] font-['Inter'] text-muted-foreground">
+                                        (día original: {getDayName(exercise.assigned_day_of_week === 7 ? 0 : exercise.assigned_day_of_week)})
+                                      </span>
+                                    </div>
+                                  )}
+
                                   {lastSet && (
                                     <div className="flex items-center gap-3 font-['Inter'] text-sm">
-                                      <span className="text-[#10f94e] font-bold">
+                                      <span className="text-primary font-bold">
                                         {lastSet.weight} kg
                                       </span>
                                       <span className="text-muted-foreground">×</span>

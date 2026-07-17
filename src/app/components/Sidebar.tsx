@@ -12,8 +12,19 @@ import {
   Database,
   Package
 } from 'lucide-react';
-import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarSeparator,
+} from './ui/sidebar';
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -27,7 +38,7 @@ const menuItems = [
   { icon: FileText, label: 'Reportes', path: '/reportes' },
 ];
 
-export function Sidebar() {
+export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -37,13 +48,11 @@ export function Sidebar() {
     navigate('/login');
   };
 
-  // Restringir items del menú para el rol "Entrenador"
   const restrictedPathsForTrainer = ['/', '/facturas', '/planes', '/personal', '/reportes'];
   const filteredMenuItems = user?.role === 'Entrenador'
     ? menuItems.filter(item => !restrictedPathsForTrainer.includes(item.path))
     : menuItems;
 
-  // Función para obtener las iniciales del nombre
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -54,82 +63,78 @@ export function Sidebar() {
   };
 
   return (
-    <div className="w-64 h-screen bg-[#0f0f16] border-r border-border flex flex-col fixed left-0 top-0">
-      {/* Logo */}
-      <div className="p-6 border-b border-border">
+    <Sidebar>
+      <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-            <Dumbbell className="w-6 h-6 text-primary-foreground" />
+          <div className="size-10 rounded-lg bg-primary flex items-center justify-center">
+            <Dumbbell className="size-6 text-primary-foreground" />
           </div>
           <div>
             <h1 className="text-xl tracking-tight">GYM Lagunetica</h1>
-            <p className="text-xs text-muted-foreground">Los Teques</p>
+            <p className="text-xs text-sidebar-foreground/60">Los Teques</p>
           </div>
         </div>
-      </div>
+      </SidebarHeader>
+      
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Navegación</SidebarGroupLabel>
+          <SidebarMenu>
+            {filteredMenuItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.path;
+              
+              return (
+                <SidebarMenuItem key={item.path}>
+                  <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                    <Link to={item.path}>
+                      <Icon />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
+          </SidebarMenu>
+        </SidebarGroup>
 
-      {/* Navigation */}
-      <nav className="flex-1 p-4">
-        <ul className="space-y-1">
-          {filteredMenuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path;
-            
-            return (
-              <li key={item.path}>
-                <Link
-                  to={item.path}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200",
-                    isActive 
-                      ? "bg-primary/10 text-primary border border-primary/20" 
-                      : "text-muted-foreground hover:bg-card hover:text-foreground"
-                  )}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span>{item.label}</span>
+        <SidebarSeparator />
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Desarrollo</SidebarGroupLabel>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={location.pathname === '/test-supabase'}>
+                <Link to="/test-supabase">
+                  <Database className="size-5" />
+                  <span>Test Supabase</span>
                 </Link>
-              </li>
-            );
-          })}
-        </ul>
-        
-        {/* Sección de Ayuda */}
-        <div className="mt-6 pt-6 border-t border-border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider px-4 mb-2">
-            Desarrollo
-          </p>
-          <Link
-            to="/test-supabase"
-            className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-card hover:text-foreground transition-all duration-200"
-          >
-            <Database className="w-5 h-5" />
-            <span className="text-sm">Test Supabase</span>
-          </Link>
-        </div>
-      </nav>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
 
-      {/* User Profile */}
-      <div className="p-4 border-t border-border">
-        <div className="flex items-center gap-3 p-3 rounded-lg bg-card">
-          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+      <SidebarFooter className="p-4 border-t border-sidebar-border">
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-sidebar-accent">
+          <div className="size-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
             <span className="text-primary text-sm">
               {user ? getInitials(user.name) : 'U'}
             </span>
           </div>
-          <div className="flex-1">
-            <p className="text-sm font-medium">{user?.name || 'Usuario'}</p>
-            <p className="text-xs text-muted-foreground">{user?.role || 'Sin rol'}</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{user?.name || 'Usuario'}</p>
+            <p className="text-xs text-sidebar-foreground/60 truncate">{user?.role || 'Sin rol'}</p>
           </div>
           <button 
             onClick={handleLogout}
-            className="text-muted-foreground hover:text-destructive transition-colors"
+            className="text-sidebar-foreground/60 hover:text-destructive transition-colors flex-shrink-0"
             title="Cerrar sesión"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="size-4" />
           </button>
         </div>
-      </div>
-    </div>
+      </SidebarFooter>
+    </Sidebar>
   );
 }

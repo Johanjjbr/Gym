@@ -209,16 +209,16 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
       <Toaster position="bottom-right" richColors />
-      <Card className="w-full max-w-md border-gray-700 bg-gray-900/50 backdrop-blur">
+      <Card className="w-full max-w-md border-border bg-card/50 backdrop-blur">
         <CardHeader className="space-y-4 text-center">
           <div className="flex justify-center">
-            <div className="p-4 bg-[#10f94e]/10 rounded-full">
-              <Dumbbell className="h-12 w-12 text-[#10f94e]" />
+            <div className="p-4 bg-primary/10 rounded-full">
+              <Dumbbell className="h-12 w-12 text-primary" />
             </div>
           </div>
           <div>
-            <CardTitle className="text-3xl font-bold text-white">Gimnasio Los Teques</CardTitle>
-            <CardDescription className="text-gray-400 mt-2">
+            <CardTitle className="text-3xl font-bold text-foreground">Gimnasio Los Teques</CardTitle>
+            <CardDescription className="text-muted-foreground mt-2">
               Sector Lagunetica - Sistema Administrativo
             </CardDescription>
           </div>
@@ -226,7 +226,7 @@ export function Login() {
 
         <CardContent className="space-y-6">
           {/* Tabs de Login / Registro */}
-          <div className="flex gap-2 p-1 bg-gray-800/50 rounded-lg border border-gray-700">
+          <div className="flex gap-2 p-1 bg-muted/50 rounded-lg border border-border">
             <button
               type="button"
               onClick={() => {
@@ -235,8 +235,8 @@ export function Login() {
               }}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-md transition-all ${
                 mode === 'login'
-                  ? 'bg-[#10f94e] text-black font-semibold'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-primary text-black font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <LogIn className="w-4 h-4" />
@@ -250,8 +250,8 @@ export function Login() {
               }}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-md transition-all ${
                 mode === 'register'
-                  ? 'bg-[#10f94e] text-black font-semibold'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-primary text-black font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <UserPlus className="w-4 h-4" />
@@ -261,16 +261,16 @@ export function Login() {
 
           <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-4">
             {mode === 'register' && (
-              <Alert className="border-[#10f94e]/50 bg-[#10f94e]/10">
-                <UserPlus className="h-4 w-4 text-[#10f94e]" />
-                <AlertDescription className="text-[#10f94e] ml-2">
+              <Alert className="border-primary/50 bg-primary/10">
+                <UserPlus className="h-4 w-4 text-primary" />
+                <AlertDescription className="text-primary ml-2">
                   Regístrate para acceder a tus rutinas, seguimiento de progreso y pagar tu mensualidad
                 </AlertDescription>
               </Alert>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-gray-300">
+              <Label htmlFor="email" className="text-foreground/80">
                 Correo Electrónico
               </Label>
               <Input
@@ -281,12 +281,12 @@ export function Login() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 disabled={isLoading}
-                className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground/70"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-gray-300">
+              <Label htmlFor="password" className="text-foreground/80">
                 Contraseña
               </Label>
               <Input
@@ -297,13 +297,13 @@ export function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={isLoading}
-                className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground/70"
               />
             </div>
 
             {mode === 'register' && (
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-gray-300">
+                <Label htmlFor="confirmPassword" className="text-foreground/80">
                   Confirmar Contraseña
                 </Label>
                 <Input
@@ -314,14 +314,14 @@ export function Login() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   disabled={isLoading}
-                  className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground/70"
                 />
               </div>
             )}
 
             {mode === 'register' && (
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-gray-300">
+                <Label htmlFor="name" className="text-foreground/80">
                   Nombre Completo
                 </Label>
                 <Input
@@ -332,15 +332,15 @@ export function Login() {
                   onChange={(e) => setName(e.target.value)}
                   required
                   disabled={isLoading}
-                  className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground/70"
                 />
               </div>
             )}
 
             {mode === 'register' && (
               <div className="space-y-2">
-                <Label htmlFor="cedula" className="text-gray-300">
-                  Cédula <span className="text-[#ff3b5c]">*</span>
+                <Label htmlFor="cedula" className="text-foreground/80">
+                  Cédula <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="cedula"
@@ -350,14 +350,14 @@ export function Login() {
                   onChange={(e) => setCedula(e.target.value)}
                   required
                   disabled={isLoading}
-                  className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground/70"
                 />
               </div>
             )}
 
             {mode === 'register' && (
               <div className="space-y-2">
-                <Label htmlFor="phone" className="text-gray-300">
+                <Label htmlFor="phone" className="text-foreground/80">
                   Teléfono (opcional)
                 </Label>
                 <Input
@@ -367,15 +367,15 @@ export function Login() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   disabled={isLoading}
-                  className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground/70"
                 />
               </div>
             )}
 
             {error && (
-              <Alert className="border-[#ff3b5c]/50 bg-[#ff3b5c]/10">
-                <AlertCircle className="h-4 w-4 text-[#ff3b5c]" />
-                <AlertDescription className="text-[#ff3b5c] ml-2">
+              <Alert className="border-destructive/50 bg-destructive/10">
+                <AlertCircle className="h-4 w-4 text-destructive" />
+                <AlertDescription className="text-destructive ml-2">
                   {error}
                 </AlertDescription>
               </Alert>
@@ -384,7 +384,7 @@ export function Login() {
             <Button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold h-12 text-lg"
+              className="w-full bg-primary hover:bg-primary/90 text-black font-bold h-12 text-lg"
             >
               {isLoading ? (
                 <>
@@ -402,25 +402,25 @@ export function Login() {
               <button
                 type="button"
                 onClick={() => setShowCredentials(!showCredentials)}
-                className="w-full text-sm text-gray-400 hover:text-gray-300 transition-colors"
+                className="w-full text-sm text-muted-foreground hover:text-foreground/80 transition-colors"
               >
                 {showCredentials ? '− Ocultar' : '+ Mostrar'} credenciales de prueba
               </button>
 
               {showCredentials && (
-                <div className="space-y-2 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-                  <p className="text-xs text-gray-400 mb-3">Haz clic para usar:</p>
+                <div className="space-y-2 p-4 bg-muted/50 rounded-lg border border-border">
+                  <p className="text-xs text-muted-foreground mb-3">Haz clic para usar:</p>
                   
                   <button
                     type="button"
                     onClick={() => fillCredentials('user')}
-                    className="w-full text-left p-3 bg-gray-900/70 hover:bg-gray-900 rounded border border-gray-700 transition-colors"
+                    className="w-full text-left p-3 bg-card hover:bg-muted rounded border border-border transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-[#10f94e]" />
+                      <div className="w-2 h-2 rounded-full bg-primary" />
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">Usuario Regular</p>
-                        <p className="text-xs text-gray-400">usuario@gymteques.com</p>
+                        <p className="text-sm font-semibold text-foreground">Usuario Regular</p>
+                        <p className="text-xs text-muted-foreground">usuario@gymteques.com</p>
                       </div>
                     </div>
                   </button>
@@ -428,13 +428,13 @@ export function Login() {
                   <button
                     type="button"
                     onClick={() => fillCredentials('admin')}
-                    className="w-full text-left p-3 bg-gray-900/70 hover:bg-gray-900 rounded border border-gray-700 transition-colors"
+                    className="w-full text-left p-3 bg-card hover:bg-muted rounded border border-border transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-red-500" />
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">Administrador</p>
-                        <p className="text-xs text-gray-400">admin@gymteques.com</p>
+                        <p className="text-sm font-semibold text-foreground">Administrador</p>
+                        <p className="text-xs text-muted-foreground">admin@gymteques.com</p>
                       </div>
                     </div>
                   </button>
@@ -442,13 +442,13 @@ export function Login() {
                   <button
                     type="button"
                     onClick={() => fillCredentials('trainer')}
-                    className="w-full text-left p-3 bg-gray-900/70 hover:bg-gray-900 rounded border border-gray-700 transition-colors"
+                    className="w-full text-left p-3 bg-card hover:bg-muted rounded border border-border transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-blue-500" />
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">Entrenador</p>
-                        <p className="text-xs text-gray-400">trainer@gymteques.com</p>
+                        <p className="text-sm font-semibold text-foreground">Entrenador</p>
+                        <p className="text-xs text-muted-foreground">trainer@gymteques.com</p>
                       </div>
                     </div>
                   </button>
@@ -456,13 +456,13 @@ export function Login() {
                   <button
                     type="button"
                     onClick={() => fillCredentials('reception')}
-                    className="w-full text-left p-3 bg-gray-900/70 hover:bg-gray-900 rounded border border-gray-700 transition-colors"
+                    className="w-full text-left p-3 bg-card hover:bg-muted rounded border border-border transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-yellow-500" />
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">Recepción</p>
-                        <p className="text-xs text-gray-400">recepcion@gymteques.com</p>
+                        <p className="text-sm font-semibold text-foreground">Recepción</p>
+                        <p className="text-xs text-muted-foreground">recepcion@gymteques.com</p>
                       </div>
                     </div>
                   </button>
@@ -471,13 +471,13 @@ export function Login() {
             </div>
           )}
 
-          <div className="text-center pt-4 border-t border-gray-700">
-            <p className="text-xs text-gray-500">
+          <div className="text-center pt-4 border-t border-border">
+            <p className="text-xs text-muted-foreground/70">
               Sistema de gestión v1.0 - Febrero 2026
             </p>
             <a 
               href="/test-supabase" 
-              className="text-xs text-gray-500 hover:text-[#10f94e] transition-colors mt-2 inline-block"
+              className="text-xs text-muted-foreground/70 hover:text-primary transition-colors mt-2 inline-block"
             >
               Test de Conexión Supabase →
             </a>

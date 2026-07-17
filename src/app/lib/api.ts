@@ -245,6 +245,56 @@ export const auth = {
 };
 
 // =============================================
+// Helper: transformar datos de usuario (snake_case DB → camelCase)
+// =============================================
+
+async function transformUserData(raw: any) {
+  if (!raw) return raw;
+
+  // Si tiene plan_id pero no plan, resolver el nombre del plan
+  let planName = raw.plan;
+  if ((!planName || planName === '') && raw.plan_id) {
+    try {
+      const { data: plan } = await supabase
+        .from('plans')
+        .select('name')
+        .eq('id', raw.plan_id)
+        .maybeSingle();
+      planName = plan?.name || 'Sin plan';
+    } catch {
+      planName = 'Sin plan';
+    }
+  }
+
+  // Buscar entrenador asignado
+  let trainerData: any = null;
+  if (raw.assigned_trainer) {
+    try {
+      const { data: trainer } = await supabase
+        .from('staff')
+        .select('id, name, email, phone, role')
+        .eq('id', raw.assigned_trainer)
+        .maybeSingle();
+      trainerData = trainer;
+    } catch {
+      // ignorar
+    }
+  }
+
+  return {
+    ...raw,
+    memberNumber: raw.member_number || '',
+    plan: planName || 'Sin plan',
+    startDate: raw.start_date || '',
+    nextPayment: raw.next_payment || '',
+    trainer_id: raw.assigned_trainer,
+    trainer_name: trainerData?.name || raw.trainer_name || null,
+    trainer_email: trainerData?.email || raw.trainer_email || null,
+    trainer_phone: trainerData?.phone || raw.trainer_phone || null,
+  };
+}
+
+// =============================================
 // USUARIOS
 // =============================================
 
@@ -262,12 +312,13 @@ export const users = {
   getById: async (id: string) => {
     try {
       // Intentar usar la API primero
-      return await apiRequest(`/users/${id}`);
+      const apiData = await apiRequest<any>(`/users/${id}`);
+      // Transformar snake_case de la API a camelCase
+      return await transformUserData(apiData);
     } catch (error: any) {
       // Si falla, usar Supabase directamente
       console.log('⚠️ API no disponible, usando Supabase directamente para obtener usuario');
       
-      // Primero obtener el usuario
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
@@ -279,44 +330,7 @@ export const users = {
         throw new Error(userError.message || 'Error al obtener usuario');
       }
       
-      console.log('📋 Usuario base obtenido:', userData);
-      console.log('🔍 assigned_trainer ID:', userData.assigned_trainer);
-      
-      // Si tiene entrenador asignado, buscarlo en staff
-      let trainerData = null;
-      if (userData.assigned_trainer) {
-        console.log('🔍 Buscando entrenador en staff con ID:', userData.assigned_trainer);
-        
-        const { data: trainer, error: trainerError } = await supabase
-          .from('staff')
-          .select('id, name, email, phone, role')
-          .eq('id', userData.assigned_trainer)
-          .maybeSingle();
-        
-        if (trainerError) {
-          console.error('❌ Error obteniendo entrenador de staff:', trainerError);
-        } else if (trainer) {
-          console.log('✅ Entrenador encontrado en staff:', trainer);
-          trainerData = trainer;
-        } else {
-          console.warn('⚠️ No se encontró entrenador en staff con ID:', userData.assigned_trainer);
-        }
-      } else {
-        console.log('ℹ️ Usuario no tiene entrenador asignado (assigned_trainer es null)');
-      }
-      
-      // Transformar datos para que coincidan con el formato esperado
-      const transformedData = {
-        ...userData,
-        trainer_name: trainerData?.name || null,
-        trainer_email: trainerData?.email || null,
-        trainer_phone: trainerData?.phone || null,
-        trainer: trainerData,
-      };
-      
-      console.log('✅ Usuario transformado final:', transformedData);
-      console.log('✅ trainer_name para mostrar:', transformedData.trainer_name);
-      return transformedData;
+      return await transformUserData(userData);
     }
   },
 

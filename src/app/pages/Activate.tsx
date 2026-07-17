@@ -84,7 +84,7 @@ export function Activate() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
+          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
           <p className="text-gray-400">Verificando link de activación...</p>
         </div>
       </div>
@@ -123,7 +123,7 @@ export function Activate() {
 
               <div className="space-y-4 bg-gray-800/50 p-4 rounded-lg border border-gray-700">
                 <h3 className="font-semibold text-white flex items-center gap-2">
-                  <span className="bg-[#10f94e] text-black rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span>
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span>
                   Abre el SQL Editor en Supabase
                 </h3>
                 <p className="text-sm text-gray-400 ml-8">
@@ -131,7 +131,7 @@ export function Activate() {
                 </p>
 
                 <h3 className="font-semibold text-white flex items-center gap-2 mt-4">
-                  <span className="bg-[#10f94e] text-black rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span>
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span>
                   Ejecuta el script de configuración
                 </h3>
                 <p className="text-sm text-gray-400 ml-8">
@@ -139,7 +139,7 @@ export function Activate() {
                 </p>
 
                 <h3 className="font-semibold text-white flex items-center gap-2 mt-4">
-                  <span className="bg-[#10f94e] text-black rounded-full w-6 h-6 flex items-center justify-center text-sm">3</span>
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm">3</span>
                   Recarga esta página
                 </h3>
                 <p className="text-sm text-gray-400 ml-8">
@@ -149,16 +149,16 @@ export function Activate() {
 
               <div className="bg-gray-800/30 p-4 rounded border border-gray-700">
                 <p className="text-xs text-gray-500 font-mono">
-                  💡 El script agregará las columnas: <span className="text-[#10f94e]">activation_token</span>, 
-                  <span className="text-[#10f94e]"> is_activated</span>, y 
-                  <span className="text-[#10f94e]"> auth_user_id</span> a la tabla users
+                  💡 El script agregará las columnas: <span className="text-primary">activation_token</span>, 
+                  <span className="text-primary"> is_activated</span>, y 
+                  <span className="text-primary"> auth_user_id</span> a la tabla users
                 </p>
               </div>
 
               <div className="flex gap-3">
                 <Button
                   onClick={() => window.location.reload()}
-                  className="flex-1 bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
+                  className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
                 >
                   Recargar Página
                 </Button>
@@ -182,8 +182,8 @@ export function Activate() {
         <Card className="w-full max-w-md border-gray-700 bg-gray-900/50 backdrop-blur">
           <CardHeader className="space-y-4 text-center">
             <div className="flex justify-center">
-              <div className="p-4 bg-[#ff3b5c]/10 rounded-full">
-                <AlertCircle className="h-12 w-12 text-[#ff3b5c]" />
+              <div className="p-4 bg-destructive/10 rounded-full">
+                <AlertCircle className="h-12 w-12 text-destructive" />
               </div>
             </div>
             <div>
@@ -213,8 +213,8 @@ export function Activate() {
         <Card className="w-full max-w-md border-gray-700 bg-gray-900/50 backdrop-blur">
           <CardHeader className="space-y-4 text-center">
             <div className="flex justify-center">
-              <div className="p-4 bg-[#10f94e]/10 rounded-full">
-                <CheckCircle className="h-12 w-12 text-[#10f94e]" />
+              <div className="p-4 bg-primary/10 rounded-full">
+                <CheckCircle className="h-12 w-12 text-primary" />
               </div>
             </div>
             <div>
@@ -226,7 +226,7 @@ export function Activate() {
           </CardHeader>
           <CardContent>
             <div className="text-center">
-              <Loader2 className="h-6 w-6 text-[#10f94e] animate-spin mx-auto" />
+              <Loader2 className="h-6 w-6 text-primary animate-spin mx-auto" />
             </div>
           </CardContent>
         </Card>
@@ -240,8 +240,8 @@ export function Activate() {
       <Card className="w-full max-w-md border-gray-700 bg-gray-900/50 backdrop-blur">
         <CardHeader className="space-y-4 text-center">
           <div className="flex justify-center">
-            <div className="p-4 bg-[#10f94e]/10 rounded-full">
-              <Dumbbell className="h-12 w-12 text-[#10f94e]" />
+            <div className="p-4 bg-primary/10 rounded-full">
+              <Dumbbell className="h-12 w-12 text-primary" />
             </div>
           </div>
           <div>
@@ -315,7 +315,7 @@ export function Activate() {
                       className={`h-1 flex-1 rounded-full transition-colors ${
                         password.length >= level * 2
                           ? password.length >= 12
-                            ? 'bg-[#10f94e]'
+                            ? 'bg-primary'
                             : password.length >= 8
                             ? 'bg-yellow-500'
                             : 'bg-orange-500'
@@ -335,9 +335,9 @@ export function Activate() {
             )}
 
             {error && (
-              <Alert className="border-[#ff3b5c]/50 bg-[#ff3b5c]/10">
-                <AlertCircle className="h-4 w-4 text-[#ff3b5c]" />
-                <AlertDescription className="text-[#ff3b5c] ml-2">
+              <Alert className="border-destructive/50 bg-destructive/10">
+                <AlertCircle className="h-4 w-4 text-destructive" />
+                <AlertDescription className="text-destructive ml-2">
                   {error}
                 </AlertDescription>
               </Alert>
@@ -346,7 +346,7 @@ export function Activate() {
             <Button
               type="submit"
               disabled={activateAccount.isPending}
-              className="w-full bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold h-12 text-lg"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 text-lg"
             >
               {activateAccount.isPending ? (
                 <>
@@ -362,7 +362,7 @@ export function Activate() {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-400">
               ¿Ya tienes cuenta?{' '}
-              <a href="/login" className="text-[#10f94e] hover:underline">
+              <a href="/login" className="text-primary hover:underline">
                 Iniciar Sesión
               </a>
             </p>

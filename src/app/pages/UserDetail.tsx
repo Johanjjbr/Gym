@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -34,6 +35,7 @@ export function UserDetail() {
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
+  const [progressToDelete, setProgressToDelete] = useState<string | null>(null);
   
   // Estados para el formulario de pago de factura
   const [payInvoiceAmount, setPayInvoiceAmount] = useState('');
@@ -83,7 +85,7 @@ export function UserDetail() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
+          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
           <p className="text-gray-400">Cargando datos del usuario...</p>
         </div>
       </div>
@@ -94,7 +96,7 @@ export function UserDetail() {
   if (error || !user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <AlertCircle className="h-16 w-16 text-[#ff3b5c]" />
+        <AlertCircle className="h-16 w-16 text-destructive" />
         <h2 className="text-2xl">Usuario no encontrado</h2>
         <p className="text-muted-foreground text-center max-w-md">
           {error 
@@ -106,7 +108,7 @@ export function UserDetail() {
             Volver a Usuarios
           </Button>
           {error && (
-            <Button onClick={() => navigate('/test-supabase')} className="bg-[#10f94e] text-black hover:bg-[#0ed145]">
+            <Button onClick={() => navigate('/test-supabase')} className="bg-primary text-primary-foreground hover:bg-primary/90">
               Probar Conexión
             </Button>
           )}
@@ -122,9 +124,9 @@ export function UserDetail() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Activo':
-        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
+        return 'bg-primary/20 text-primary border-primary/30';
       case 'Suspendido':
-        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
+        return 'bg-destructive/20 text-destructive border-destructive/30';
       default:
         return 'bg-muted text-muted-foreground';
     }
@@ -134,12 +136,12 @@ export function UserDetail() {
     switch (status) {
       case 'Pagada':
       case 'Pagado':
-        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
+        return 'bg-primary/20 text-primary border-primary/30';
       case 'Pendiente':
         return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
       case 'Vencida':
       case 'Vencido':
-        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
+        return 'bg-destructive/20 text-destructive border-destructive/30';
       default:
         return 'bg-muted text-muted-foreground';
     }
@@ -274,11 +276,8 @@ export function UserDetail() {
   };
   
   const deleteProgress = (progressId: string) => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar este registro?')) {
-      return;
-    }
-    
     deletePhysicalProgressMutation.mutate(progressId);
+    setProgressToDelete(null);
   };
 
   // Prepare chart data - usar datos reales
@@ -485,7 +484,7 @@ export function UserDetail() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="w-full border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
+                      className="w-full border-destructive text-destructive hover:bg-destructive/10"
                       onClick={() => {
                         if (!id) return;
                         assignTrainerMutation.mutate({
@@ -522,7 +521,7 @@ export function UserDetail() {
               <CardContent>
                 {loadingAssignments ? (
                   <div className="text-center py-8">
-                    <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
+                    <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
                   </div>
                 ) : userRoutineAssignments && userRoutineAssignments.length > 0 ? (
                   <div className="space-y-3">
@@ -555,7 +554,7 @@ export function UserDetail() {
               <CardContent>
                 {loadingPayments ? (
                   <div className="text-center py-8">
-                    <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
+                    <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
                   </div>
                 ) : invoices && invoices.length > 0 ? (
                   <div className="space-y-3">
@@ -598,7 +597,7 @@ export function UserDetail() {
             <CardContent>
               {loadingAttendance ? (
                 <div className="text-center py-8">
-                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
+                  <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
                 </div>
               ) : userAttendanceData && userAttendanceData.length > 0 ? (
                 <div className="space-y-3">
@@ -705,7 +704,7 @@ export function UserDetail() {
             <CardContent>
               {loadingPhysicalProgress ? (
                 <div className="text-center py-8">
-                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
+                  <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
                 </div>
               ) : userPhysicalProgress && userPhysicalProgress.length > 0 ? (
                 <div className="space-y-4">
@@ -735,8 +734,8 @@ export function UserDetail() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
-                        onClick={() => deleteProgress(progress.id)}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setProgressToDelete(progress.id)}
                         disabled={deletePhysicalProgressMutation.isPending}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -760,7 +759,7 @@ export function UserDetail() {
             <Card className="bg-card border-border">
               <CardContent className="py-12">
                 <div className="text-center">
-                  <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto mb-2" />
+                  <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-2" />
                   <p className="text-muted-foreground">Cargando rutinas...</p>
                 </div>
               </CardContent>
@@ -862,7 +861,7 @@ export function UserDetail() {
             <CardContent>
               {loadingPayments ? (
                 <div className="text-center py-8">
-                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto mb-2" />
+                  <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto mb-2" />
                   <p className="text-muted-foreground text-sm">Cargando facturas...</p>
                 </div>
               ) : invoices && invoices.length > 0 ? (
@@ -895,7 +894,7 @@ export function UserDetail() {
                       </div>
                       {inv.status !== 'Pagada' && (
                         <Button size="sm"
-                          className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"
+                          className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
                           onClick={() => {
                             setSelectedInvoiceId(inv.id);
                             setPayInvoiceAmount(String(inv.amount));
@@ -1142,7 +1141,7 @@ export function UserDetail() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Monto (Bs) <span className="text-[#ff3b5c]">*</span></Label>
+              <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
               <Input
                 type="number"
                 step="0.01"
@@ -1153,7 +1152,7 @@ export function UserDetail() {
               />
             </div>
             <div>
-              <Label>Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
+              <Label>Método de Pago <span className="text-destructive">*</span></Label>
               <Select
                 value={payInvoiceMethod}
                 onValueChange={setPayInvoiceMethod}
@@ -1308,6 +1307,23 @@ export function UserDetail() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!progressToDelete} onOpenChange={() => setProgressToDelete(null)}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar Medición</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que deseas eliminar este registro de progreso físico? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => progressToDelete && deleteProgress(progressToDelete)}>
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

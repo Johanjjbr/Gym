@@ -174,7 +174,7 @@ export function MyProfile() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <p className="text-3xl font-bold">{lastProgress?.weight || user.weight} kg</p>
+              <p className="text-3xl font-bold">{(lastProgress?.weight ?? user.weight) ? `${(lastProgress?.weight ?? user.weight)} kg` : 'Sin datos'}</p>
               {weightChange !== 0 && (
                 <div className={`flex items-center gap-1 text-sm ${
                   weightChange < 0 ? 'text-primary' : 'text-destructive'
@@ -192,7 +192,7 @@ export function MyProfile() {
             <CardTitle className="text-base">Estatura</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{user.height} cm</p>
+            <p className="text-3xl font-bold">{user.height ? `${user.height} cm` : 'Sin datos'}</p>
           </CardContent>
         </Card>
 

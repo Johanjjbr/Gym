@@ -62,6 +62,8 @@ export const userSchema = z.object({
     .optional()
     .or(z.literal('')),
 
+  photo: z.string().optional().or(z.literal('')),
+
   status: z.enum(['Activo', 'Inactivo', 'Suspendido'], {
     errorMap: () => ({ message: 'Estado debe ser Activo, Inactivo o Suspendido' })
   }),
@@ -218,6 +220,8 @@ export const staffSchema = z.object({
   shift: z.string()
     .max(50, 'Turno demasiado largo'),
   
+  photo: z.string().optional().or(z.literal('')),
+
   status: z.enum(['Activo', 'Inactivo', 'Vacaciones'], {
     errorMap: () => ({ message: 'Estado inválido' })
   }),

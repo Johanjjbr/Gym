@@ -36,7 +36,7 @@ export function PrintPayment({ payment, userName, userMemberNumber }: PrintPayme
       <Button
         size="sm"
         variant="ghost"
-        className="hover:bg-[#10f94e]/10 hover:text-[#10f94e]"
+        className="hover:bg-primary/10 hover:text-primary"
         onClick={handlePrint}
       >
         <Printer className="w-4 h-4" />

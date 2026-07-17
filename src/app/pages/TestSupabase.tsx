@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Loader2, CheckCircle2, XCircle, Database, Users, DollarSign, Calendar, Dumbbell, UserCog } from 'lucide-react';
-import { utils, users, payments, staff, attendance, routines, stats } from '../lib/api';
+import { utils, users, invoices, staff, attendance, routines, stats } from '../lib/api';
 import { supabase } from '../lib/supabase';
 
 interface TestResult {
@@ -38,7 +38,7 @@ export function TestSupabase() {
     {
       name: 'Obtener Pagos',
       icon: DollarSign,
-      fn: payments.getAll,
+      fn: invoices.getAll,
     },
     {
       name: 'Obtener Personal',
@@ -98,11 +98,11 @@ export function TestSupabase() {
   const getStatusIcon = (status: TestResult['status']) => {
     switch (status) {
       case 'pending':
-        return <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />;
+        return <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />;
       case 'success':
-        return <CheckCircle2 className="h-5 w-5 text-[#10f94e]" />;
+        return <CheckCircle2 className="h-5 w-5 text-primary" />;
       case 'error':
-        return <XCircle className="h-5 w-5 text-[#ff3b5c]" />;
+        return <XCircle className="h-5 w-5 text-destructive" />;
     }
   };
 
@@ -110,19 +110,19 @@ export function TestSupabase() {
     switch (status) {
       case 'pending':
         return (
-          <Badge variant="outline" className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+          <Badge variant="outline" className="bg-muted text-muted-foreground border-border">
             Probando...
           </Badge>
         );
       case 'success':
         return (
-          <Badge variant="outline" className="bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30">
+          <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
             OK
           </Badge>
         );
       case 'error':
         return (
-          <Badge variant="outline" className="bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30">
+          <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30">
             Error
           </Badge>
         );
@@ -157,7 +157,7 @@ export function TestSupabase() {
             <Button
               onClick={runTests}
               disabled={testing}
-              className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"
+              className="bg-primary text-black hover:bg-primary/90 font-bold"
             >
               {testing ? (
                 <>
@@ -177,9 +177,9 @@ export function TestSupabase() {
             <div className="mt-4 p-4 bg-muted rounded-lg">
               <div className="flex items-center gap-4">
                 <div className="flex-1">
-                  <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-[#10f94e] transition-all duration-300"
+                      className="h-full bg-primary transition-all duration-300"
                       style={{
                         width: `${(successCount / tests.length) * 100}%`,
                       }}
@@ -221,7 +221,7 @@ export function TestSupabase() {
                           <p
                             className={`text-sm ${
                               result.status === 'error'
-                                ? 'text-[#ff3b5c]'
+                                ? 'text-destructive'
                                 : 'text-muted-foreground'
                             }`}
                           >

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Search, Mail, Phone, Edit, Loader2, AlertCircle, Plus, Trash2, Clock } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Search, Mail, Phone, Edit, Loader2, AlertCircle, Plus, Trash2, Clock, Camera } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -7,9 +7,11 @@ import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 import { useForm } from 'react-hook-form';
 import { useStaff, useUpdateStaff, useCreateStaff, useDeleteStaff } from '../hooks/useStaff';
 import { UserRole } from '../types';
+import { uploadFile } from '../lib/upload';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +32,7 @@ type StaffFormData = {
   shift: string;
   status: 'Activo' | 'Inactivo' | 'Vacaciones';
   password?: string;
+  photo?: string;
 };
 
 export function StaffPage() {
@@ -101,6 +104,34 @@ export function StaffPage() {
     });
   };
 
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const editFileRef = useRef<HTMLInputElement>(null);
+  const createFileRef = useRef<HTMLInputElement>(null);
+
+  const handleEditPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadFile(file, 'staff-photos', 'staff');
+      setValueEdit('photo', url);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleCreatePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadFile(file, 'staff-photos', 'staff');
+      setValueCreate('photo', url);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   // Open Create Dialog
   const openCreateDialog = () => {
     resetCreate();
@@ -125,9 +156,9 @@ export function StaffPage() {
   const getRoleColor = (role: string) => {
     switch (role) {
       case 'Administrador':
-        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
+        return 'bg-destructive/20 text-destructive border-destructive/30';
       case 'Entrenador':
-        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
+        return 'bg-primary/20 text-primary border-primary/30';
       case 'Recepción':
         return 'bg-[#3b82f6]/20 text-[#3b82f6] border-[#3b82f6]/30';
       default:
@@ -137,7 +168,7 @@ export function StaffPage() {
 
   const getStatusColor = (status: string) => {
     return status === 'Activo' 
-      ? 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30'
+      ? 'bg-primary/20 text-primary border-primary/30'
       : 'bg-muted text-muted-foreground';
   };
 
@@ -146,8 +177,8 @@ export function StaffPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
-          <p className="text-gray-400">Cargando personal...</p>
+          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
+          <p className="text-muted-foreground">Cargando personal...</p>
         </div>
       </div>
     );
@@ -157,7 +188,7 @@ export function StaffPage() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <AlertCircle className="h-16 w-16 text-[#ff3b5c]" />
+        <AlertCircle className="h-16 w-16 text-destructive" />
         <h2 className="text-2xl">Error al cargar personal</h2>
         <p className="text-muted-foreground text-center max-w-md">
           Ocurrió un error al cargar los datos del personal. Verifica tu conexión a Supabase.
@@ -203,9 +234,10 @@ export function StaffPage() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                      <span className="text-primary text-lg">{staffMember.name.split(' ').map((n: string) => n[0]).join('')}</span>
-                    </div>
+                    <Avatar className="w-12 h-12">
+                      <AvatarImage src={staffMember.photo} alt={staffMember.name} />
+                      <AvatarFallback className="bg-primary/20 text-primary text-lg">{staffMember.name.split(' ').map((n: string) => n[0]).join('')}</AvatarFallback>
+                    </Avatar>
                     <div>
                       <CardTitle className="text-lg">{staffMember.name}</CardTitle>
                       <Badge variant="outline" className={`mt-1 ${getRoleColor(staffMember.role)}`}>
@@ -320,6 +352,25 @@ export function StaffPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmitEdit(onEditStaff)} className="space-y-4">
+            <div className="flex items-center gap-4 mb-2">
+              <div className="relative w-16 h-16 rounded-full overflow-hidden bg-muted border-2 border-border flex-shrink-0">
+                {watchEdit('photo') ? (
+                  <img src={watchEdit('photo')} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
+                    <Camera className="w-6 h-6" />
+                  </div>
+                )}
+              </div>
+              <div>
+                <input ref={editFileRef} type="file" accept="image/*" onChange={handleEditPhoto} className="hidden" id="edit-photo-upload" />
+                <Label htmlFor="edit-photo-upload" className="cursor-pointer">
+                  <div className="px-3 py-1.5 text-sm rounded-md bg-input border-border text-muted-foreground hover:bg-accent inline-block">
+                    {uploadingPhoto ? 'Subiendo...' : 'Foto'}
+                  </div>
+                </Label>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <Label htmlFor="edit-name">Nombre Completo *</Label>
@@ -329,7 +380,7 @@ export function StaffPage() {
                   className="bg-input border-border"
                   placeholder="Ej: Pedro Sánchez"
                 />
-                {errorsEdit.name && <p className="text-xs text-[#ff3b5c] mt-1">{errorsEdit.name.message}</p>}
+                {errorsEdit.name && <p className="text-xs text-destructive mt-1">{errorsEdit.name.message}</p>}
               </div>
 
               <div>
@@ -375,7 +426,7 @@ export function StaffPage() {
                   className="bg-input border-border"
                   placeholder="correo@gym.com"
                 />
-                {errorsEdit.email && <p className="text-xs text-[#ff3b5c] mt-1">{errorsEdit.email.message}</p>}
+                {errorsEdit.email && <p className="text-xs text-destructive mt-1">{errorsEdit.email.message}</p>}
               </div>
 
               <div>
@@ -386,7 +437,7 @@ export function StaffPage() {
                   className="bg-input border-border"
                   placeholder="0424-1234567"
                 />
-                {errorsEdit.phone && <p className="text-xs text-[#ff3b5c] mt-1">{errorsEdit.phone.message}</p>}
+                {errorsEdit.phone && <p className="text-xs text-destructive mt-1">{errorsEdit.phone.message}</p>}
               </div>
 
               <div className="col-span-2">
@@ -432,9 +483,10 @@ export function StaffPage() {
           {selectedStaff && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                  <span className="text-primary text-lg">{selectedStaff.name.split(' ').map((n: string) => n[0]).join('')}</span>
-                </div>
+                <Avatar className="w-12 h-12">
+                  <AvatarImage src={selectedStaff.photo} alt={selectedStaff.name} />
+                  <AvatarFallback className="bg-primary/20 text-primary text-lg">{selectedStaff.name.split(' ').map((n: string) => n[0]).join('')}</AvatarFallback>
+                </Avatar>
                 <div>
                   <CardTitle className="text-lg">{selectedStaff.name}</CardTitle>
                   <Badge variant="outline" className={`mt-1 ${getRoleColor(selectedStaff.role)}`}>
@@ -474,6 +526,25 @@ export function StaffPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmitCreate(onCreateStaff)} className="space-y-4">
+            <div className="flex items-center gap-4 mb-2">
+              <div className="relative w-16 h-16 rounded-full overflow-hidden bg-muted border-2 border-border flex-shrink-0">
+                {watchCreate('photo') ? (
+                  <img src={watchCreate('photo')} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
+                    <Camera className="w-6 h-6" />
+                  </div>
+                )}
+              </div>
+              <div>
+                <input ref={createFileRef} type="file" accept="image/*" onChange={handleCreatePhoto} className="hidden" id="create-photo-upload" />
+                <Label htmlFor="create-photo-upload" className="cursor-pointer">
+                  <div className="px-3 py-1.5 text-sm rounded-md bg-input border-border text-muted-foreground hover:bg-accent inline-block">
+                    {uploadingPhoto ? 'Subiendo...' : 'Foto'}
+                  </div>
+                </Label>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <Label htmlFor="create-name">Nombre Completo *</Label>
@@ -483,7 +554,7 @@ export function StaffPage() {
                   className="bg-input border-border"
                   placeholder="Ej: Pedro Sánchez"
                 />
-                {errorsCreate.name && <p className="text-xs text-[#ff3b5c] mt-1">{errorsCreate.name.message}</p>}
+                {errorsCreate.name && <p className="text-xs text-destructive mt-1">{errorsCreate.name.message}</p>}
               </div>
 
               <div>
@@ -529,7 +600,7 @@ export function StaffPage() {
                   className="bg-input border-border"
                   placeholder="correo@gym.com"
                 />
-                {errorsCreate.email && <p className="text-xs text-[#ff3b5c] mt-1">{errorsCreate.email.message}</p>}
+                {errorsCreate.email && <p className="text-xs text-destructive mt-1">{errorsCreate.email.message}</p>}
               </div>
 
               <div>
@@ -540,7 +611,7 @@ export function StaffPage() {
                   className="bg-input border-border"
                   placeholder="0424-1234567"
                 />
-                {errorsCreate.phone && <p className="text-xs text-[#ff3b5c] mt-1">{errorsCreate.phone.message}</p>}
+                {errorsCreate.phone && <p className="text-xs text-destructive mt-1">{errorsCreate.phone.message}</p>}
               </div>
 
               <div className="col-span-2">
@@ -566,7 +637,7 @@ export function StaffPage() {
                   className="bg-input border-border"
                   placeholder="Contraseña"
                 />
-                {errorsCreate.password && <p className="text-xs text-[#ff3b5c] mt-1">{errorsCreate.password.message}</p>}
+                {errorsCreate.password && <p className="text-xs text-destructive mt-1">{errorsCreate.password.message}</p>}
               </div>
             </div>
 

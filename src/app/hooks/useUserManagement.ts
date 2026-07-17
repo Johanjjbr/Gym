@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from './useUsers';
-import { usePayments } from './usePayments';
+import { useInvoices } from './useInvoices';
 
 export function useUserManagement() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -15,7 +15,7 @@ export function useUserManagement() {
 
   // Queries
   const { data: users, isLoading: loadingUsers, error: usersError } = useUsers();
-  const { data: payments, isLoading: loadingPayments } = usePayments();
+  const { data: invoices, isLoading: loadingInvoices } = useInvoices();
 
   // Mutations
   const createUser = useCreateUser();
@@ -36,14 +36,14 @@ export function useUserManagement() {
 
   // Enriquecer usuarios con información de pagos
   const enrichedUsers = filteredUsers?.map((user) => {
-    const userPayments = payments?.filter((p: any) => p.user_id === user.id) || [];
-    const lastPayment = userPayments[0]; // Asumiendo que están ordenados por fecha
+    const userInvoices = invoices?.filter((inv: any) => inv.user_id === user.id) || [];
+    const lastInvoice = userInvoices[0];
 
     return {
       ...user,
-      lastPayment,
-      totalPayments: userPayments.length,
-      hasOverduePayment: lastPayment?.status === 'Vencido',
+      lastInvoice,
+      totalInvoices: userInvoices.length,
+      hasOverdueInvoice: lastInvoice?.status === 'Vencida',
     };
   });
 
@@ -96,7 +96,7 @@ export function useUserManagement() {
     stats,
 
     // Estados
-    isLoading: loadingUsers || loadingPayments,
+    isLoading: loadingUsers || loadingInvoices,
     error: usersError,
     isFormOpen,
     searchQuery,

@@ -17,6 +17,8 @@ export const exerciseSchema = z.object({
   description: z.string().optional(),
   muscle_group: z.string().min(1, 'El grupo muscular es obligatorio'),
   equipment: z.string().optional(),
+  image_url: z.string().optional().or(z.literal('')),
+  gif_url: z.string().optional().or(z.literal('')),
 });
 
 export type ExerciseInput = z.infer<typeof exerciseSchema>;

@@ -1,14 +1,15 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { User, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Menu, X } from 'lucide-react';
+import { User as UserIcon, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Menu, X } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { Toaster } from '../components/ui/sonner';
 import { useState } from 'react';
+import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 
 const menuItems = [
   { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/usuario/mi-entrenamiento' },
-  { icon: User, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
+  { icon: UserIcon, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
   { icon: TrendingUp, label: 'Progreso Físico', path: '/usuario/progreso' },
   { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
   { icon: CreditCard, label: 'Mis Facturas', path: '/usuario/facturas' },
@@ -128,11 +129,12 @@ export function UserLayout() {
           {/* User Profile */}
           <div className="p-4 border-t border-border">
             <div className="flex items-center gap-3 p-3 rounded-lg bg-card">
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                <span className="text-primary text-sm">
+              <Avatar className="w-10 h-10">
+                <AvatarImage src={user?.photo} alt={user?.name} />
+                <AvatarFallback className="bg-primary/20 text-primary text-sm">
                   {user ? getInitials(user.name) : 'U'}
-                </span>
-              </div>
+                </AvatarFallback>
+              </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{user?.name || 'Usuario'}</p>
                 <p className="text-xs text-muted-foreground truncate">

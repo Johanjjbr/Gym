@@ -61,8 +61,8 @@ export function DatabaseDiagnostic() {
 
   const getStatusIcon = (status: any) => {
     if (!status) return <AlertCircle className="w-5 h-5 text-gray-400" />;
-    if (status.exists) return <CheckCircle className="w-5 h-5 text-[#10f94e]" />;
-    return <XCircle className="w-5 h-5 text-[#ff3b5c]" />;
+    if (status.exists) return <CheckCircle className="w-5 h-5 text-primary" />;
+    return <XCircle className="w-5 h-5 text-destructive" />;
   };
 
   const missingTables = results
@@ -75,8 +75,8 @@ export function DatabaseDiagnostic() {
         <Card className="border-gray-700 bg-gray-900/50 backdrop-blur">
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-[#10f94e]/10 rounded-lg">
-                <Database className="w-6 h-6 text-[#10f94e]" />
+              <div className="p-3 bg-primary/10 rounded-lg">
+                <Database className="w-6 h-6 text-primary" />
               </div>
               <div>
                 <CardTitle className="text-2xl text-white">
@@ -93,7 +93,7 @@ export function DatabaseDiagnostic() {
             <Button
               onClick={checkDatabase}
               disabled={loading}
-              className="w-full bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold h-12"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12"
             >
               {loading ? (
                 <>
@@ -111,9 +111,9 @@ export function DatabaseDiagnostic() {
             {results && (
               <>
                 {missingTables > 0 ? (
-                  <Alert className="border-[#ff3b5c]/50 bg-[#ff3b5c]/10">
-                    <AlertCircle className="h-5 w-5 text-[#ff3b5c]" />
-                    <AlertDescription className="text-[#ff3b5c] ml-2">
+                  <Alert className="border-destructive/50 bg-destructive/10">
+                    <AlertCircle className="h-5 w-5 text-destructive" />
+                    <AlertDescription className="text-destructive ml-2">
                       <strong>¡Faltan {missingTables} tablas!</strong>
                       <br />
                       Debes ejecutar el script <code className="bg-black/30 px-2 py-1 rounded">
@@ -122,9 +122,9 @@ export function DatabaseDiagnostic() {
                     </AlertDescription>
                   </Alert>
                 ) : (
-                  <Alert className="border-[#10f94e]/50 bg-[#10f94e]/10">
-                    <CheckCircle className="h-5 w-5 text-[#10f94e]" />
-                    <AlertDescription className="text-[#10f94e] ml-2">
+                  <Alert className="border-primary/50 bg-primary/10">
+                    <CheckCircle className="h-5 w-5 text-primary" />
+                    <AlertDescription className="text-primary ml-2">
                       <strong>¡Base de datos configurada correctamente!</strong>
                       <br />
                       Todas las tablas necesarias están creadas.
@@ -153,11 +153,11 @@ export function DatabaseDiagnostic() {
                         </div>
                         <div className="text-right">
                           {status.exists ? (
-                            <span className="text-sm text-[#10f94e]">
+                            <span className="text-sm text-primary">
                               ✓ Existe
                             </span>
                           ) : (
-                            <span className="text-sm text-[#ff3b5c]">
+                            <span className="text-sm text-destructive">
                               ✗ Falta
                             </span>
                           )}
@@ -170,7 +170,7 @@ export function DatabaseDiagnostic() {
                 {missingTables > 0 && (
                   <div className="p-6 bg-gray-800/50 rounded-lg border border-gray-700 space-y-4">
                     <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                      <AlertCircle className="w-5 h-5 text-[#10f94e]" />
+                      <AlertCircle className="w-5 h-5 text-primary" />
                       Instrucciones para Solucionar
                     </h3>
                     <ol className="list-decimal list-inside space-y-3 text-gray-300">
@@ -180,7 +180,7 @@ export function DatabaseDiagnostic() {
                           href="https://supabase.com/dashboard"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#10f94e] hover:underline"
+                          className="text-primary hover:underline"
                         >
                           https://supabase.com/dashboard
                         </a>
@@ -194,7 +194,7 @@ export function DatabaseDiagnostic() {
                       </li>
                       <li>
                         Copia y pega el contenido del archivo{' '}
-                        <code className="bg-black/30 px-2 py-1 rounded text-[#10f94e]">
+                        <code className="bg-black/30 px-2 py-1 rounded text-primary">
                           /setup_complete_db.sql
                         </code>
                       </li>
@@ -222,7 +222,7 @@ export function DatabaseDiagnostic() {
           </CardHeader>
           <CardContent>
             <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
-              <code className="text-[#10f94e] font-mono text-sm">
+              <code className="text-primary font-mono text-sm">
                 /setup_complete_db.sql
               </code>
               <p className="text-gray-400 text-sm mt-2">

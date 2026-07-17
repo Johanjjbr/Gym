@@ -3,7 +3,9 @@ import { Plus, Loader2, Pencil, Trash2, AlertCircle, CheckCircle, XCircle } from
 import { usePlans, useCreatePlan, useUpdatePlan, useDeletePlan } from '../hooks/usePlans';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
 import { Badge } from '../components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
@@ -72,20 +74,20 @@ export function Plans() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin" />
+        <Loader2 className="h-12 w-12 text-primary animate-spin" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <Card className="bg-card border-[#ff3b5c]/30">
+      <Card className="bg-card border-destructive/30">
         <CardContent className="pt-6">
           <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-[#ff3b5c] mt-0.5" />
+            <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
             <div>
-              <p className="font-semibold text-[#ff3b5c]">Error al cargar planes</p>
-              <p className="text-sm text-gray-400 mt-1">{error.message}</p>
+              <p className="font-semibold text-destructive">Error al cargar planes</p>
+              <p className="text-sm text-muted-foreground mt-1">{error.message}</p>
             </div>
           </div>
         </CardContent>
@@ -100,7 +102,7 @@ export function Plans() {
           <h1 className="text-4xl mb-2">Planes</h1>
           <p className="text-muted-foreground">Configuración de membresías y precios</p>
         </div>
-        <Button className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold" onClick={openCreate}>
+        <Button className="bg-primary text-black hover:bg-primary/90 font-bold" onClick={openCreate}>
           <Plus className="w-4 h-4 mr-2" />
           Nuevo Plan
         </Button>
@@ -116,106 +118,101 @@ export function Plans() {
               <p>No hay planes creados</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 text-muted-foreground">Nombre</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Descripción</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Duración</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Precio</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Estado</th>
-                    <th className="text-right py-3 px-4 text-muted-foreground">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {plansData.map((plan: any) => (
-                    <tr key={plan.id} className="border-b border-border hover:bg-muted/50 transition-colors">
-                      <td className="py-4 px-4 font-medium">{plan.name}</td>
-                      <td className="py-4 px-4 text-muted-foreground">{plan.description || '-'}</td>
-                      <td className="py-4 px-4">{plan.duration_days} días</td>
-                      <td className="py-4 px-4">
-                        <span className="text-[#10f94e] font-semibold">Bs {plan.price.toLocaleString()}</span>
-                      </td>
-                      <td className="py-4 px-4">
-                        {plan.is_active ? (
-                          <Badge variant="outline" className="bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Activo
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-muted text-muted-foreground">
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Inactivo
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button size="sm" variant="ghost" className="hover:bg-primary/10 hover:text-primary"
-                            onClick={() => openEdit(plan)}>
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button size="sm" variant="ghost" className="hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => setDeleteConfirm(plan.id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Descripción</TableHead>
+                  <TableHead>Duración</TableHead>
+                  <TableHead>Precio</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {plansData.map((plan: any) => (
+                  <TableRow key={plan.id}>
+                    <TableCell className="font-medium">{plan.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{plan.description || '-'}</TableCell>
+                    <TableCell>{plan.duration_days} días</TableCell>
+                    <TableCell><span className="text-primary font-semibold">Bs {plan.price.toLocaleString()}</span></TableCell>
+                    <TableCell>
+                      {plan.is_active ? (
+                        <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Activo
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-muted text-muted-foreground">
+                          <XCircle className="w-3 h-3 mr-1" />
+                          Inactivo
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button size="sm" variant="ghost" className="hover:bg-primary/10 hover:text-primary"
+                          onClick={() => openEdit(plan)}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => setDeleteConfirm(plan.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
+        <DialogContent className="bg-card border-border max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-white">{editingPlan ? 'Editar Plan' : 'Nuevo Plan'}</DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogTitle className="text-foreground">{editingPlan ? 'Editar Plan' : 'Nuevo Plan'}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               {editingPlan ? 'Modifica los datos del plan' : 'Crea un nuevo plan de membresía'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label className="text-gray-300">Nombre <span className="text-[#ff3b5c]">*</span></Label>
+              <Label className="text-foreground/80">Nombre <span className="text-destructive">*</span></Label>
               <Input value={formName} onChange={(e) => setFormName(e.target.value)}
-                className="bg-gray-800 border-gray-700 text-white" placeholder="Ej: Mensual" />
+                className="bg-muted border-border text-foreground" placeholder="Ej: Mensual" />
             </div>
             <div>
-              <Label className="text-gray-300">Descripción</Label>
+              <Label className="text-foreground/80">Descripción</Label>
               <Textarea value={formDescription} onChange={(e) => setFormDescription(e.target.value)}
-                className="bg-gray-800 border-gray-700 text-white" rows={2} placeholder="Descripción del plan" />
+                className="bg-muted border-border text-foreground" rows={2} placeholder="Descripción del plan" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-gray-300">Duración (días) <span className="text-[#ff3b5c]">*</span></Label>
+                <Label className="text-foreground/80">Duración (días) <span className="text-destructive">*</span></Label>
                 <Input type="number" value={formDuration} onChange={(e) => setFormDuration(e.target.value)}
-                  className="bg-gray-800 border-gray-700 text-white" placeholder="30" />
+                  className="bg-muted border-border text-foreground" placeholder="30" />
               </div>
               <div>
-                <Label className="text-gray-300">Precio (Bs) <span className="text-[#ff3b5c]">*</span></Label>
+                <Label className="text-foreground/80">Precio (Bs) <span className="text-destructive">*</span></Label>
                 <Input type="number" step="0.01" value={formPrice} onChange={(e) => setFormPrice(e.target.value)}
-                  className="bg-gray-800 border-gray-700 text-white" placeholder="300" />
+                  className="bg-muted border-border text-foreground" placeholder="300" />
               </div>
             </div>
             {editingPlan && (
               <div className="flex items-center gap-2">
-                <input type="checkbox" id="is_active" checked={editingPlan.is_active !== false}
-                  onChange={(e) => setEditingPlan({ ...editingPlan, is_active: e.target.checked })}
-                  className="rounded bg-gray-800 border-gray-700" />
-                <Label htmlFor="is_active" className="text-gray-300">Plan activo</Label>
+                <Checkbox id="is_active" checked={editingPlan.is_active !== false}
+                  onCheckedChange={(checked) => setEditingPlan({ ...editingPlan, is_active: checked })} />
+                <Label htmlFor="is_active" className="text-foreground/80">Plan activo</Label>
               </div>
             )}
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}
-                className="border-gray-700 hover:bg-gray-800">Cancelar</Button>
+                className="border-border hover:bg-muted">Cancelar</Button>
               <Button onClick={handleSave} disabled={createPlan.isPending || updatePlan.isPending}
-                className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold">
+                className="bg-primary hover:bg-primary/90 text-black font-bold">
                 {(createPlan.isPending || updatePlan.isPending) ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</>
                 ) : (
@@ -229,19 +226,19 @@ export function Plans() {
 
       {/* Delete Confirmation */}
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-        <DialogContent className="bg-gray-900 border-gray-700 max-w-sm">
+        <DialogContent className="bg-card border-border max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-white">Eliminar Plan</DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogTitle className="text-foreground">Eliminar Plan</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               ¿Estás seguro? Esta acción no se puede deshacer. Los usuarios asignados a este plan no se verán afectados.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDeleteConfirm(null)}
-              className="border-gray-700 hover:bg-gray-800">Cancelar</Button>
+              className="border-border hover:bg-muted">Cancelar</Button>
             <Button onClick={() => deleteConfirm && handleDelete(deleteConfirm)}
               disabled={deletePlan.isPending}
-              className="bg-[#ff3b5c] hover:bg-[#ff3b5c]/90 text-white font-bold">
+              className="bg-destructive hover:bg-destructive/90 text-foreground font-bold">
               {deletePlan.isPending ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</>
               ) : 'Eliminar'}
