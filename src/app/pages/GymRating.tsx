@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Star, Send, Loader2, AlertCircle, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -8,26 +8,26 @@ import { useAuth } from '../contexts/AuthContext';
 import { useMyReview, useCreateReview, useUpdateReview, useDeleteReview } from '../hooks/useGymReviews';
 import { useGyms } from '../hooks/useGyms';
 import { useGymById } from '../hooks/useGyms';
+import { useNavigate } from 'react-router';
+import { toast } from 'sonner';
 
 export function GymRating() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { data: gyms, isLoading: loadingGyms } = useGyms();
   const myGymId = user?.gym_id;
   const userGym = gyms?.find((g: any) => g.id === myGymId);
 
-  if (user?.role !== 'Usuario' || !myGymId) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <Building2 className="h-16 w-16 text-muted-foreground" />
-        <h2 className="text-2xl">No disponible</h2>
-        <p className="text-muted-foreground text-center max-w-md">
-          Solo los usuarios pueden calificar su gimnasio.
-        </p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (user && !user.gym_id) {
+      toast.error('Esta sección requiere un gimnasio asignado');
+      navigate('/usuario/mi-entrenamiento', { replace: true });
+    }
+  }, [user, navigate]);
 
-  return <GymRatingForm gymId={myGymId} gymName={userGym?.name || 'tu gimnasio'} />;
+  if (user && !user.gym_id) return null;
+
+  return <GymRatingForm gymId={myGymId!} gymName={userGym?.name || 'tu gimnasio'} />;
 }
 
 function GymRatingForm({ gymId, gymName }: { gymId: string; gymName: string }) {

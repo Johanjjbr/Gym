@@ -18,10 +18,19 @@ import {
   X,
   AlertCircle,
   Play,
-  BookOpen
+  BookOpen,
+  Plus,
+  Loader2
 } from 'lucide-react';
 import { ExerciseDetailModal } from '../components/ExerciseDetailModal';
+import { ExercisePickerDialog } from '../components/ExercisePickerDialog';
 import { useExercises, type Exercise } from '../hooks/useExercises';
+import {
+  translateTarget,
+  translateEquipment,
+  translateCategory,
+  translateMuscleGroup,
+} from '../lib/exerciseTranslations';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -37,11 +46,41 @@ import {
   useCreateSession,
   useSaveExerciseLog,
   useToggleExerciseComplete,
+  useSkipExercise,
   useWorkoutHistory,
   usePendingExercises,
 } from '../hooks/useRoutineAssignments';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/format';
+import { supabase } from '../lib/supabase';
+
+type ExerciseInputMode = 'weight_reps' | 'reps_only' | 'timed' | 'cardio';
+
+function getExerciseInputMode(exercise: Exercise | undefined): ExerciseInputMode {
+  if (!exercise) return 'weight_reps';
+  if (exercise.category === 'cardio') return 'cardio';
+  if (exercise.equipment === 'body weight' || exercise.equipment === 'roller') {
+    const timedKeywords = ['plank', 'hold', 'stretch', 'bridge', 'wall sit', 'hollow', 'hanging', 'dead hang', 'glute bridge'];
+    const name = exercise.name.toLowerCase();
+    if (timedKeywords.some(k => name.includes(k))) return 'timed';
+    return 'reps_only';
+  }
+  return 'weight_reps';
+}
+
+// Tipo para ejercicios extra (bonus o compensados)
+interface ExtraExercise {
+  id: string;
+  exercise_name: string;
+  day_of_week: number;
+  sets: number;
+  reps: string;
+  rest_seconds: number;
+  notes: string | null;
+  order_index: number;
+  _source: 'compensado' | 'bonus';
+  _originalDayOfWeek?: number;
+}
 
 export function MyTraining() {
   const { user } = useAuth();
@@ -81,8 +120,10 @@ export function MyTraining() {
 
   // Estado local - PRIMERO (antes de cualquier hook que use estos valores)
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
-  const [exerciseData, setExerciseData] = useState<Record<string, { weight: string; reps: string; notes: string }>>({});
+  const [exerciseData, setExerciseData] = useState<Record<string, { weight: string; reps: string; notes: string; duration: string; distance: string }>>({});
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
+  const [extraExercises, setExtraExercises] = useState<ExtraExercise[]>([]);
+  const [bonusPickerOpen, setBonusPickerOpen] = useState(false);
   const getStoredDay = () => {
     const stored = localStorage.getItem('selectedDay');
     if (stored !== null) return parseInt(stored, 10);
@@ -91,6 +132,9 @@ export function MyTraining() {
   const [selectedDay, setSelectedDay] = useState<number>(getStoredDay);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [detailExercise, setDetailExercise] = useState<Exercise | null>(null);
+  const [gifLoaded, setGifLoaded] = useState(false);
+  const [gifError, setGifError] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   // Queries - TODOS los hooks deben estar al principio
   const { data: assignment, isLoading: loadingAssignment, error: assignmentError } = useRoutineAssignment(user?.id || '');
@@ -119,12 +163,20 @@ export function MyTraining() {
   const createSession = useCreateSession();
   const saveExercise = useSaveExerciseLog();
   const toggleComplete = useToggleExerciseComplete();
+  const skipExercise = useSkipExercise();
   const queryClient = useQueryClient();
 
   // Persistir día seleccionado al recargar
   useEffect(() => {
     localStorage.setItem('selectedDay', selectedDay.toString());
   }, [selectedDay]);
+
+  // Resetear estados de carga multimedia al cambiar de ejercicio
+  useEffect(() => {
+    setGifLoaded(false);
+    setGifError(false);
+    setImageError(false);
+  }, [selectedExercise]);
 
   // Debug: Log session info
   console.log('🏋️ [Session Debug]', {
@@ -150,19 +202,29 @@ export function MyTraining() {
     return days[day];
   };
 
-  const getExerciseLog = (exerciseId: string) => {
-    return exerciseLogs.find(log => log.exercise_id === exerciseId);
+  const getExerciseLog = (exerciseId: string, exerciseName?: string) => {
+    const byId = exerciseLogs.find(log => log.exercise_id === exerciseId);
+    if (byId) return byId;
+    if (exerciseName) {
+      return exerciseLogs.find(log => log.exercise_name === exerciseName && !log.exercise_id);
+    }
+    return undefined;
   };
 
   const getExerciseData = (exerciseId: string, defaultReps: string) => {
     const log = getExerciseLog(exerciseId);
     const sets = log?.set_logs || [];
     const lastSet = sets.length > 0 ? sets[0] : null;
+    const cached = exerciseData[exerciseId];
     
-    return exerciseData[exerciseId] || {
+    if (cached) return cached;
+    
+    return {
       weight: lastSet?.weight?.toString() || '',
       reps: lastSet?.reps?.toString() || defaultReps.split('-')[0] || '',
-      notes: log?.notes || ''
+      notes: log?.notes || '',
+      duration: lastSet?.duration_seconds?.toString() || '',
+      distance: lastSet?.distance_km?.toString() || '',
     };
   };
 
@@ -203,13 +265,23 @@ export function MyTraining() {
     }
 
     const data = getExerciseData(exerciseId, '');
-    if (!data.weight || !data.reps) {
-      toast.error('Por favor completa todos los campos');
+    const exercise = exercises.find(e => e.id === exerciseId);
+    const found = allExercises.find((e) => e.name === (exercise?.exercise_name || exerciseName));
+    const inputMode = getExerciseInputMode(found);
+
+    if (inputMode === 'weight_reps' && (!data.weight || !data.reps)) {
+      toast.error('Completa peso y repeticiones');
+      return;
+    }
+    if ((inputMode === 'reps_only' || inputMode === 'timed') && !data.reps && !data.duration) {
+      toast.error(inputMode === 'timed' ? 'Completa la duración' : 'Completa las repeticiones');
+      return;
+    }
+    if (inputMode === 'cardio' && !data.duration) {
+      toast.error('Completa la duración');
       return;
     }
 
-    // Buscar el ejercicio para conocer su día asignado
-    const exercise = exercises.find(e => e.id === exerciseId);
     const assignedDayOfWeek = exercise?.day_of_week;
 
     try {
@@ -217,9 +289,11 @@ export function MyTraining() {
         session_id: currentSession.id,
         exercise_id: exerciseId,
         exercise_name: exerciseName,
-        weight: parseFloat(data.weight),
-        reps: parseInt(data.reps),
+        weight: data.weight ? parseFloat(data.weight) : 0,
+        reps: data.reps ? parseInt(data.reps) : 0,
         notes: data.notes || null,
+        duration_seconds: data.duration ? parseInt(data.duration) : undefined,
+        distance_km: data.distance ? parseFloat(data.distance) : undefined,
         assigned_day_of_week: assignedDayOfWeek,
       });
 
@@ -237,6 +311,86 @@ export function MyTraining() {
     } catch (error: any) {
       console.error('Error guardando ejercicio:', error);
       toast.error('Error al guardar el ejercicio');
+    }
+  };
+
+  const handleCompleteToday = async (exerciseId: string, exerciseName: string, assignedDayOfWeek?: number) => {
+    try {
+      const { data: existingSession } = await supabase
+        .from('workout_sessions')
+        .select('id')
+        .eq('user_id', user!.id)
+        .eq('routine_id', assignment!.routine_templates!.id)
+        .eq('date', today)
+        .maybeSingle();
+
+      const sessionId = existingSession?.id || (
+        await createSession.mutateAsync({
+          user_id: user!.id,
+          routine_id: assignment!.routine_templates!.id,
+          date: today,
+        })
+      ).id;
+
+      await saveExercise.mutateAsync({
+        session_id: sessionId,
+        exercise_id: exerciseId,
+        exercise_name: exerciseName,
+        weight: 0,
+        reps: 0,
+        notes: 'Compensado - realizado hoy',
+        assigned_day_of_week: assignedDayOfWeek,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['exerciseLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['pendingExercises'] });
+      queryClient.invalidateQueries({ queryKey: ['workoutSession'] });
+      await refetchHistory();
+
+      toast.success('Ejercicio registrado como compensado hoy');
+    } catch (error: any) {
+      console.error('Error:', error);
+      toast.error(`Error: ${error.message}`);
+    }
+  };
+
+  const handleSkipExercise = async (exerciseId: string, exerciseName: string) => {
+    let currentSession = session;
+
+    if (!currentSession?.id) {
+      try {
+        currentSession = await createSession.mutateAsync({
+          user_id: user!.id,
+          routine_id: assignment!.routine_templates!.id,
+          date: selectedDayDate,
+        });
+        setActiveSessionId(currentSession.id);
+        refetchSession();
+      } catch (error: any) {
+        console.error('Error creando sesión:', error);
+        toast.error('Error al iniciar la sesión de entrenamiento');
+        return;
+      }
+    }
+
+    const exercise = exercises.find(e => e.id === exerciseId);
+
+    try {
+      await skipExercise.mutateAsync({
+        session_id: currentSession.id,
+        exercise_id: exerciseId,
+        exercise_name: exerciseName,
+        assigned_day_of_week: exercise?.day_of_week,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['exerciseLogs', currentSession.id] });
+      queryClient.invalidateQueries({ queryKey: ['pendingExercises'] });
+
+      toast.success('Ejercicio saltado');
+      setSelectedExercise(null);
+    } catch (error: any) {
+      console.error('Error:', error);
+      toast.error(`Error al saltar ejercicio: ${error.message}`);
     }
   };
 
@@ -636,6 +790,8 @@ export function MyTraining() {
                 const isExpanded = selectedExercise === exercise.id;
                 const data = getExerciseData(exercise.id, exercise.reps);
                 const lastSet = log?.set_logs?.[0];
+                const found = allExercises.find((e) => e.name === exercise.exercise_name);
+                const inputMode = getExerciseInputMode(found);
 
                 return (
                   <div
@@ -673,26 +829,23 @@ export function MyTraining() {
                             `}>
                               {exercise.exercise_name}
                             </h4>
-                            {(() => {
-                              const found = allExercises.find((e) => e.name === exercise.exercise_name);
-                              return found ? (
-                                <div className="flex items-center gap-1 flex-shrink-0">
-                                  {found.image_url && (
-                                    <img src={found.image_url} alt="" className="w-7 h-7 rounded object-cover border border-border" />
-                                  )}
-                                  {found.gif_url && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); setDetailExercise(found); }}
-                                      className="p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-                                      title="Ver GIF animado"
-                                    >
-                                      <Play className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              ) : null;
-                            })()}
+                            {found && (
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                {found.image_url && (
+                                  <img src={found.image_url} alt="" className="w-7 h-7 rounded object-cover border border-border" />
+                                )}
+                                {found.gif_url && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setDetailExercise(found); }}
+                                    className="p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                                    title="Ver GIF animado"
+                                  >
+                                    <Play className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center gap-3 text-sm font-['Inter'] text-muted-foreground">
                             <span className="flex items-center gap-1">
@@ -737,8 +890,103 @@ export function MyTraining() {
                     {/* Exercise Details (Expanded) */}
                     {isExpanded && (
                       <div className="px-4 pb-4 space-y-4 border-t border-muted">
+                        {found && (
+                          <div className="pt-4 space-y-4">
+                            {/* Media (GIF/Image) */}
+                            <div className="relative bg-card rounded-lg overflow-hidden border border-border">
+                              {found.gif_url && !gifError && !gifLoaded && (
+                                <div className="flex items-center justify-center h-64 bg-muted">
+                                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                                </div>
+                              )}
+                              {found.gif_url && !gifError && (
+                                <img
+                                  src={found.gif_url}
+                                  alt={`${found.name} - GIF`}
+                                  className="w-full max-h-64 object-contain bg-card"
+                                  onLoad={() => setGifLoaded(true)}
+                                  onError={() => setGifError(true)}
+                                  style={gifLoaded ? {} : { display: 'none' }}
+                                />
+                              )}
+                              {(!found.gif_url || gifError) && found.image_url && !imageError && (
+                                <img
+                                  src={found.image_url}
+                                  alt={found.name}
+                                  className="w-full max-h-64 object-contain bg-card"
+                                  onError={() => setImageError(true)}
+                                />
+                              )}
+                              {(!found.gif_url || gifError) && (!found.image_url || imageError) && (
+                                <div className="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2">
+                                  <AlertCircle className="w-8 h-8" />
+                                  <p className="text-sm">Sin imagen disponible</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Info Badges */}
+                            <div className="flex flex-wrap gap-2">
+                              {found.muscle_group && (
+                                <Badge variant="outline" className="bg-primary/10">
+                                  {translateMuscleGroup(found.muscle_group)}
+                                </Badge>
+                              )}
+                              {found.target && (
+                                <Badge variant="outline" className="bg-secondary/10">
+                                  {translateTarget(found.target)}
+                                </Badge>
+                              )}
+                              {found.equipment && (
+                                <Badge variant="outline" className="bg-accent/10">
+                                  {translateEquipment(found.equipment)}
+                                </Badge>
+                              )}
+                              {found.category && (
+                                <Badge variant="outline" className="bg-muted">
+                                  {translateCategory(found.category)}
+                                </Badge>
+                              )}
+                              {found.body_part && found.body_part !== found.category && (
+                                <Badge variant="outline" className="bg-muted">
+                                  {translateCategory(found.body_part)}
+                                </Badge>
+                              )}
+                            </div>
+
+                            {/* Description */}
+                            {found.description && (
+                              <div>
+                                <h4 className="text-sm font-medium text-muted-foreground mb-1">Descripción</h4>
+                                <p className="text-sm font-['Inter']">{found.description}</p>
+                              </div>
+                            )}
+
+                            {/* Instructions */}
+                            {found.instructions_es && (
+                              <div>
+                                <h4 className="text-sm font-medium text-muted-foreground mb-1">Instrucciones</h4>
+                                <p className="text-sm font-['Inter'] whitespace-pre-line">{found.instructions_es}</p>
+                              </div>
+                            )}
+
+                            {/* Secondary Muscles */}
+                            {found.secondary_muscles && found.secondary_muscles.length > 0 && (
+                              <div>
+                                <h4 className="text-sm font-medium text-muted-foreground mb-1">Músculos secundarios</h4>
+                                <div className="flex flex-wrap gap-1">
+                                  {found.secondary_muscles.map((m, i) => (
+                                    <Badge key={i} variant="secondary" className="text-xs">{m}</Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Trainer Notes */}
                         {exercise.notes && (
-                          <div className="pt-4">
+                          <div>
                             <p className="text-xs font-['Inter'] text-muted-foreground mb-2 uppercase tracking-wide">
                               Notas del entrenador
                             </p>
@@ -748,40 +996,82 @@ export function MyTraining() {
                           </div>
                         )}
 
-                        <div className="pt-2 space-y-3">
+                        {/* Registration Form */}
+                        <div className="space-y-3">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-xs font-['Inter'] text-muted-foreground mb-2 block uppercase tracking-wide">
-                                Peso (kg) *
-                              </label>
-                              <Input
-                                type="number"
-                                step="0.5"
-                                placeholder="0.0"
-                                value={data.weight}
-                                onChange={(e) => setExerciseData(prev => ({
-                                  ...prev,
-                                  [exercise.id]: { ...data, weight: e.target.value }
-                                }))}
-                                className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-primary"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="text-xs font-['Inter'] text-muted-foreground mb-2 block uppercase tracking-wide">
-                                Repeticiones *
-                              </label>
-                              <Input
-                                type="number"
-                                placeholder={exercise.reps}
-                                value={data.reps}
-                                onChange={(e) => setExerciseData(prev => ({
-                                  ...prev,
-                                  [exercise.id]: { ...data, reps: e.target.value }
-                                }))}
-                                className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-primary"
-                              />
-                            </div>
+                            {(inputMode === 'weight_reps' || inputMode === 'reps_only') && (
+                              <div className={inputMode === 'reps_only' ? 'sm:col-span-2' : ''}>
+                                <label className="text-xs font-['Inter'] text-muted-foreground mb-2 block uppercase tracking-wide">
+                                  Repeticiones *
+                                </label>
+                                <Input
+                                  type="number"
+                                  placeholder={exercise.reps}
+                                  value={data.reps}
+                                  onChange={(e) => setExerciseData(prev => ({
+                                    ...prev,
+                                    [exercise.id]: { ...data, reps: e.target.value }
+                                  }))}
+                                  className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-primary"
+                                />
+                              </div>
+                            )}
+                            {inputMode === 'weight_reps' && (
+                              <div>
+                                <label className="text-xs font-['Inter'] text-muted-foreground mb-2 block uppercase tracking-wide">
+                                  Peso (kg) *
+                                </label>
+                                <Input
+                                  type="number"
+                                  step="0.5"
+                                  placeholder="0.0"
+                                  value={data.weight}
+                                  onChange={(e) => setExerciseData(prev => ({
+                                    ...prev,
+                                    [exercise.id]: { ...data, weight: e.target.value }
+                                  }))}
+                                  className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-primary"
+                                />
+                              </div>
+                            )}
+                            {(inputMode === 'timed' || inputMode === 'cardio') && (
+                              <div>
+                                <label className="text-xs font-['Inter'] text-muted-foreground mb-2 block uppercase tracking-wide">
+                                  Duración (seg) *
+                                </label>
+                                <Input
+                                  type="number"
+                                  step="1"
+                                  min="1"
+                                  placeholder="30"
+                                  value={data.duration}
+                                  onChange={(e) => setExerciseData(prev => ({
+                                    ...prev,
+                                    [exercise.id]: { ...data, duration: e.target.value }
+                                  }))}
+                                  className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-primary"
+                                />
+                              </div>
+                            )}
+                            {inputMode === 'cardio' && (
+                              <div>
+                                <label className="text-xs font-['Inter'] text-muted-foreground mb-2 block uppercase tracking-wide">
+                                  Distancia (km)
+                                </label>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  placeholder="1.0"
+                                  value={data.distance}
+                                  onChange={(e) => setExerciseData(prev => ({
+                                    ...prev,
+                                    [exercise.id]: { ...data, distance: e.target.value }
+                                  }))}
+                                  className="h-12 font-['Rajdhani'] text-lg font-bold border-2 focus:border-primary"
+                                />
+                              </div>
+                            )}
                           </div>
 
                           <div>
@@ -801,6 +1091,7 @@ export function MyTraining() {
                           </div>
                         </div>
 
+                        {/* Action Buttons */}
                         <div className="flex gap-2 pt-2">
                           <Button
                             onClick={() => handleSaveExercise(exercise.id, exercise.exercise_name)}
@@ -825,6 +1116,13 @@ export function MyTraining() {
                             className="border-2 border-primary text-primary hover:bg-primary hover:text-primary-foreground font-['Rajdhani'] font-bold text-lg h-12"
                           >
                             {isCompleted ? 'Desmarcar' : 'Marcar'}
+                          </Button>
+                          <Button
+                            onClick={() => handleSkipExercise(exercise.id, exercise.exercise_name)}
+                            variant="outline"
+                            className="border-2 border-amber-500/50 text-amber-500 hover:bg-amber-500 hover:text-white font-['Rajdhani'] font-bold text-lg h-12"
+                          >
+                            Saltar
                           </Button>
                           <Button
                             onClick={() => setSelectedExercise(null)}
@@ -866,31 +1164,49 @@ export function MyTraining() {
               {pendingExercises.map((exercise) => {
                 const suggestedDay = getDayName(exercise.day_of_week);
                 return (
-                  <div
-                    key={exercise.id}
-                    className="flex items-center justify-between p-3 rounded-lg border-2 border-amber-500/20 bg-background/50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                        <Dumbbell className="w-5 h-5 text-amber-400" />
+                    <div
+                      key={exercise.id}
+                      className="flex items-center justify-between p-3 rounded-lg border-2 border-amber-500/20 bg-background/50"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                          <Dumbbell className="w-5 h-5 text-amber-400" />
+                        </div>
+                        <div>
+                          <p className="font-['Rajdhani'] font-bold text-base">{exercise.exercise_name}</p>
+                          <p className="text-xs font-['Inter'] text-muted-foreground">
+                            Sugerido: {suggestedDay} · {exercise.sets}×{exercise.reps}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-['Rajdhani'] font-bold text-base">{exercise.exercise_name}</p>
-                        <p className="text-xs font-['Inter'] text-muted-foreground">
-                          Sugerido: {suggestedDay} · {exercise.sets}×{exercise.reps}
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={async () => {
+                            try {
+                              await handleSkipExercise(exercise.id, exercise.exercise_name);
+                              queryClient.invalidateQueries({ queryKey: ['pendingExercises'] });
+                            } catch (e) {
+                              // error handled in handleSkipExercise
+                            }
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="border-amber-500/30 text-amber-500 hover:bg-amber-500 hover:text-white font-['Rajdhani'] font-bold"
+                        >
+                          Saltar
+                        </Button>
+                        <Button
+                          onClick={() => handleCompleteToday(exercise.id, exercise.exercise_name, exercise.day_of_week)}
+                          disabled={saveExercise.isPending || createSession.isPending}
+                          variant="outline"
+                          size="sm"
+                          className="border-primary/50 text-primary hover:bg-primary hover:text-primary-foreground font-['Rajdhani'] font-bold"
+                        >
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          Hacer Hoy
+                        </Button>
                       </div>
                     </div>
-                    <Button
-                      onClick={() => setSelectedDay(exercise.day_of_week)}
-                      variant="outline"
-                      size="sm"
-                      className="border-amber-500/50 text-amber-400 hover:bg-amber-500 hover:text-white font-['Rajdhani'] font-bold"
-                    >
-                      <Target className="w-4 h-4 mr-1" />
-                      Ir
-                    </Button>
-                  </div>
                 );
               })}
             </div>
@@ -1013,6 +1329,8 @@ export function MyTraining() {
                                 <div className="flex-shrink-0 mt-1">
                                   {exercise.is_completed ? (
                                     <CheckCircle className="w-5 h-5 text-primary" />
+                                  ) : exercise.is_skipped ? (
+                                    <X className="w-5 h-5 text-amber-500" />
                                   ) : (
                                     <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
                                   )}
@@ -1021,9 +1339,14 @@ export function MyTraining() {
                                 <div className="flex-1 min-w-0">
                                   <h5 className={`
                                     font-['Rajdhani'] font-bold text-base mb-1
-                                    ${exercise.is_completed ? 'text-foreground' : 'text-muted-foreground'}
+                                    ${exercise.is_completed ? 'text-foreground' : exercise.is_skipped ? 'text-amber-500' : 'text-muted-foreground'}
                                   `}>
                                     {exercise.exercise_name}
+                                    {exercise.is_skipped && (
+                                      <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0 font-['Inter'] border-amber-400/40 text-amber-500 bg-amber-500/5">
+                                        Saltado
+                                      </Badge>
+                                    )}
                                   </h5>
 
                                   {isCompensated && (

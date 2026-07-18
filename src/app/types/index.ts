@@ -122,6 +122,7 @@ export interface PhysicalProgress {
   bodyFat?: number;
   muscleMass?: number;
   notes?: string;
+  bodyMeasurements?: Record<string, number>;
 }
 
 export interface Routine {
@@ -221,6 +222,8 @@ export interface SetLog {
   reps: number;
   weight: number;
   isCompleted: boolean;
+  durationSeconds?: number;
+  distanceKm?: number;
 }
 
 export interface Invoice {

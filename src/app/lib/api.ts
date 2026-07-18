@@ -604,6 +604,7 @@ export const physicalProgress = {
     muscle_mass?: number;
     notes?: string;
     date?: string;
+    body_measurements?: Record<string, number>;
   }) {
     const { data, error } = await supabase
       .from('physical_progress')

@@ -20,7 +20,7 @@ import {
 import {
   TrendingUp, TrendingDown, Activity, Calendar, Dumbbell, BarChart3,
   Camera, Trash2, Target, Zap, Award,
-  Plus, Loader2, X, Clock, Lock, AlertCircle,
+  Plus, Loader2, X, Clock, Lock, AlertCircle, ChevronDown,
 } from 'lucide-react';
 
 export function MyProgress() {
@@ -46,6 +46,8 @@ export function MyProgress() {
   const [pBodyFat, setPBodyFat] = useState('');
   const [pMuscleMass, setPMuscleMass] = useState('');
   const [pNotes, setPNotes] = useState('');
+  const [pMeasurements, setPMeasurements] = useState<Record<string, string>>({});
+  const [showMeasurements, setShowMeasurements] = useState(false);
 
   const isFreeUser = authUser?.is_free_user ?? false;
   const lastProgressDate = progress.length > 0 ? new Date(progress[0].date) : null;
@@ -55,18 +57,25 @@ export function MyProgress() {
 
   const handleRegisterProgress = () => {
     if (!pWeight || !userId) return;
+    const bodyMeasurements: Record<string, number> = {};
+    Object.entries(pMeasurements).forEach(([key, val]) => {
+      if (val) bodyMeasurements[key] = parseFloat(val);
+    });
     createProgress.mutate({
       user_id: userId,
       weight: parseFloat(pWeight),
       body_fat: pBodyFat ? parseFloat(pBodyFat) : undefined,
       muscle_mass: pMuscleMass ? parseFloat(pMuscleMass) : undefined,
       notes: pNotes || undefined,
+      body_measurements: Object.keys(bodyMeasurements).length > 0 ? bodyMeasurements : undefined,
     }, {
       onSuccess: () => {
         setPWeight('');
         setPBodyFat('');
         setPMuscleMass('');
         setPNotes('');
+        setPMeasurements({});
+        setShowMeasurements(false);
       },
     });
   };
@@ -211,66 +220,103 @@ export function MyProgress() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label>Peso (kg) *</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={pWeight}
+                            onChange={(e) => setPWeight(e.target.value)}
+                            placeholder="70.5"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Grasa Corporal (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={pBodyFat}
+                            onChange={(e) => setPBodyFat(e.target.value)}
+                            placeholder="15.5"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Masa Muscular (kg)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={pMuscleMass}
+                            onChange={(e) => setPMuscleMass(e.target.value)}
+                            placeholder="55.5"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="border border-border rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setShowMeasurements(!showMeasurements)}
+                          className="w-full flex items-center justify-between p-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Medidas Corporales (Opcional)
+                          <ChevronDown className={`w-4 h-4 transition-transform ${showMeasurements ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showMeasurements && (
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 pt-0">
+                            {[
+                              ['waist', 'Cintura (cm)'],
+                              ['hip', 'Cadera (cm)'],
+                              ['chest', 'Pecho (cm)'],
+                              ['left_arm', 'Brazo Izq. (cm)'],
+                              ['right_arm', 'Brazo Der. (cm)'],
+                              ['left_thigh', 'Pierna Izq. (cm)'],
+                              ['right_thigh', 'Pierna Der. (cm)'],
+                            ].map(([key, label]) => (
+                              <div key={key} className="space-y-1">
+                                <Label className="text-xs">{label}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  value={pMeasurements[key] || ''}
+                                  onChange={(e) => setPMeasurements(prev => ({ ...prev, [key]: e.target.value }))}
+                                  placeholder="0.0"
+                                  className="h-9"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="space-y-2">
-                        <Label>Peso (kg) *</Label>
-                        <Input
-                          type="number"
-                          step="0.1"
-                          value={pWeight}
-                          onChange={(e) => setPWeight(e.target.value)}
-                          placeholder="70.5"
+                        <Label>Notas</Label>
+                        <Textarea
+                          value={pNotes}
+                          onChange={(e) => setPNotes(e.target.value)}
+                          placeholder="Observaciones..."
+                          rows={2}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Grasa Corporal (%)</Label>
-                        <Input
-                          type="number"
-                          step="0.1"
-                          value={pBodyFat}
-                          onChange={(e) => setPBodyFat(e.target.value)}
-                          placeholder="15.5"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Masa Muscular (kg)</Label>
-                        <Input
-                          type="number"
-                          step="0.1"
-                          value={pMuscleMass}
-                          onChange={(e) => setPMuscleMass(e.target.value)}
-                          placeholder="55.5"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Notas</Label>
-                      <Textarea
-                        value={pNotes}
-                        onChange={(e) => setPNotes(e.target.value)}
-                        placeholder="Observaciones..."
-                        rows={2}
-                      />
-                    </div>
-                    <Button
-                      onClick={handleRegisterProgress}
-                      disabled={createProgress.isPending || !pWeight}
-                      className="w-full"
-                    >
-                      {createProgress.isPending ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Plus className="w-4 h-4 mr-2" />
+                      <Button
+                        onClick={handleRegisterProgress}
+                        disabled={createProgress.isPending || !pWeight}
+                        className="w-full"
+                      >
+                        {createProgress.isPending ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4 mr-2" />
+                        )}
+                        Registrar Medición
+                      </Button>
+                      {isFreeUser && (
+                        <p className="text-xs text-center text-muted-foreground">
+                          Como usuario libre, puedes registrar tu progreso cada 7 días.
+                        </p>
                       )}
-                      Registrar Medición
-                    </Button>
-                    {isFreeUser && (
-                      <p className="text-xs text-center text-muted-foreground">
-                        Como usuario libre, puedes registrar tu progreso cada 7 días.
-                      </p>
-                    )}
-                  </div>
+                    </div>
                 </CardContent>
               </Card>
             </div>
@@ -390,6 +436,43 @@ export function MyProgress() {
                           />
                         </div>
                       </div>
+
+                      <div className="border border-border rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setShowMeasurements(!showMeasurements)}
+                          className="w-full flex items-center justify-between p-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Medidas Corporales (Opcional)
+                          <ChevronDown className={`w-4 h-4 transition-transform ${showMeasurements ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showMeasurements && (
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 pt-0">
+                            {[
+                              ['waist', 'Cintura (cm)'],
+                              ['hip', 'Cadera (cm)'],
+                              ['chest', 'Pecho (cm)'],
+                              ['left_arm', 'Brazo Izq. (cm)'],
+                              ['right_arm', 'Brazo Der. (cm)'],
+                              ['left_thigh', 'Pierna Izq. (cm)'],
+                              ['right_thigh', 'Pierna Der. (cm)'],
+                            ].map(([key, label]) => (
+                              <div key={key} className="space-y-1">
+                                <Label className="text-xs">{label}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  value={pMeasurements[key] || ''}
+                                  onChange={(e) => setPMeasurements(prev => ({ ...prev, [key]: e.target.value }))}
+                                  placeholder="0.0"
+                                  className="h-9"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="space-y-2">
                         <Label>Notas</Label>
                         <Textarea

@@ -141,6 +141,9 @@ export const physicalDataSchema = z.object({
     .max(100, 'Masa muscular máxima: 100%')
     .optional(),
   
+  body_measurements: z.record(z.string(), z.number())
+    .optional(),
+  
   measurement_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato YYYY-MM-DD'),
   

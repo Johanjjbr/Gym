@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/format';
+import { useNavigate } from 'react-router';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 interface AttendanceRecord {
@@ -18,14 +19,20 @@ interface AttendanceRecord {
 
 export function MyAttendance() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
+    if (user && !user.gym_id) {
+      toast.error('Esta sección requiere un gimnasio asignado');
+      navigate('/usuario/mi-entrenamiento', { replace: true });
+      return;
+    }
     loadAttendance();
-  }, [user, filterMonth, filterYear]);
+  }, [user, filterMonth, filterYear, navigate]);
 
   const loadAttendance = async () => {
     if (!user?.id) return;

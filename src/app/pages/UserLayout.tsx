@@ -7,14 +7,16 @@ import { Toaster } from '../components/ui/sonner';
 import { useState } from 'react';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 
-const menuItems = [
+const getMenuItems = (hasGym: boolean) => [
   { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/usuario/mi-entrenamiento' },
   { icon: BookOpen, label: 'Rutinas', path: '/usuario/rutinas' },
   { icon: UserIcon, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
   { icon: TrendingUp, label: 'Progreso Físico', path: '/usuario/progreso' },
-  { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
-  { icon: CreditCard, label: 'Mis Facturas', path: '/usuario/facturas' },
-  { icon: Star, label: 'Valorar Gimnasio', path: '/usuario/valorar-gimnasio' },
+  ...(hasGym ? [
+    { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
+    { icon: CreditCard, label: 'Mis Facturas', path: '/usuario/facturas' },
+    { icon: Star, label: 'Valorar Gimnasio', path: '/usuario/valorar-gimnasio' },
+  ] : []),
 ];
 
 export function UserLayout() {
@@ -103,7 +105,7 @@ export function UserLayout() {
           {/* Navigation */}
           <nav className="flex-1 p-4 overflow-y-auto">
             <ul className="space-y-1">
-              {menuItems.map((item) => {
+              {getMenuItems(!!user?.gym_id).map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
                 

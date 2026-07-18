@@ -46,6 +46,7 @@ interface WorkoutExerciseLog {
   exercise_id: string;
   exercise_name: string;
   is_completed: boolean;
+  is_skipped: boolean;
   notes: string | null;
 }
 
@@ -56,6 +57,8 @@ interface SetLog {
   reps: number;
   weight: number;
   is_completed: boolean;
+  duration_seconds: number | null;
+  distance_km: number | null;
 }
 
 export function useRoutineAssignment(userId: string) {
@@ -233,50 +236,70 @@ export function useSaveExerciseLog() {
   return useMutation({
     mutationFn: async (log: {
       session_id: string;
-      exercise_id: string;
+      exercise_id: string | null;
       exercise_name: string;
       weight: number;
       reps: number;
       notes: string | null;
       assigned_day_of_week?: number;
+      is_bonus?: boolean;
+      duration_seconds?: number;
+      distance_km?: number;
     }) => {
-      // 1. Buscar si ya existe el log del ejercicio
-      const { data: existingLog, error: checkError } = await supabase
-        .from('workout_exercise_logs')
-        .select('id')
-        .eq('session_id', log.session_id)
-        .eq('exercise_id', log.exercise_id)
-        .maybeSingle();
-
-      if (checkError && checkError.code !== 'PGRST116') throw checkError;
-
       let exerciseLogId: string;
 
-      if (existingLog) {
-        // Actualizar log existente
-        const { data: updated, error: updateError } = await supabase
+      // Si tiene exercise_id, buscar log existente para actualizar
+      if (log.exercise_id) {
+        const { data: existingLog, error: checkError } = await supabase
           .from('workout_exercise_logs')
-          .update({
-            notes: log.notes,
-            is_completed: true,
-          })
-          .eq('id', existingLog.id)
-          .select()
-          .single();
+          .select('id')
+          .eq('session_id', log.session_id)
+          .eq('exercise_id', log.exercise_id)
+          .maybeSingle();
 
-        if (updateError) throw updateError;
-        exerciseLogId = updated.id;
+        if (checkError && checkError.code !== 'PGRST116') throw checkError;
+
+        if (existingLog) {
+          const { data: updated, error: updateError } = await supabase
+            .from('workout_exercise_logs')
+            .update({
+              notes: log.notes,
+              is_completed: true,
+            })
+            .eq('id', existingLog.id)
+            .select()
+            .single();
+
+          if (updateError) throw updateError;
+          exerciseLogId = updated.id;
+        } else {
+          const { data: created, error: createError } = await supabase
+            .from('workout_exercise_logs')
+            .insert([{
+              session_id: log.session_id,
+              exercise_id: log.exercise_id,
+              exercise_name: log.exercise_name,
+              is_completed: true,
+              notes: log.notes,
+              assigned_day_of_week: log.assigned_day_of_week,
+            }])
+            .select()
+            .single();
+
+          if (createError) throw createError;
+          exerciseLogId = created.id;
+        }
       } else {
-        // Crear nuevo log
+        // Sin exercise_id (bonus o nuevos) → siempre crear
         const { data: created, error: createError } = await supabase
           .from('workout_exercise_logs')
           .insert([{
             session_id: log.session_id,
-            exercise_id: log.exercise_id,
             exercise_name: log.exercise_name,
             is_completed: true,
             notes: log.notes,
             assigned_day_of_week: log.assigned_day_of_week,
+            is_bonus: log.is_bonus || false,
           }])
           .select()
           .single();
@@ -303,6 +326,8 @@ export function useSaveExerciseLog() {
             weight: log.weight,
             reps: log.reps,
             is_completed: true,
+            duration_seconds: log.duration_seconds ?? null,
+            distance_km: log.distance_km ?? null,
           })
           .eq('id', existingSet.id);
 
@@ -317,6 +342,8 @@ export function useSaveExerciseLog() {
             reps: log.reps,
             weight: log.weight,
             is_completed: true,
+            duration_seconds: log.duration_seconds ?? null,
+            distance_km: log.distance_km ?? null,
           }]);
 
         if (setCreateError) throw setCreateError;
@@ -387,6 +414,59 @@ export function useToggleExerciseComplete() {
       });
       queryClient.invalidateQueries({ 
         queryKey: ['pendingExercises'] 
+      });
+    },
+  });
+}
+
+// Mutation para saltar/ignorar ejercicio
+export function useSkipExercise() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      session_id: string;
+      exercise_id: string;
+      exercise_name: string;
+      assigned_day_of_week?: number;
+    }) => {
+      const { data: existingLog, error: checkError } = await supabase
+        .from('workout_exercise_logs')
+        .select('id')
+        .eq('session_id', params.session_id)
+        .eq('exercise_id', params.exercise_id)
+        .maybeSingle();
+
+      if (checkError && checkError.code !== 'PGRST116') throw checkError;
+
+      if (existingLog) {
+        const { error: updateError } = await supabase
+          .from('workout_exercise_logs')
+          .update({ is_skipped: true, is_completed: false })
+          .eq('id', existingLog.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const { error: createError } = await supabase
+          .from('workout_exercise_logs')
+          .insert([{
+            session_id: params.session_id,
+            exercise_id: params.exercise_id,
+            exercise_name: params.exercise_name,
+            is_skipped: true,
+            is_completed: false,
+            assigned_day_of_week: params.assigned_day_of_week,
+          }]);
+
+        if (createError) throw createError;
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['exerciseLogs', variables.session_id]
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['pendingExercises']
       });
     },
   });
@@ -508,15 +588,26 @@ export function usePendingExercises(userId: string, routineId: string) {
       // 3. Obtener exercise_logs de esas sesiones
       const { data: exerciseLogs, error: logError } = await supabase
         .from('workout_exercise_logs')
-        .select('exercise_id')
+        .select('exercise_id, is_skipped')
         .in('session_id', sessionIds);
 
       if (logError) throw logError;
 
-      // 4. Filtrar ejercicios no logeados de días pasados
+      // 4. Filtrar ejercicios que no están logeados ni saltados, de días pasados
       const dbToday = new Date().getDay() === 0 ? 7 : new Date().getDay();
-      const loggedIds = new Set((exerciseLogs || []).map(log => log.exercise_id));
-      return allExercises.filter(ex => !loggedIds.has(ex.id) && ex.day_of_week < dbToday);
+      const loggedIds = new Set(
+        (exerciseLogs || [])
+          .filter(log => !log.is_skipped)
+          .map(log => log.exercise_id)
+      );
+      const skippedIds = new Set(
+        (exerciseLogs || [])
+          .filter(log => log.is_skipped)
+          .map(log => log.exercise_id)
+      );
+      return allExercises.filter(
+        ex => !loggedIds.has(ex.id) && !skippedIds.has(ex.id) && ex.day_of_week < dbToday
+      );
     },
     enabled: !!userId && !!routineId,
   });

@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/format';
+import { useNavigate } from 'react-router';
 
 interface Invoice {
   id: string;
@@ -20,14 +21,20 @@ interface Invoice {
 
 export function MyPayments() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [nextPaymentDate, setNextPaymentDate] = useState<string | null>(null);
 
   useEffect(() => {
+    if (user && !user.gym_id) {
+      toast.error('Esta sección requiere un gimnasio asignado');
+      navigate('/usuario/mi-entrenamiento', { replace: true });
+      return;
+    }
     loadInvoices();
     loadUserData();
-  }, [user]);
+  }, [user, navigate]);
 
   const loadInvoices = async () => {
     if (!user?.id) return;

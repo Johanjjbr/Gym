@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -50,6 +50,8 @@ export function UserDetail() {
   const [progressMuscleMass, setProgressMuscleMass] = useState('');
   const [progressDate, setProgressDate] = useState(new Date().toISOString().split('T')[0]);
   const [progressNotes, setProgressNotes] = useState('');
+  const [progressMeasurements, setProgressMeasurements] = useState<Record<string, string>>({});
+  const [showProgressMeasurements, setShowProgressMeasurements] = useState(false);
   
   // Usar React Query en lugar de mockData
   const { data: user, isLoading, error } = useUser(id || '');
@@ -256,6 +258,10 @@ export function UserDetail() {
       return;
     }
 
+    const bodyMeasurements: Record<string, number> = {};
+    Object.entries(progressMeasurements).forEach(([key, val]) => {
+      if (val) bodyMeasurements[key] = parseFloat(val);
+    });
     createPhysicalProgressMutation.mutate({
       user_id: id,
       weight: parseFloat(progressWeight),
@@ -263,6 +269,7 @@ export function UserDetail() {
       muscle_mass: progressMuscleMass ? parseFloat(progressMuscleMass) : undefined,
       date: progressDate,
       notes: progressNotes || undefined,
+      body_measurements: Object.keys(bodyMeasurements).length > 0 ? bodyMeasurements : undefined,
     }, {
       onSuccess: () => {
         setIsAddProgressDialogOpen(false);
@@ -271,6 +278,8 @@ export function UserDetail() {
         setProgressMuscleMass('');
         setProgressDate(new Date().toISOString().split('T')[0]);
         setProgressNotes('');
+        setProgressMeasurements({});
+        setShowProgressMeasurements(false);
       },
     });
   };
@@ -1287,6 +1296,43 @@ export function UserDetail() {
                 className="bg-input border-border"
               />
             </div>
+
+            <div className="border border-border rounded-lg">
+              <button
+                type="button"
+                onClick={() => setShowProgressMeasurements(!showProgressMeasurements)}
+                className="w-full flex items-center justify-between p-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Medidas Corporales (Opcional)
+                <ChevronDown className={`w-4 h-4 transition-transform ${showProgressMeasurements ? 'rotate-180' : ''}`} />
+              </button>
+              {showProgressMeasurements && (
+                <div className="grid grid-cols-2 gap-3 p-3 pt-0">
+                  {[
+                    ['waist', 'Cintura (cm)'],
+                    ['hip', 'Cadera (cm)'],
+                    ['chest', 'Pecho (cm)'],
+                    ['left_arm', 'Brazo Izq. (cm)'],
+                    ['right_arm', 'Brazo Der. (cm)'],
+                    ['left_thigh', 'Pierna Izq. (cm)'],
+                    ['right_thigh', 'Pierna Der. (cm)'],
+                  ].map(([key, label]) => (
+                    <div key={key} className="space-y-1">
+                      <Label className="text-xs">{label}</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={progressMeasurements[key] || ''}
+                        onChange={(e) => setProgressMeasurements(prev => ({ ...prev, [key]: e.target.value }))}
+                        placeholder="0.0"
+                        className="bg-input border-border h-9"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div>
               <Label>Fecha de Medición</Label>
               <Input
