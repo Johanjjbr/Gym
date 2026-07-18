@@ -1,4 +1,17 @@
-**Add your own guidelines here**
+# Capacitor / Android Build Guidelines
+
+## Después de modificar código
+
+Siempre ejecutar `npm run mobile:build` después de cambios para que la app Android refleje las modificaciones.
+
+## Reglas
+
+* No modificar archivos dentro de `android/` manualmente — siempre usar `npx cap copy` o `npx cap sync`
+* Si se agrega un plugin de Capacitor, ejecutar `npm run mobile:sync` después de instalarlo
+* Los íconos se generan desde `public/icon.svg` — si se cambia el SVG, regenerar con `npm run mobile:icons` y `node scripts/generate-android-icons.mjs`
+* El build de producción para Play Store debe usar Android App Bundle (AAB) firmado
+
+---
 <!--
 
 System Guidelines

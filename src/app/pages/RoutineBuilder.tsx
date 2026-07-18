@@ -59,6 +59,7 @@ export function RoutineBuilder() {
   const [category, setCategory] = useState('');
   const [durationWeeks, setDurationWeeks] = useState(4);
   const [daysPerWeek, setDaysPerWeek] = useState(3);
+  const [notes, setNotes] = useState('');
 
   // Ejercicios (detalle)
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -72,6 +73,7 @@ export function RoutineBuilder() {
       setCategory(routineData.category || '');
       setDurationWeeks(routineData.duration_weeks || 4);
       setDaysPerWeek(routineData.days_per_week || 3);
+      setNotes(routineData.notes || '');
       
       // Cargar ejercicios
       if (routineData.exercises && routineData.exercises.length > 0) {
@@ -148,6 +150,7 @@ export function RoutineBuilder() {
       category: category.trim() || 'General',
       duration_weeks: durationWeeks,
       days_per_week: daysPerWeek,
+      notes: notes.trim(),
       created_by: user.id,
       exercises: exercises.map(ex => ({
         exercise_name: ex.exercise_name.trim(),
@@ -277,6 +280,17 @@ export function RoutineBuilder() {
                   max="52"
                   value={durationWeeks}
                   onChange={(e) => setDurationWeeks(parseInt(e.target.value) || 4)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notas del creador</Label>
+                <Textarea
+                  id="notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Anotaciones, observaciones o recomendaciones sobre esta rutina..."
+                  className="min-h-[80px]"
                 />
               </div>
 

@@ -18,10 +18,10 @@ export const userKeys = {
 /**
  * Hook para obtener todos los usuarios
  */
-export function useUsers() {
+export function useUsers(gymId?: string) {
   return useQuery({
-    queryKey: userKeys.all,
-    queryFn: users.getAll,
+    queryKey: [...userKeys.all, gymId ? { gymId } : {}],
+    queryFn: () => users.getAll(gymId),
     staleTime: 1000 * 60 * 5, // 5 minutos
     refetchOnWindowFocus: true,
     enabled: !!localStorage.getItem('access_token'), // Solo ejecutar si hay token

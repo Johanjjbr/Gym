@@ -274,6 +274,41 @@ Recepción:  recepcion@gymteques.com / Recepcion123!
 
 ---
 
+## 📱 Capacitor (Android App)
+
+Este proyecto usa **Capacitor** para empaquetar la web app como app Android nativa.
+
+### Configuración
+
+| Campo | Archivo | Valor |
+|---|---|---|
+| appId | `capacitor.config.json` | `com.losteques.gymapp` |
+| appName | `capacitor.config.json` | `Gimnasio Los Teques` |
+| webDir | `capacitor.config.json` | `dist` |
+
+### Comandos para build mobile
+
+```bash
+npm run mobile:build      # Build web + copiar a Android
+npm run mobile:sync       # Sincronizar plugins
+npm run mobile:open       # Abrir Android Studio
+```
+
+### Flujo después de cambios en el código
+
+1. Ejecutar `npm run mobile:build` para compilar la web y copiar los assets a Android
+2. Si se agregaron plugins de Capacitor, ejecutar también `npx cap sync`
+3. Desde Android Studio: `Build → Build APK` (debug) o `Build → Generate Signed Bundle` (release)
+
+### Publicación en Play Store
+
+1. Generar Android App Bundle (AAB) firmado desde Android Studio
+2. Subir a Google Play Console
+
+> Para más detalles, ver `.opencode/plans/capacitor-build.md`
+
+---
+
 ## ⚠️ Puntos de atención para el agente
 
 1. **localStorage**: Actualmente se usa para guardar el token y el usuario. En artifacts de Claude.ai esto NO funciona — usar estado en memoria si se construyen demos.

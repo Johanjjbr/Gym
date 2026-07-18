@@ -1,4 +1,5 @@
-import { Users, UserCheck, UserX, DollarSign, UserCog, Activity, Loader2, AlertCircle } from 'lucide-react';
+import { useState } from 'react';
+import { Users, UserCheck, UserX, DollarSign, UserCog, Activity, Loader2, AlertCircle, Building2 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -8,7 +9,10 @@ import { Database, ExternalLink } from 'lucide-react';
 import { useDashboardStats } from '../hooks/useStats';
 import { useUsers } from '../hooks/useUsers';
 import { useInvoices } from '../hooks/useInvoices';
+import { useAdminGyms } from '../hooks/useAdminGyms';
+import { useGyms } from '../hooks/useGyms';
 import { formatDate } from '../lib/format';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 // Mock data para los gráficos
 const monthlyRevenueData = [
@@ -32,11 +36,23 @@ const attendanceData = [
 
 export function Dashboard() {
   const { user } = useAuth();
-  
+  const isAdmin = user?.role === 'Administrador' || user?.is_super_admin;
+
+  const { data: adminGyms } = useAdminGyms();
+  const { data: allGyms } = useGyms();
+
+  const [selectedGymId, setSelectedGymId] = useState<string>('');
+
+  const gymFilter = selectedGymId || undefined;
+
+  const availableGyms = user?.is_super_admin
+    ? (allGyms || [])
+    : (adminGyms || []).map((ag: any) => ({ id: ag.gym_id, name: ag.gym_name }));
+
   // Usar React Query para obtener datos reales
-  const { data: stats, isLoading: loadingStats, error: statsError } = useDashboardStats();
-  const { data: users, isLoading: loadingUsers } = useUsers();
-  const { data: invoicesData, isLoading: loadingPayments } = useInvoices();
+  const { data: stats, isLoading: loadingStats, error: statsError } = useDashboardStats(gymFilter);
+  const { data: users, isLoading: loadingUsers } = useUsers(gymFilter);
+  const { data: invoicesData, isLoading: loadingPayments } = useInvoices({ gym_id: gymFilter });
 
   const isLoading = loadingStats || loadingUsers || loadingPayments;
 
@@ -72,9 +88,27 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-4xl mb-2">Dashboard</h1>
-        <p className="text-muted-foreground">Resumen general del gimnasio</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl mb-2">Dashboard</h1>
+          <p className="text-muted-foreground">Resumen general del gimnasio</p>
+        </div>
+        {isAdmin && (
+          <div className="w-64">
+            <Select value={selectedGymId} onValueChange={setSelectedGymId}>
+              <SelectTrigger>
+                <Building2 className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Todos los gimnasios" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Todos los gimnasios</SelectItem>
+                {availableGyms.filter(Boolean).map((gym: any) => (
+                  <SelectItem key={gym.id} value={gym.id}>{gym.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Bienvenida */}
@@ -113,6 +147,11 @@ export function Dashboard() {
               </p>
               <p className="text-sm">
                 Sistema conectado correctamente a Supabase. Mostrando datos en tiempo real.
+                {selectedGymId && availableGyms.find((g: any) => g.id === selectedGymId)?.name && (
+                  <span className="font-semibold ml-1">
+                    — {availableGyms.find((g: any) => g.id === selectedGymId)?.name}
+                  </span>
+                )}
               </p>
               <div className="flex items-center gap-4 mt-2">
                 <span className="text-xs text-muted-foreground">

@@ -7,7 +7,7 @@ export interface User {
   email: string;
   phone: string;
   memberNumber: string;
-  status: 'Activo' | 'Inactivo' | 'Moroso';
+  status: 'Activo' | 'Inactivo' | 'Moroso' | 'Suspendido';
   plan: string;
   startDate: string;
   nextPayment: string;
@@ -17,6 +17,67 @@ export interface User {
   photo?: string;
   trainer_id?: string;
   trainer_name?: string;
+  gym_id?: string;
+  is_free_user?: boolean;
+  can_share_routines?: boolean;
+}
+
+export interface Gym {
+  id: string;
+  name: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  code: string;
+  description?: string;
+  logo_url?: string;
+  schedule?: Record<string, { abre: string; cierra: string }>;
+  social_links?: {
+    instagram?: string;
+    whatsapp?: string;
+    twitter?: string;
+    tiktok?: string;
+    youtube?: string;
+  };
+  latitude?: number;
+  longitude?: number;
+  rating?: number;
+  staff_count?: number;
+  users_count?: number;
+  review_count?: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface GymReview {
+  id: string;
+  gym_id: string;
+  user_id: string;
+  rating: number;
+  comment?: string;
+  created_at: string;
+}
+
+export interface GymFormData {
+  name: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  code: string;
+  description?: string;
+  logo_url?: string;
+  schedule?: Record<string, { abre: string; cierra: string }>;
+  social_links?: {
+    instagram?: string;
+    whatsapp?: string;
+    twitter?: string;
+    tiktok?: string;
+    youtube?: string;
+  };
+  latitude?: number;
+  longitude?: number;
+  is_active: boolean;
 }
 
 export interface Payment {
@@ -39,6 +100,9 @@ export interface Staff {
   shift: string;
   status: 'Activo' | 'Inactivo';
   photo?: string;
+  gym_id?: string;
+  gym_name?: string;
+  is_super_admin?: boolean;
 }
 
 export interface Attendance {

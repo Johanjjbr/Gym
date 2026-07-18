@@ -1,8 +1,11 @@
-import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Users } from 'lucide-react';
+import { useState } from 'react';
+import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Pencil } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUser } from '../hooks/useUsers';
 import { usePhysicalProgress } from '../hooks/usePhysicalProgress';
+import { EditProfileDialog } from '../components/EditProfileDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatDate } from '../lib/format';
@@ -11,6 +14,7 @@ export function MyProfile() {
   const { user: authUser } = useAuth();
   const { data: user, isLoading: userLoading } = useUser(authUser?.id || '');
   const { data: progressData = [], isLoading: progressLoading } = usePhysicalProgress(authUser?.id || '');
+  const [editOpen, setEditOpen] = useState(false);
 
   if (userLoading || !user) {
     return (
@@ -40,11 +44,19 @@ export function MyProfile() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl mb-2">Mi Perfil</h1>
-        <p className="text-muted-foreground">
-          Información personal y estadísticas
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl mb-2">Mi Perfil</h1>
+          <p className="text-muted-foreground">
+            Información personal y estadísticas
+          </p>
+        </div>
+        {authUser?.is_free_user && (
+          <Button onClick={() => setEditOpen(true)} variant="outline" className="gap-2">
+            <Pencil className="w-4 h-4" />
+            Editar Perfil
+          </Button>
+        )}
       </div>
 
       {/* Profile Card */}
@@ -257,6 +269,16 @@ export function MyProfile() {
       )}
 
       {/* Additional Stats */}
+      {user && (
+        <EditProfileDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          user={{ id: user.id, name: user.name, phone: user.phone, weight: user.weight, height: user.height }}
+          isFreeUser={authUser?.is_free_user}
+          lastProgressDate={progressData.length > 0 ? progressData[0].date : null}
+        />
+      )}
+
       {lastProgress && (lastProgress.bodyFat || lastProgress.muscleMass) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {lastProgress.bodyFat && (

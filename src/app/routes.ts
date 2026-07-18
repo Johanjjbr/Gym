@@ -14,6 +14,8 @@ import { RoutineBuilder } from './pages/RoutineBuilder';
 import { MyWorkout } from './pages/MyWorkout';
 import { MyProfile } from './pages/MyProfile';
 import { MyTraining } from './pages/MyTraining';
+import { UserRoutines } from './pages/UserRoutines';
+import { UserRoutineCreator } from './pages/UserRoutineCreator';
 import { MyProgress } from './pages/MyProgress';
 import { MyAttendance } from './pages/MyAttendance';
 import { MyPayments } from './pages/MyPayments';
@@ -25,6 +27,8 @@ import { RoutineDiagnostic } from './pages/RoutineDiagnostic';
 import { MigrateRoutines } from './pages/MigrateRoutines';
 import { RoutineAssignmentDebug } from './pages/RoutineAssignmentDebug';
 import { Exercises } from './pages/Exercises';
+import { GymSettings } from './pages/GymSettings';
+import { GymRating } from './pages/GymRating';
 
 export const router = createBrowserRouter([
   // Ruta pública - Login
@@ -70,10 +74,13 @@ export const router = createBrowserRouter([
         }
       },
       { path: 'mi-entrenamiento', Component: MyTraining },
+      { path: 'rutinas', Component: UserRoutines },
+      { path: 'rutinas/crear', Component: UserRoutineCreator },
       { path: 'mi-perfil', Component: MyProfile },
       { path: 'progreso', Component: MyProgress },
       { path: 'asistencia', Component: MyAttendance },
       { path: 'facturas', Component: MyPayments },
+      { path: 'valorar-gimnasio', Component: GymRating },
       { path: 'diagnostico-rutina', Component: RoutineDiagnostic },
       { path: 'migrar-rutinas', Component: MigrateRoutines },
       { path: 'debug-asignaciones', Component: RoutineAssignmentDebug },
@@ -96,6 +103,7 @@ export const router = createBrowserRouter([
       { path: 'rutinas/crear', Component: RoutineBuilder },
       { path: 'rutinas/:id/editar', Component: RoutineBuilder },
       { path: 'mi-entrenamiento', Component: MyWorkout },
+      { path: 'gimnasios', Component: GymSettings },
       { path: 'reportes', Component: Reports },
    //   { path: 'migrar-rutinas', Component: MigrateRoutines },
     ],

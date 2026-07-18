@@ -459,16 +459,23 @@ export function usePendingExercises(userId: string, routineId: string) {
     queryFn: async () => {
       if (!userId || !routineId) return [];
 
-      // Calcular inicio y fin de la semana actual (Lunes a Domingo)
+      const formatLocalDate = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
+      // Calcular inicio y fin de la semana actual (Lunes a Domingo) en hora local
       const now = new Date();
       const dayOfWeek = now.getDay(); // 0 = Sun
       const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
       const monday = new Date(now);
       monday.setDate(now.getDate() + mondayOffset);
-      const mondayStr = monday.toISOString().split('T')[0];
+      const mondayStr = formatLocalDate(monday);
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
-      const sundayStr = sunday.toISOString().split('T')[0];
+      const sundayStr = formatLocalDate(sunday);
 
       // 1. Obtener todos los ejercicios de la rutina
       const { data: allExercises, error: exError } = await supabase
@@ -506,9 +513,10 @@ export function usePendingExercises(userId: string, routineId: string) {
 
       if (logError) throw logError;
 
-      // 4. Filtrar ejercicios no logeados
+      // 4. Filtrar ejercicios no logeados de días pasados
+      const dbToday = new Date().getDay() === 0 ? 7 : new Date().getDay();
       const loggedIds = new Set((exerciseLogs || []).map(log => log.exercise_id));
-      return allExercises.filter(ex => !loggedIds.has(ex.id));
+      return allExercises.filter(ex => !loggedIds.has(ex.id) && ex.day_of_week < dbToday);
     },
     enabled: !!userId && !!routineId,
   });

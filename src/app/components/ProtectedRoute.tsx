@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router';
+import { Navigate, useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 import type { UserRole } from '../types';
@@ -9,7 +9,8 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, hasRole } = useAuth();
+  const { isAuthenticated, isLoading, hasRole, user } = useAuth();
+  const navigate = useNavigate();
 
   // Mostrar loading mientras verifica la sesión
   if (isLoading) {
@@ -53,10 +54,12 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
             No tienes permisos para acceder a esta sección.
           </p>
           <button
-            onClick={() => window.history.back()}
+            onClick={() => {
+              navigate(user?.role === 'Usuario' ? '/usuario/mi-entrenamiento' : '/login', { replace: true });
+            }}
             className="mt-4 px-6 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-colors"
           >
-            Volver
+            Ir a mi sección
           </button>
         </div>
       </div>

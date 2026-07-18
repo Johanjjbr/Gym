@@ -7,7 +7,7 @@ export const invoiceKeys = {
   byUser: (userId: string) => ['invoices', 'user', userId] as const,
 };
 
-export function useInvoices(params?: { user_id?: string; status?: string }) {
+export function useInvoices(params?: { user_id?: string; status?: string; gym_id?: string }) {
   return useQuery({
     queryKey: [...invoiceKeys.all, params],
     queryFn: () => invoices.getAll(params),

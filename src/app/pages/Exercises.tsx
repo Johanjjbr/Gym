@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Loader2, AlertCircle, Dumbbell, Filter } from 'lucide-react';
+import { Search, Loader2, AlertCircle, Dumbbell, Filter, Target, Wrench } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
@@ -7,11 +7,47 @@ import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useExercises, type Exercise } from '../hooks/useExercises';
 import { ExerciseDetailModal } from '../components/ExerciseDetailModal';
+import {
+  translateTarget,
+  translateEquipment,
+  translateMuscleGroup,
+  getAllTargetOptions,
+  getAllEquipmentOptions,
+} from '../lib/exerciseTranslations';
 
 const MUSCLE_GROUPS = [
   'Todos', 'Pecho', 'Espalda', 'Hombros', 'Bíceps', 'Tríceps',
   'Piernas', 'Pantorrillas', 'Core', 'Glúteos', 'General'
 ];
+
+const MUSCLE_GROUP_MAP: Record<string, string[]> = {
+  'Pecho': ['Pecho', 'chest'],
+  'Espalda': ['Espalda', 'back'],
+  'Hombros': ['Hombros', 'shoulders'],
+  'Bíceps': ['Brazos', 'Bíceps', 'upper arms', 'biceps'],
+  'Tríceps': ['Brazos', 'Tríceps', 'upper arms', 'triceps'],
+  'Piernas': ['Piernas', 'upper legs', 'lower legs'],
+  'Pantorrillas': ['Pantorrillas', 'lower legs', 'calves'],
+  'Core': ['Core', 'waist'],
+  'Glúteos': ['Glúteos', 'glutes'],
+  'General': ['General', 'Cuello', 'Antebrazos', 'Cardio', 'neck', 'lower arms', 'cardio'],
+};
+
+const TARGET_OPTIONS = getAllTargetOptions();
+const TARGET_MAP: Record<string, string[]> = TARGET_OPTIONS.reduce((acc, opt) => {
+  acc[opt.value] = [opt.value, opt.label.toLowerCase()];
+  return acc;
+}, {} as Record<string, string[]>);
+
+const EQUIPMENT_OPTIONS = getAllEquipmentOptions();
+const EQUIPMENT_MAP: Record<string, string[]> = EQUIPMENT_OPTIONS.reduce((acc, opt) => {
+  const key = opt.value;
+  const aliases = [key, opt.label.toLowerCase()];
+  const normalized = key.toLowerCase();
+  if (normalized !== key) aliases.push(normalized);
+  acc[opt.value] = aliases;
+  return acc;
+}, {} as Record<string, string[]>);
 
 const ITEMS_PER_PAGE = 24;
 
@@ -19,6 +55,8 @@ export function Exercises() {
   const { data: exercises = [], isLoading, error } = useExercises();
   const [search, setSearch] = useState('');
   const [muscleFilter, setMuscleFilter] = useState('Todos');
+  const [targetFilter, setTargetFilter] = useState('Todos');
+  const [equipmentFilter, setEquipmentFilter] = useState('Todos');
   const [page, setPage] = useState(1);
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
 
@@ -28,16 +66,25 @@ export function Exercises() {
       const q = search.toLowerCase();
       result = result.filter((e) =>
         e.name.toLowerCase().includes(q) ||
-        e.muscle_group?.toLowerCase().includes(q) ||
-        e.equipment?.toLowerCase().includes(q) ||
-        e.target?.toLowerCase().includes(q)
+        (e.muscle_group ?? '').toLowerCase().includes(q) ||
+        (e.equipment ?? '').toLowerCase().includes(q) ||
+        (e.target ?? '').toLowerCase().includes(q)
       );
     }
     if (muscleFilter !== 'Todos') {
-      result = result.filter((e) => e.muscle_group === muscleFilter);
+      const allowed = MUSCLE_GROUP_MAP[muscleFilter] || [muscleFilter];
+      result = result.filter((e) => allowed.includes(e.muscle_group));
+    }
+    if (targetFilter !== 'Todos') {
+      const allowed = TARGET_MAP[targetFilter] || [targetFilter];
+      result = result.filter((e) => e.target && allowed.includes(e.target.toLowerCase()));
+    }
+    if (equipmentFilter !== 'Todos') {
+      const allowed = EQUIPMENT_MAP[equipmentFilter] || [equipmentFilter];
+      result = result.filter((e) => e.equipment && allowed.includes(e.equipment.toLowerCase()));
     }
     return result;
-  }, [exercises, search, muscleFilter]);
+  }, [exercises, search, muscleFilter, targetFilter, equipmentFilter]);
 
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
   const pageExercises = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
@@ -80,7 +127,7 @@ export function Exercises() {
         </p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -90,18 +137,48 @@ export function Exercises() {
             className="pl-10"
           />
         </div>
-        <div className="w-full sm:w-48">
-          <Select value={muscleFilter} onValueChange={(v) => { setMuscleFilter(v); setPage(1); }}>
-            <SelectTrigger>
-              <Filter className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MUSCLE_GROUPS.map((g) => (
-                <SelectItem key={g} value={g}>{g}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap gap-2">
+          <div className="w-40">
+            <Select value={muscleFilter} onValueChange={(v) => { setMuscleFilter(v); setPage(1); }}>
+              <SelectTrigger>
+                <Filter className="w-4 h-4 mr-1 shrink-0" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MUSCLE_GROUPS.map((g) => (
+                  <SelectItem key={g} value={g}>{g}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-44">
+            <Select value={targetFilter} onValueChange={(v) => { setTargetFilter(v); setPage(1); }}>
+              <SelectTrigger>
+                <Target className="w-4 h-4 mr-1 shrink-0" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Todos">Objetivo</SelectItem>
+                {TARGET_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-44">
+            <Select value={equipmentFilter} onValueChange={(v) => { setEquipmentFilter(v); setPage(1); }}>
+              <SelectTrigger>
+                <Wrench className="w-4 h-4 mr-1 shrink-0" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Todos">Equipamiento</SelectItem>
+                {EQUIPMENT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
@@ -146,9 +223,25 @@ export function Exercises() {
                       </div>
                     )}
                   </div>
-                  <div className="p-2.5 space-y-1">
+                  <div className="p-2.5 space-y-1.5">
                     <p className="text-sm font-medium leading-tight line-clamp-2">{exercise.name}</p>
-                    <p className="text-xs text-muted-foreground">{exercise.muscle_group}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {exercise.target && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {translateTarget(exercise.target)}
+                        </Badge>
+                      )}
+                      {exercise.muscle_group && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          {translateMuscleGroup(exercise.muscle_group)}
+                        </Badge>
+                      )}
+                      {exercise.equipment && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                          {translateEquipment(exercise.equipment)}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

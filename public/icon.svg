@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="200" fill="#0a0a0f"/>
+  <g transform="translate(512,512)" fill="none" stroke="#10f94e" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Left weight plates -->
+    <rect x="-380" y="-120" width="80" height="240" rx="16"/>
+    <rect x="-280" y="-100" width="60" height="200" rx="12"/>
+    <!-- Right weight plates -->
+    <rect x="300" y="-120" width="80" height="240" rx="16"/>
+    <rect x="220" y="-100" width="60" height="200" rx="12"/>
+    <!-- Bar -->
+    <line x1="-200" y1="0" x2="200" y2="0"/>
+    <!-- Left handle grip -->
+    <rect x="-200" y="-30" width="60" height="60" rx="8" fill="#10f94e" stroke="none"/>
+    <!-- Right handle grip -->
+    <rect x="140" y="-30" width="60" height="60" rx="8" fill="#10f94e" stroke="none"/>
+  </g>
+</svg>

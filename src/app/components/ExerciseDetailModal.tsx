@@ -3,6 +3,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Badge } from './ui/badge';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import type { Exercise } from '../hooks/useExercises';
+import {
+  translateTarget,
+  translateEquipment,
+  translateCategory,
+  translateMuscleGroup,
+} from '../lib/exerciseTranslations';
 
 interface Props {
   exercise: Exercise | null;
@@ -68,18 +74,30 @@ export function ExerciseDetailModal({ exercise, open, onOpenChange }: Props) {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline" className="bg-primary/10">{exercise.muscle_group}</Badge>
-            {exercise.equipment && (
-              <Badge variant="outline" className="bg-secondary/10">{exercise.equipment}</Badge>
-            )}
-            {exercise.category && (
-              <Badge variant="outline" className="bg-accent/10">{exercise.category}</Badge>
-            )}
-            {exercise.body_part && (
-              <Badge variant="outline" className="bg-muted">{exercise.body_part}</Badge>
+            {exercise.muscle_group && (
+              <Badge variant="outline" className="bg-primary/10">
+                {translateMuscleGroup(exercise.muscle_group)}
+              </Badge>
             )}
             {exercise.target && (
-              <Badge variant="outline" className="bg-muted">{exercise.target}</Badge>
+              <Badge variant="outline" className="bg-secondary/10">
+                {translateTarget(exercise.target)}
+              </Badge>
+            )}
+            {exercise.equipment && (
+              <Badge variant="outline" className="bg-accent/10">
+                {translateEquipment(exercise.equipment)}
+              </Badge>
+            )}
+            {exercise.category && (
+              <Badge variant="outline" className="bg-muted">
+                {translateCategory(exercise.category)}
+              </Badge>
+            )}
+            {exercise.body_part && exercise.body_part !== exercise.category && (
+              <Badge variant="outline" className="bg-muted">
+                {translateCategory(exercise.body_part)}
+              </Badge>
             )}
           </div>
 

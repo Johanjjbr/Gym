@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { User as UserIcon, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Menu, X } from 'lucide-react';
+import { User as UserIcon, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Menu, X, BookOpen, Star } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
@@ -9,10 +9,12 @@ import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 
 const menuItems = [
   { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/usuario/mi-entrenamiento' },
+  { icon: BookOpen, label: 'Rutinas', path: '/usuario/rutinas' },
   { icon: UserIcon, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
   { icon: TrendingUp, label: 'Progreso Físico', path: '/usuario/progreso' },
   { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
   { icon: CreditCard, label: 'Mis Facturas', path: '/usuario/facturas' },
+  { icon: Star, label: 'Valorar Gimnasio', path: '/usuario/valorar-gimnasio' },
 ];
 
 export function UserLayout() {

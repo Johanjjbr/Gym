@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Gimnasio Los Teques</string>
+    <string name="title_activity_main">Gimnasio Los Teques</string>
+    <string name="package_name">com.losteques.gymapp</string>
+    <string name="custom_url_scheme">com.losteques.gymapp</string>
+</resources>

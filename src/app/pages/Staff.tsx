@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Search, Mail, Phone, Edit, Loader2, AlertCircle, Plus, Trash2, Clock, Camera } from 'lucide-react';
+import { Search, Mail, Phone, Edit, Loader2, AlertCircle, Plus, Trash2, Clock, Camera, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -10,6 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 import { useForm } from 'react-hook-form';
 import { useStaff, useUpdateStaff, useCreateStaff, useDeleteStaff } from '../hooks/useStaff';
+import { useAdminGyms } from '../hooks/useAdminGyms';
+import { useGyms } from '../hooks/useGyms';
+import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../types';
 import { uploadFile } from '../lib/upload';
 import {
@@ -33,9 +36,17 @@ type StaffFormData = {
   status: 'Activo' | 'Inactivo' | 'Vacaciones';
   password?: string;
   photo?: string;
+  gym_id?: string;
 };
 
 export function StaffPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Administrador' || user?.is_super_admin;
+  const { data: adminGyms } = useAdminGyms();
+  const { data: allGyms } = useGyms();
+  const adminGymOptions = user?.is_super_admin
+    ? (allGyms || [])
+    : (adminGyms || []).map((ag: any) => ({ id: ag.gym_id, name: ag.gym_name }));
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<any | null>(null);
@@ -96,7 +107,11 @@ export function StaffPage() {
 
   // Create Staff
   const onCreateStaff = (data: StaffFormData) => {
-    createStaffMutation.mutate(data, {
+    const payload = {
+      ...data,
+      gym_id: data.gym_id || user?.gym_id,
+    };
+    createStaffMutation.mutate(payload, {
       onSuccess: () => {
         resetCreate();
         setIsCreateOpen(false);
@@ -268,6 +283,12 @@ export function StaffPage() {
                   <p className="text-sm text-muted-foreground mb-1">Turno</p>
                   <p className="text-sm">{staffMember.shift}</p>
                 </div>
+                {staffMember.gym_name && (
+                  <div className="flex items-center gap-2 text-sm mt-2">
+                    <Building2 className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">{staffMember.gym_name}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between pt-2">
                   <Badge variant="outline" className={getStatusColor(staffMember.status)}>
                     {staffMember.status}
@@ -453,6 +474,27 @@ export function StaffPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="col-span-2">
+                <Label>Gimnasio</Label>
+                {isAdmin ? (
+                  <Select onValueChange={(value) => setValueEdit('gym_id', value)} defaultValue={watchEdit('gym_id') || editingStaff?.gym_id || user?.gym_id}>
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="Seleccionar gimnasio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {adminGymOptions.filter(Boolean).map((gym: any) => (
+                        <SelectItem key={gym.id} value={gym.id}>{gym.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={editingStaff?.gym_name || user?.gym_name || 'No asignado'}
+                    disabled
+                    className="bg-muted border-border mt-1 text-muted-foreground"
+                  />
+                )}
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-4">
@@ -506,6 +548,12 @@ export function StaffPage() {
                 <p className="text-sm text-muted-foreground mb-1">Turno</p>
                 <p className="text-sm">{selectedStaff.shift}</p>
               </div>
+              {selectedStaff.gym_name && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Building2 className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">{selectedStaff.gym_name}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between pt-2">
                 <Badge variant="outline" className={getStatusColor(selectedStaff.status)}>
                   {selectedStaff.status}
@@ -627,6 +675,22 @@ export function StaffPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {isAdmin && (
+                <div className="col-span-2">
+                  <Label htmlFor="create-gym">Gimnasio</Label>
+                  <Select onValueChange={(value) => setValueCreate('gym_id', value)} defaultValue={watchCreate('gym_id') || user?.gym_id}>
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="Seleccionar gimnasio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {adminGymOptions.filter(Boolean).map((gym: any) => (
+                        <SelectItem key={gym.id} value={gym.id}>{gym.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="col-span-2">
                 <Label htmlFor="create-password">Contraseña *</Label>

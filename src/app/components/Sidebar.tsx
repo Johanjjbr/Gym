@@ -10,7 +10,8 @@ import {
   ClipboardList,
   LogOut,
   Database,
-  Package
+  Package,
+  Building2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -32,6 +33,7 @@ const menuItems = [
   { icon: CreditCard, label: 'Facturas', path: '/facturas' },
   { icon: Package, label: 'Planes', path: '/planes' },
   { icon: UserCog, label: 'Personal', path: '/personal' },
+  { icon: Building2, label: 'Gimnasios', path: '/gimnasios', adminOnly: true },
   { icon: QrCode, label: 'Asistencia', path: '/asistencia' },
   { icon: ClipboardList, label: 'Rutinas', path: '/rutinas' },
   { icon: Dumbbell, label: 'Ejercicios', path: '/ejercicios' },
@@ -49,10 +51,12 @@ export function AppSidebar() {
     navigate('/login');
   };
 
-  const restrictedPathsForTrainer = ['/', '/facturas', '/planes', '/personal', '/reportes'];
-  const filteredMenuItems = user?.role === 'Entrenador'
-    ? menuItems.filter(item => !restrictedPathsForTrainer.includes(item.path))
-    : menuItems;
+  const restrictedPathsForTrainer = ['/', '/facturas', '/planes', '/personal', '/reportes', '/gimnasios'];
+  const filteredMenuItems = menuItems.filter(item => {
+    if (item.adminOnly && user?.role !== 'Administrador') return false;
+    if (user?.role === 'Entrenador' && restrictedPathsForTrainer.includes(item.path)) return false;
+    return true;
+  });
 
   const getInitials = (name: string) => {
     return name

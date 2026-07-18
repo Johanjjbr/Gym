@@ -4,7 +4,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { routines, routineAssignments, workoutSessions, exerciseLogs } from '../lib/api';
+import { routines, routineAssignments, routineRatings, workoutSessions, exerciseLogs } from '../lib/api';
 import { toast } from 'sonner';
 import type { RoutineFormData, RoutineAssignmentFormData } from '../lib/validations';
 
@@ -16,6 +16,8 @@ export const routineKeys = {
     userId ? ['routine-assignments', userId] as const : ['routine-assignments'] as const,
   activeAssignment: (userId: string) => ['routine-assignments', 'active', userId] as const,
   workoutSessions: (userId: string) => ['workout-sessions', userId] as const,
+  stats: (id: string) => ['routine-stats', id] as const,
+  ratings: (id: string) => ['routine-ratings', id] as const,
 };
 
 /**
@@ -127,6 +129,7 @@ export function useRoutineAssignments(userId?: string) {
   return useQuery({
     queryKey: routineKeys.assignments(userId),
     queryFn: () => routineAssignments.getAll(userId),
+    enabled: !!userId,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
   });
@@ -278,6 +281,50 @@ export function useUpdateExerciseLog() {
     onError: (error: Error) => {
       console.error('Error al actualizar ejercicio:', error);
       toast.error(error.message || 'Error al actualizar ejercicio');
+    },
+  });
+}
+
+/**
+ * Hook para obtener estadísticas de una rutina
+ */
+export function useRoutineStats(routineId: string) {
+  return useQuery({
+    queryKey: routineKeys.stats(routineId),
+    queryFn: () => routineRatings.getStats(routineId),
+    enabled: !!routineId,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Hook para obtener calificaciones de una rutina
+ */
+export function useRoutineRatings(routineId: string) {
+  return useQuery({
+    queryKey: routineKeys.ratings(routineId),
+    queryFn: () => routineRatings.getByRoutine(routineId),
+    enabled: !!routineId,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Hook para calificar una rutina
+ */
+export function useRateRoutine() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ routineId, userId, rating }: { routineId: string; userId: string; rating: number }) =>
+      routineRatings.upsert(routineId, userId, rating),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: routineKeys.stats(variables.routineId) });
+      queryClient.invalidateQueries({ queryKey: routineKeys.ratings(variables.routineId) });
+      toast.success('Calificación registrada');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al calificar la rutina');
     },
   });
 }

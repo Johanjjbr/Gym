@@ -31,6 +31,8 @@ export interface AuthResponse {
     phone: string;
     shift: string;
     status: string;
+    gym_id: string;
+    is_super_admin: boolean;
   };
 }
 
@@ -221,6 +223,7 @@ export const auth = {
     role: 'Administrador' | 'Entrenador' | 'Recepción';
     phone: string;
     shift: string;
+    gym_id?: string;
   }): Promise<any> => {
     return apiRequest('/auth/signup', {
       method: 'POST',
@@ -302,8 +305,9 @@ export const users = {
   /**
    * Obtener todos los usuarios
    */
-  getAll: async () => {
-    return apiRequest('/users');
+  getAll: async (gymId?: string) => {
+    const query = gymId ? `?gym_id=${gymId}` : '';
+    return apiRequest(`/users${query}`);
   },
 
   /**
@@ -461,7 +465,7 @@ export const payments = {
 // =============================================
 
 export const invoices = {
-  getAll: async (params?: { user_id?: string; status?: string }) => {
+  getAll: async (params?: { user_id?: string; status?: string; gym_id?: string }) => {
     const query = params ? '?' + new URLSearchParams(params as any).toString() : '';
     return apiRequest(`/invoices${query}`);
   },
@@ -539,6 +543,7 @@ export const staff = {
     role: string;
     phone: string;
     shift: string;
+    gym_id?: string;
   }) => {
     return apiRequest('/staff', {
       method: 'POST',
@@ -575,14 +580,18 @@ export const physicalProgress = {
    * Obtener progreso físico por usuario
    */
   async getByUser(userId: string) {
-    const { data, error } = await supabase
-      .from('physical_progress')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
-
-    if (error) throw error;
-    return data;
+    try {
+      return await apiRequest(`/physical-progress?user_id=${userId}`);
+    } catch (err: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para progreso físico');
+      const { data, error } = await supabase
+        .from('physical_progress')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false });
+      if (error) throw error;
+      return data;
+    }
   },
 
   /**
@@ -606,6 +615,29 @@ export const physicalProgress = {
       .single();
 
     if (error) throw error;
+
+    if (progressData.weight) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('height')
+        .eq('id', progressData.user_id)
+        .single();
+
+      let imc: number | undefined;
+      if (userData?.height && userData.height > 0) {
+        imc = parseFloat((progressData.weight / ((userData.height / 100) * (userData.height / 100))).toFixed(1));
+      }
+
+      await supabase
+        .from('users')
+        .update({
+          weight: progressData.weight,
+          ...(imc !== undefined ? { imc } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', progressData.user_id);
+    }
+
     return data;
   },
 
@@ -630,8 +662,11 @@ export const attendance = {
   /**
    * Obtener asistencia (opcionalmente filtrada por fecha)
    */
-  getAll: async (date?: string) => {
-    const query = date ? `?date=${date}` : '';
+  getAll: async (date?: string, userId?: string) => {
+    const params = new URLSearchParams();
+    if (date) params.set('date', date);
+    if (userId) params.set('user_id', userId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest(`/attendance${query}`);
   },
 
@@ -1167,6 +1202,50 @@ export const routines = {
       if (supabaseError) throw new Error(supabaseError.message);
     }
   },
+
+  /**
+   * Obtener rutinas públicas del sistema
+   */
+  getPublic: async () => {
+    const { data, error } = await supabase
+      .from('routine_templates')
+      .select('*, staff:created_by(name), user:created_by_user(name)')
+      .eq('is_public', true)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  /**
+   * Obtener rutinas compartidas por usuarios
+   */
+  getSharedByUsers: async () => {
+    const { data, error } = await supabase
+      .from('routine_templates')
+      .select('*, user:created_by_user(name)')
+      .eq('shared_publicly', true)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  /**
+   * Obtener rutinas propias de un usuario
+   */
+  getOwn: async (userId: string) => {
+    const { data, error } = await supabase
+      .from('routine_templates')
+      .select('*, routine_exercises(*)')
+      .eq('created_by_user', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
 };
 
 // =============================================
@@ -1340,6 +1419,104 @@ export const routineAssignments = {
         .single();
       
       if (supabaseError) throw new Error(supabaseError.message);
+      return data;
+    }
+  },
+
+  /**
+   * Auto-asignarse una rutina (usuario libre)
+   */
+  selfAssign: async (userId: string, routineId: string) => {
+    const { error: deactivateError } = await supabase
+      .from('user_routine_assignments')
+      .update({ is_active: false, end_date: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('is_active', true);
+
+    if (deactivateError) throw deactivateError;
+
+    const { data, error } = await supabase
+      .from('user_routine_assignments')
+      .insert([{ user_id: userId, routine_id: routineId, is_active: true, assigned_by: null }])
+      .select('*, routine_templates(*)')
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Desactivar propia asignación activa
+   */
+  deactivateOwn: async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_routine_assignments')
+      .update({ is_active: false, end_date: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .select()
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+};
+
+// =============================================
+// CALIFICACIONES DE RUTINAS
+// =============================================
+
+export const routineRatings = {
+  getStats: async (routineId: string) => {
+    try {
+      return await apiRequest(`/routines/${routineId}/stats`);
+    } catch (error: any) {
+      const [assignCount, ratings] = await Promise.all([
+        supabase.from('user_routine_assignments')
+          .select('id', { count: 'exact', head: true })
+          .eq('routine_id', routineId)
+          .eq('is_active', true),
+        supabase.from('routine_ratings')
+          .select('rating')
+          .eq('routine_id', routineId),
+      ]);
+      const avgRating = ratings.data && ratings.data.length > 0
+        ? ratings.data.reduce((s: number, r: any) => s + r.rating, 0) / ratings.data.length
+        : 0;
+      return {
+        assigned_count: assignCount.count || 0,
+        avg_rating: Math.round(avgRating * 10) / 10,
+        ratings_count: ratings.data?.length || 0,
+      };
+    }
+  },
+
+  getByRoutine: async (routineId: string) => {
+    try {
+      return await apiRequest(`/routines/${routineId}/ratings`);
+    } catch (error: any) {
+      const { data, error: err } = await supabase
+        .from('routine_ratings')
+        .select('id, user_id, rating, created_at')
+        .eq('routine_id', routineId);
+      if (err) throw err;
+      return data;
+    }
+  },
+
+  upsert: async (routineId: string, userId: string, rating: number) => {
+    try {
+      return await apiRequest(`/routines/${routineId}/ratings`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId, rating }),
+      });
+    } catch (error: any) {
+      const { data, error: err } = await supabase
+        .from('routine_ratings')
+        .upsert({ routine_id: routineId, user_id: userId, rating }, { onConflict: 'routine_id,user_id' })
+        .select()
+        .single();
+      if (err) throw err;
       return data;
     }
   },
@@ -1523,8 +1700,102 @@ export const stats = {
   /**
    * Obtener estadísticas del dashboard
    */
-  getDashboard: async () => {
-    return apiRequest('/stats');
+  getDashboard: async (gymId?: string) => {
+    const query = gymId ? `?gym_id=${gymId}` : '';
+    return apiRequest(`/stats${query}`);
+  },
+};
+
+// =============================================
+// GIMNASIOS
+// =============================================
+
+export const gymsApi = {
+  getAll: async (includeInactive = false) => {
+    const { data, error } = await supabase
+      .rpc('get_gyms_with_counts', { include_inactive: includeInactive });
+    if (error) {
+      let query = supabase.from('gyms').select('*').order('name');
+      if (!includeInactive) query = query.eq('is_active', true);
+      const { data: fallback, error: fallbackError } = await query;
+      if (fallbackError) throw fallbackError;
+      return (fallback || []).map((g: any) => ({ ...g, staff_count: 0, users_count: 0 }));
+    }
+    return data || [];
+  },
+
+  getById: async (id: string) => {
+    const { data, error } = await supabase
+      .from('gyms')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) throw error;
+    return { ...data, staff_count: 0, users_count: 0 };
+  },
+
+  getByCode: async (code: string) => {
+    const { data, error } = await supabase
+      .from('gyms')
+      .select('*')
+      .eq('code', code)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
+
+  create: async (gymData: {
+    name: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    code: string;
+    description?: string;
+    schedule?: Record<string, { abre: string; cierra: string }>;
+    social_links?: Record<string, string>;
+    latitude?: number;
+    longitude?: number;
+  }) => {
+    const { data, error } = await supabase
+      .from('gyms')
+      .insert([{ ...gymData, is_active: true }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  update: async (id: string, gymData: {
+    name?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    code?: string;
+    description?: string;
+    logo_url?: string;
+    schedule?: Record<string, { abre: string; cierra: string }>;
+    social_links?: Record<string, string>;
+    latitude?: number;
+    longitude?: number;
+    rating?: number;
+    is_active?: boolean;
+  }) => {
+    const { data, error } = await supabase
+      .from('gyms')
+      .update({ ...gymData, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  delete: async (id: string) => {
+    const { error } = await supabase
+      .from('gyms')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
   },
 };
 
@@ -1549,6 +1820,104 @@ export const utils = {
 };
 
 // =============================================
+// RESEÑAS DE GIMNASIOS
+// =============================================
+
+export const gymReviews = {
+  getByGym: async (gymId: string) => {
+    const { data, error } = await supabase
+      .from('gym_reviews')
+      .select('*, users(name)')
+      .eq('gym_id', gymId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  getMyReview: async (gymId: string) => {
+    const { data, error } = await supabase
+      .rpc('get_my_gym_review', { p_gym_id: gymId })
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data || null;
+  },
+
+  create: async (data: { gym_id: string; rating: number; comment?: string }) => {
+    const { data: userData } = await supabase.auth.getSession();
+    const userId = userData?.session?.user?.id;
+    if (!userId) throw new Error('No autenticado');
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .eq('auth_user_id', userId)
+      .single();
+    if (!user) throw new Error('Usuario no encontrado');
+
+    const { data: review, error } = await supabase
+      .from('gym_reviews')
+      .insert([{ gym_id: data.gym_id, user_id: user.id, rating: data.rating, comment: data.comment || null }])
+      .select()
+      .single();
+    if (error) {
+      if (error.code === '23505') throw new Error('Ya has calificado este gimnasio');
+      throw error;
+    }
+    return review;
+  },
+
+  update: async (id: string, data: { rating?: number; comment?: string }) => {
+    const { data: review, error } = await supabase
+      .from('gym_reviews')
+      .update(data)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return review;
+  },
+
+  delete: async (id: string) => {
+    const { error } = await supabase.from('gym_reviews').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// =============================================
+// GYMS DEL ADMINISTRADOR (admin_gyms)
+// =============================================
+
+export const adminGymsApi = {
+  getMyGyms: async () => {
+    const { data, error } = await supabase
+      .from('admin_gyms')
+      .select('*, gym:gyms!admin_gyms_gym_id_fkey(name, is_active)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((ag: any) => ({ ...ag, gym_name: ag.gym?.name, gym: undefined }));
+  },
+
+  assign: async (staffId: string, gymId: string) => {
+    const { data, error } = await supabase
+      .from('admin_gyms')
+      .insert([{ staff_id: staffId, gym_id: gymId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  remove: async (staffId: string, gymId: string) => {
+    const { error } = await supabase
+      .from('admin_gyms')
+      .delete()
+      .eq('staff_id', staffId)
+      .eq('gym_id', gymId);
+    if (error) throw error;
+  },
+};
+
+// =============================================
 // Export default con todas las funciones
 // =============================================
 
@@ -1568,4 +1937,7 @@ export default {
   utils,
   physicalProgress,
   exercises,
+  gymsApi,
+  gymReviews,
+  adminGymsApi,
 };

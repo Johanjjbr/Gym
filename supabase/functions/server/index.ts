@@ -48,18 +48,24 @@ app.get("/health", (c) => {
 
 app.post("/auth/signup", async (c) => {
   try {
-    const { email, password, name, role, phone, shift } = await c.req.json();
+    const { email, password, name, role, phone, shift, gym_id } = await c.req.json();
     const authToken = c.req.header('Authorization')?.split(' ')[1];
     if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
       const { data: currentUser } = await supabase.auth.getUser(authToken);
       if (currentUser.user) {
         const { data: currentStaff } = await supabase
           .from('staff')
-          .select('role')
+          .select('role, is_super_admin, gym_id')
           .eq('auth_user_id', currentUser.user.id)
           .single();
         if (!currentStaff || currentStaff.role !== 'Administrador') {
           return c.json({ error: 'Solo administradores pueden crear usuarios de staff' }, 403);
+        }
+        // Si no es super admin, forzar gym_id al mismo del admin
+        if (!currentStaff.is_super_admin) {
+          if (gym_id && gym_id !== currentStaff.gym_id) {
+            return c.json({ error: 'No puedes crear personal para otro gimnasio' }, 403);
+          }
         }
       }
     }
@@ -68,7 +74,7 @@ app.post("/auth/signup", async (c) => {
     });
     if (authError) return c.json({ error: authError.message }, 400);
     const { data: staffData, error: staffError } = await supabase
-      .from('staff').insert({ auth_user_id: authData.user.id, name, role, email, phone, shift: shift || 'No asignado', status: 'Activo' }).select().single();
+      .from('staff').insert({ auth_user_id: authData.user.id, name, role, email, phone, shift: shift || 'No asignado', status: 'Activo', gym_id: gym_id || null }).select().single();
     if (staffError) { await supabase.auth.admin.deleteUser(authData.user.id); return c.json({ error: staffError.message }, 400); }
     return c.json({ message: 'Usuario creado exitosamente', user: authData.user, staff: staffData });
   } catch (error) {
@@ -129,8 +135,11 @@ app.post("/auth/logout", async (c) => {
 
 app.get("/users", async (c) => {
   try {
-    const { data, error } = await supabase
-      .from('users').select('*, trainer:staff!users_assigned_trainer_fkey (id, name, role)').order('created_at', { ascending: false });
+    const gymId = c.req.query('gym_id');
+    let query = supabase
+      .from('users').select('*, trainer:staff!users_assigned_trainer_fkey (id, name, role)');
+    if (gymId) query = query.eq('gym_id', gymId);
+    const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     const formattedData = data?.map(user => ({ ...user, trainer_name: user.trainer?.name || null, trainer: undefined }));
     return c.json(formattedData);
@@ -208,7 +217,7 @@ app.post("/users/:id/assign-trainer", async (c) => {
 app.get("/trainers", async (c) => {
   try {
     const { data, error } = await supabase
-      .from('staff').select('id, name, email, phone, shift, status').eq('role', 'Entrenador').eq('status', 'Activo').order('name');
+      .from('staff').select('id, name, email, phone, shift, status, gym_id').eq('role', 'Entrenador').eq('status', 'Activo').order('name');
     if (error) throw error;
     return c.json(data);
   } catch (error) {
@@ -277,11 +286,12 @@ app.delete("/plans/:id", async (c) => {
 
 app.get("/invoices", async (c) => {
   try {
-    const { user_id, status } = c.req.query();
-    let query = supabase.from('invoices').select('*, users (name, member_number), plans (name)').order('created_at', { ascending: false });
+    const { user_id, status, gym_id } = c.req.query();
+    let query = supabase.from('invoices').select('*, users!inner (name, member_number, gym_id), plans (name)');
     if (user_id) query = query.eq('user_id', user_id);
     if (status) query = query.eq('status', status);
-    const { data, error } = await query;
+    if (gym_id) query = query.eq('users.gym_id', gym_id);
+    const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     return c.json(data);
   } catch (error) {
@@ -347,9 +357,13 @@ app.put("/invoices/:id/pay", async (c) => {
 
 app.get("/staff", async (c) => {
   try {
-    const { data, error } = await supabase.from('staff').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('staff')
+      .select('*, gym:gyms!staff_gym_id_fkey(name)')
+      .order('created_at', { ascending: false });
     if (error) throw error;
-    return c.json(data);
+    const enriched = data?.map(s => ({ ...s, gym_name: s.gym?.name || null, gym: undefined }));
+    return c.json(enriched);
   } catch (error) {
     return c.json({ error: 'Error obteniendo staff' }, 500);
   }
@@ -358,9 +372,13 @@ app.get("/staff", async (c) => {
 app.get("/staff/:id", async (c) => {
   try {
     const { id } = c.req.param();
-    const { data, error } = await supabase.from('staff').select('*').eq('id', id).single();
+    const { data, error } = await supabase
+      .from('staff')
+      .select('*, gym:gyms!staff_gym_id_fkey(name)')
+      .eq('id', id)
+      .single();
     if (error) throw error;
-    return c.json(data);
+    return c.json({ ...data, gym_name: data.gym?.name || null, gym: undefined });
   } catch (error) {
     return c.json({ error: 'Error obteniendo staff' }, 500);
   }
@@ -368,19 +386,22 @@ app.get("/staff/:id", async (c) => {
 
 app.post("/staff", async (c) => {
   try {
-    const { email, password, name, role, phone, shift } = await c.req.json();
+    const { email, password, name, role, phone, shift, gym_id } = await c.req.json();
     const authToken = c.req.header('Authorization')?.split(' ')[1];
     if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
       const { data: currentUser } = await supabase.auth.getUser(authToken);
       if (currentUser.user) {
-        const { data: currentStaff } = await supabase.from('staff').select('role').eq('auth_user_id', currentUser.user.id).single();
+        const { data: currentStaff } = await supabase.from('staff').select('role, is_super_admin, gym_id').eq('auth_user_id', currentUser.user.id).single();
         if (!currentStaff || currentStaff.role !== 'Administrador') return c.json({ error: 'Solo administradores pueden crear usuarios de staff' }, 403);
+        if (!currentStaff.is_super_admin && gym_id && gym_id !== currentStaff.gym_id) {
+          return c.json({ error: 'No puedes crear personal para otro gimnasio' }, 403);
+        }
       }
     }
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name, role } });
     if (authError) return c.json({ error: authError.message }, 400);
     const { data: staffData, error: staffError } = await supabase
-      .from('staff').insert({ auth_user_id: authData.user.id, name, role, email, phone, shift: shift || 'No asignado', status: 'Activo' }).select().single();
+      .from('staff').insert({ auth_user_id: authData.user.id, name, role, email, phone, shift: shift || 'No asignado', status: 'Activo', gym_id: gym_id || null }).select().single();
     if (staffError) { await supabase.auth.admin.deleteUser(authData.user.id); return c.json({ error: staffError.message }, 400); }
     return c.json(staffData);
   } catch (error) {
@@ -416,14 +437,53 @@ app.delete("/staff/:id", async (c) => {
 
 app.get("/attendance", async (c) => {
   try {
-    const { date } = c.req.query();
+    const { date, user_id } = c.req.query();
     let query = supabase.from('attendance').select('*, users (name, member_number)').order('created_at', { ascending: false });
     if (date) query = query.eq('date', date);
+    if (user_id) query = query.eq('user_id', user_id);
     const { data, error } = await query;
     if (error) throw error;
     return c.json(data);
   } catch (error) {
     return c.json({ error: 'Error obteniendo asistencia' }, 500);
+  }
+});
+
+app.get("/physical-progress", async (c) => {
+  try {
+    const { user_id } = c.req.query();
+    let query = supabase.from('physical_progress').select('*').order('date', { ascending: false });
+    if (user_id) query = query.eq('user_id', user_id);
+    const { data, error } = await query;
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo progreso físico' }, 500);
+  }
+});
+
+app.post("/physical-progress", async (c) => {
+  try {
+    const progressData = await c.req.json();
+    const { data, error } = await supabase.from('physical_progress').insert([{
+      ...progressData,
+      date: progressData.date || new Date().toISOString(),
+    }]).select().single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error registrando progreso físico' }, 500);
+  }
+});
+
+app.delete("/physical-progress/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const { error } = await supabase.from('physical_progress').delete().eq('id', id);
+    if (error) throw error;
+    return c.json({ message: 'Registro eliminado' });
+  } catch (error) {
+    return c.json({ error: 'Error eliminando registro de progreso' }, 500);
   }
 });
 
@@ -511,6 +571,66 @@ app.delete("/routines/:id", async (c) => {
   }
 });
 
+app.get("/routines/:id/stats", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const { count: assignedCount, error: countError } = await supabase
+      .from('user_routine_assignments')
+      .select('id', { count: 'exact', head: true })
+      .eq('routine_id', id)
+      .eq('is_active', true);
+    if (countError) throw countError;
+
+    const { data: ratingData, error: ratingError } = await supabase
+      .from('routine_ratings')
+      .select('rating')
+      .eq('routine_id', id);
+    if (ratingError) throw ratingError;
+
+    const avgRating = ratingData.length > 0
+      ? ratingData.reduce((sum: number, r: any) => sum + r.rating, 0) / ratingData.length
+      : 0;
+
+    return c.json({
+      assigned_count: assignedCount || 0,
+      avg_rating: Math.round(avgRating * 10) / 10,
+      ratings_count: ratingData.length,
+    });
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo estadísticas' }, 500);
+  }
+});
+
+app.get("/routines/:id/ratings", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const { data, error } = await supabase
+      .from('routine_ratings')
+      .select('id, user_id, rating, created_at')
+      .eq('routine_id', id);
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo calificaciones' }, 500);
+  }
+});
+
+app.post("/routines/:id/ratings", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const { user_id, rating } = await c.req.json();
+    const { data, error } = await supabase
+      .from('routine_ratings')
+      .upsert({ routine_id: id, user_id, rating }, { onConflict: 'routine_id,user_id' })
+      .select()
+      .single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error registrando calificación' }, 500);
+  }
+});
+
 app.get("/exercises", async (c) => {
   try {
     const { data, error } = await supabase.from('exercises').select('*').order('name');
@@ -594,15 +714,39 @@ app.post("/routine-assignments", async (c) => {
 
 app.get("/stats", async (c) => {
   try {
-    const { count: totalUsers } = await supabase.from('users').select('*', { count: 'exact', head: true });
-    const { count: activeUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
-    const { count: delinquentUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Suspendido');
+    const gymId = c.req.query('gym_id');
+    let usersQuery = supabase.from('users').select('*', { count: 'exact', head: true });
+    let activeQuery = supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
+    let suspendedQuery = supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Suspendido');
+    let staffQuery = supabase.from('staff').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
+
+    if (gymId) {
+      usersQuery = usersQuery.eq('gym_id', gymId);
+      activeQuery = activeQuery.eq('gym_id', gymId);
+      suspendedQuery = suspendedQuery.eq('gym_id', gymId);
+      staffQuery = staffQuery.eq('gym_id', gymId);
+    }
+
+    const { count: totalUsers } = await usersQuery;
+    const { count: activeUsers } = await activeQuery;
+    const { count: delinquentUsers } = await suspendedQuery;
+    const { count: totalStaff } = await staffQuery;
+
     const firstDayOfMonth = new Date(); firstDayOfMonth.setDate(1); firstDayOfMonth.setHours(0, 0, 0, 0);
-    const { data: monthlyInvoices } = await supabase.from('invoices').select('amount').eq('status', 'Pagada').gte('paid_at', firstDayOfMonth.toISOString());
+    let invQuery = supabase.from('invoices').select('amount').eq('status', 'Pagada').gte('paid_at', firstDayOfMonth.toISOString());
+    if (gymId) {
+      invQuery = invQuery.in('user_id', (await supabase.from('users').select('id').eq('gym_id', gymId)).data?.map(u => u.id) || []);
+    }
+    const { data: monthlyInvoices } = await invQuery;
     const monthlyRevenue = monthlyInvoices?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+
     const today = new Date().toISOString().split('T')[0];
-    const { count: todayAttendance } = await supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('date', today).eq('type', 'Entrada');
-    const { count: totalStaff } = await supabase.from('staff').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
+    let attQuery = supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('date', today).eq('type', 'Entrada');
+    if (gymId) {
+      attQuery = attQuery.in('user_id', (await supabase.from('users').select('id').eq('gym_id', gymId)).data?.map(u => u.id) || []);
+    }
+    const { count: todayAttendance } = await attQuery;
+
     return c.json({ totalUsers: totalUsers || 0, activeUsers: activeUsers || 0, delinquentUsers: delinquentUsers || 0, monthlyRevenue, todayAttendance: todayAttendance || 0, totalStaff: totalStaff || 0 });
   } catch (error) {
     return c.json({ error: 'Error obteniendo estadísticas' }, 500);
@@ -663,6 +807,246 @@ app.post("/seed", async (c) => {
     return c.json({ success: true, message: 'Seed completado exitosamente', created: { staff: createdStaff.length, members: createdMembers.length }, credentials: { admin: 'admin@gymteques.com / Admin123!', trainer: 'trainer@gymteques.com / Trainer123!', reception: 'recepcion@gymteques.com / Recepcion123!' } });
   } catch (error) {
     return c.json({ error: 'Error ejecutando seed' }, 500);
+  }
+});
+
+// =============================================
+// GIMNASIOS (Gym Settings)
+// =============================================
+
+app.get("/gyms", async (c) => {
+  try {
+    const includeInactive = c.req.query('include_inactive') === 'true';
+    let query = supabase.from('gyms').select('*').order('name');
+    if (!includeInactive) query = query.eq('is_active', true);
+    const { data, error } = await query;
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo gimnasios' }, 500);
+  }
+});
+
+app.get("/gyms/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const { data, error } = await supabase.from('gyms').select('*').eq('id', id).single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo gimnasio' }, 500);
+  }
+});
+
+app.post("/gyms", async (c) => {
+  try {
+    const authToken = c.req.header('Authorization')?.split(' ')[1];
+    let currentStaff: any = null;
+    if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
+      const { data: currentUser } = await supabase.auth.getUser(authToken);
+      if (currentUser.user) {
+        const { data: staff } = await supabase.from('staff').select('role, is_super_admin, id').eq('auth_user_id', currentUser.user.id).single();
+        currentStaff = staff;
+        if (!staff || !staff.is_super_admin) {
+          return c.json({ error: 'Solo el super admin puede crear gimnasios' }, 403);
+        }
+      }
+    }
+    const gymData = await c.req.json();
+    const { data, error } = await supabase.from('gyms').insert({ ...gymData, is_active: true }).select().single();
+    if (error) throw error;
+    // Auto-asignar el gym al super admin que lo creó
+    if (currentStaff) {
+      await supabase.from('admin_gyms').insert({ staff_id: currentStaff.id, gym_id: data.id }).select().single();
+    }
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error creando gimnasio' }, 500);
+  }
+});
+
+app.put("/gyms/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const authToken = c.req.header('Authorization')?.split(' ')[1];
+    if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
+      const { data: currentUser } = await supabase.auth.getUser(authToken);
+      if (currentUser.user) {
+        const { data: currentStaff } = await supabase.from('staff').select('role, is_super_admin, gym_id').eq('auth_user_id', currentUser.user.id).single();
+        if (!currentStaff || currentStaff.role !== 'Administrador') {
+          return c.json({ error: 'Solo administradores pueden modificar gimnasios' }, 403);
+        }
+        if (!currentStaff.is_super_admin && id !== currentStaff.gym_id) {
+          return c.json({ error: 'No puedes modificar un gimnasio que no te pertenece' }, 403);
+        }
+      }
+    }
+    const gymData = await c.req.json();
+    const { data, error } = await supabase.from('gyms').update({ ...gymData, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error actualizando gimnasio' }, 500);
+  }
+});
+
+// =============================================
+// RESEÑAS DE GIMNASIOS
+// =============================================
+
+app.get("/gym-reviews/:gymId", async (c) => {
+  try {
+    const gymId = c.req.param('gymId');
+    const { data, error } = await supabase
+      .from('gym_reviews')
+      .select('*, users(name)')
+      .eq('gym_id', gymId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return c.json(data || []);
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo reseñas' }, 500);
+  }
+});
+
+app.get("/gym-reviews/my/:gymId", async (c) => {
+  try {
+    const gymId = c.req.param('gymId');
+    const authToken = c.req.header('Authorization')?.split(' ')[1];
+    if (!authToken) return c.json(null);
+    const { data: { user } } = await supabase.auth.getUser(authToken);
+    if (!user) return c.json(null);
+    const { data: userData } = await supabase.from('users').select('id').eq('auth_user_id', user.id).single();
+    if (!userData) return c.json(null);
+    const { data, error } = await supabase
+      .from('gym_reviews')
+      .select('*')
+      .eq('gym_id', gymId)
+      .eq('user_id', userData.id)
+      .maybeSingle();
+    if (error && error.code !== 'PGRST116') throw error;
+    return c.json(data || null);
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo reseña' }, 500);
+  }
+});
+
+app.post("/gym-reviews", async (c) => {
+  try {
+    const { gym_id, rating, comment } = await c.req.json();
+    const authToken = c.req.header('Authorization')?.split(' ')[1];
+    if (!authToken) return c.json({ error: 'No autorizado' }, 401);
+    const { data: { user } } = await supabase.auth.getUser(authToken);
+    if (!user) return c.json({ error: 'No autorizado' }, 401);
+    const { data: userData } = await supabase.from('users').select('id, start_date').eq('auth_user_id', user.id).single();
+    if (!userData) return c.json({ error: 'Usuario no encontrado' }, 404);
+    const daysSinceStart = Math.floor((Date.now() - new Date(userData.start_date).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSinceStart < 30) return c.json({ error: 'Debes tener al menos 30 días como miembro para calificar' }, 400);
+    const { data, error } = await supabase
+      .from('gym_reviews')
+      .insert({ gym_id, user_id: userData.id, rating, comment: comment || null })
+      .select()
+      .single();
+    if (error) {
+      if (error.code === '23505') return c.json({ error: 'Ya calificaste este gimnasio' }, 400);
+      throw error;
+    }
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error creando reseña' }, 500);
+  }
+});
+
+app.put("/gym-reviews/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { rating, comment } = await c.req.json();
+    const { data, error } = await supabase
+      .from('gym_reviews')
+      .update({ rating, comment })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error actualizando reseña' }, 500);
+  }
+});
+
+app.delete("/gym-reviews/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { error } = await supabase.from('gym_reviews').delete().eq('id', id);
+    if (error) throw error;
+    return c.json({ message: 'Reseña eliminada' });
+  } catch (error) {
+    return c.json({ error: 'Error eliminando reseña' }, 500);
+  }
+});
+
+// =============================================
+// GYMS DEL ADMINISTRADOR
+// =============================================
+
+app.get("/admin-gyms", async (c) => {
+  try {
+    const authToken = c.req.header('Authorization')?.split(' ')[1];
+    if (!authToken) return c.json({ error: 'No autorizado' }, 401);
+    const { data: { user } } = await supabase.auth.getUser(authToken);
+    if (!user) return c.json({ error: 'No autorizado' }, 401);
+    const { data: staffData } = await supabase.from('staff').select('id, is_super_admin').eq('auth_user_id', user.id).single();
+    if (!staffData) return c.json({ error: 'Staff no encontrado' }, 404);
+    let query = supabase.from('admin_gyms').select('*, gym:gyms!admin_gyms_gym_id_fkey(name, is_active)');
+    if (!staffData.is_super_admin) query = query.eq('staff_id', staffData.id);
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+    return c.json((data || []).map((ag: any) => ({ ...ag, gym_name: ag.gym?.name, gym: undefined })));
+  } catch (error) {
+    return c.json({ error: 'Error obteniendo gyms del admin' }, 500);
+  }
+});
+
+app.post("/admin-gyms", async (c) => {
+  try {
+    const { staff_id, gym_id } = await c.req.json();
+    const authToken = c.req.header('Authorization')?.split(' ')[1];
+    if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
+      const { data: currentUser } = await supabase.auth.getUser(authToken);
+      if (currentUser.user) {
+        const { data: currentStaff } = await supabase.from('staff').select('is_super_admin').eq('auth_user_id', currentUser.user.id).single();
+        if (!currentStaff || !currentStaff.is_super_admin) {
+          return c.json({ error: 'Solo super admin puede asignar gyms' }, 403);
+        }
+      }
+    }
+    const { data, error } = await supabase.from('admin_gyms').insert({ staff_id, gym_id }).select().single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    return c.json({ error: 'Error asignando gym al admin' }, 500);
+  }
+});
+
+app.delete("/admin-gyms/:staffId/:gymId", async (c) => {
+  try {
+    const staffId = c.req.param('staffId');
+    const gymId = c.req.param('gymId');
+    const authToken = c.req.header('Authorization')?.split(' ')[1];
+    if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
+      const { data: currentUser } = await supabase.auth.getUser(authToken);
+      if (currentUser.user) {
+        const { data: currentStaff } = await supabase.from('staff').select('is_super_admin').eq('auth_user_id', currentUser.user.id).single();
+        if (!currentStaff || !currentStaff.is_super_admin) {
+          return c.json({ error: 'Solo super admin puede quitar gyms' }, 403);
+        }
+      }
+    }
+    const { error } = await supabase.from('admin_gyms').delete().eq('staff_id', staffId).eq('gym_id', gymId);
+    if (error) throw error;
+    return c.json({ message: 'Gym removido del admin' });
+  } catch (error) {
+    return c.json({ error: 'Error removiendo gym del admin' }, 500);
   }
 });
 

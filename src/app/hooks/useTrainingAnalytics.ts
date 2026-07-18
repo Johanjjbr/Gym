@@ -26,6 +26,13 @@ export interface ExerciseStrength {
   latest_1rm: number;
 }
 
+export interface MonthlyVolume {
+  month_start: string;
+  session_count: number;
+  total_volume: number;
+  total_exercises: number;
+}
+
 export interface WeeklyVolume {
   week_start: string;
   session_count: number;
@@ -36,10 +43,18 @@ export interface WeeklyVolume {
 export interface TrainingAnalytics {
   strengthByExercise: ExerciseStrength[];
   weeklyVolume: WeeklyVolume[];
+  monthlyVolume: MonthlyVolume[];
   exerciseNames: string[];
   currentWeekSessions: number;
   currentWeekExercises: number;
   currentWeekVolume: number;
+  currentMonthSessions: number;
+  currentMonthExercises: number;
+  currentMonthVolume: number;
+  totalSessions: number;
+  totalExercises: number;
+  totalVolume: number;
+  totalTrainingDays: number;
   streakDays: number;
 }
 
@@ -122,12 +137,14 @@ export function useTrainingAnalytics(userId: string) {
 
       const allSessionDates: string[] = [];
       const volumeByWeek = new Map<string, { sessions: Set<string>; volume: number; exercises: Set<string> }>();
+      const volumeByMonth = new Map<string, { sessions: Set<string>; volume: number; exercises: Set<string> }>();
       const strengthMap = new Map<string, StrengthPoint[]>();
 
       for (const session of rawData as any[]) {
         const sessionDate = session.date as string;
         const sessionId = session.id as string;
         const weekStart = getWeekStart(sessionDate);
+        const monthStart = sessionDate.substring(0, 7) + '-01';
 
         allSessionDates.push(sessionDate);
 
@@ -136,6 +153,11 @@ export function useTrainingAnalytics(userId: string) {
         }
         volumeByWeek.get(weekStart)!.sessions.add(sessionId);
 
+        if (!volumeByMonth.has(monthStart)) {
+          volumeByMonth.set(monthStart, { sessions: new Set(), volume: 0, exercises: new Set() });
+        }
+        volumeByMonth.get(monthStart)!.sessions.add(sessionId);
+
         const exerciseLogs = session.workout_exercise_logs || [];
 
         for (const log of exerciseLogs) {
@@ -143,6 +165,7 @@ export function useTrainingAnalytics(userId: string) {
           if (!exerciseName) continue;
 
           volumeByWeek.get(weekStart)!.exercises.add(exerciseName);
+          volumeByMonth.get(monthStart)!.exercises.add(exerciseName);
 
           const setLogs = log.set_logs || [];
           let sessionWeight = 0;
@@ -169,6 +192,7 @@ export function useTrainingAnalytics(userId: string) {
           }
 
           volumeByWeek.get(weekStart)!.volume += sessionVolume;
+          volumeByMonth.get(monthStart)!.volume += sessionVolume;
 
           const points = strengthMap.get(exerciseName)!;
           const existingIndex = points.findIndex(p => p.date === sessionDate.split('T')[0]);
@@ -235,16 +259,38 @@ export function useTrainingAnalytics(userId: string) {
 
       weeklyVolume.sort((a, b) => a.week_start.localeCompare(b.week_start));
 
+      const monthlyVolume: MonthlyVolume[] = [];
+      for (const [monthStart, data] of volumeByMonth.entries()) {
+        monthlyVolume.push({
+          month_start: monthStart,
+          session_count: data.sessions.size,
+          total_volume: Math.round(data.volume * 100) / 100,
+          total_exercises: data.exercises.size,
+        });
+      }
+      monthlyVolume.sort((a, b) => a.month_start.localeCompare(b.month_start));
+
       const currentWeekStart = getWeekStart(new Date().toISOString());
       const currentWeek = volumeByWeek.get(currentWeekStart);
+
+      const currentMonthStart = new Date().toISOString().substring(0, 7) + '-01';
+      const currentMonth = volumeByMonth.get(currentMonthStart);
 
       return {
         strengthByExercise: strengthByExercise.sort((a, b) => a.exercise_name.localeCompare(b.exercise_name)),
         weeklyVolume,
+        monthlyVolume,
         exerciseNames: strengthByExercise.map(s => s.exercise_name).sort(),
         currentWeekSessions: currentWeek?.sessions.size || 0,
         currentWeekExercises: currentWeek?.exercises.size || 0,
         currentWeekVolume: currentWeek?.volume || 0,
+        currentMonthSessions: currentMonth?.sessions.size || 0,
+        currentMonthExercises: currentMonth?.exercises.size || 0,
+        currentMonthVolume: currentMonth?.volume || 0,
+        totalSessions: rawData.length,
+        totalExercises: strengthByExercise.length,
+        totalVolume: Math.round(weeklyVolume.reduce((sum, w) => sum + w.total_volume, 0)),
+        totalTrainingDays: new Set(allSessionDates.map(d => d.split('T')[0])).size,
         streakDays: calculateStreak(allSessionDates),
       };
     },

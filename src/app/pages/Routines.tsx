@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Plus, Eye, Trash2, Dumbbell, Calendar, Loader2, Edit, Users, Power, Play } from 'lucide-react';
+import { Search, Plus, Eye, Trash2, Dumbbell, Calendar, Loader2, Edit, Users, Power, Play, Star, UserCircle, Building2, StickyNote, Trophy } from 'lucide-react';
 import { ExerciseDetailModal } from '../components/ExerciseDetailModal';
 import { useExercises, type Exercise } from '../hooks/useExercises';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -9,7 +9,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
-import { useRoutines, useDeleteRoutine, useRoutine, useRoutineAssignedUsers, useToggleRoutineActive } from '../hooks/useRoutines';
+import { useRoutines, useDeleteRoutine, useRoutine, useRoutineAssignedUsers, useToggleRoutineActive, useRoutineStats, useRoutineRatings, useRateRoutine } from '../hooks/useRoutines';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDate } from '../lib/format';
 
@@ -36,10 +36,19 @@ interface RoutineData {
   days_per_week: number;
   is_active: boolean;
   created_by: string;
+  created_by_user: string | null;
   created_at: string;
+  notes: string | null;
   creator?: {
     id: string;
     name: string;
+  };
+  creator_user?: {
+    id: string;
+    name: string;
+    gym_id: string | null;
+    is_free_user: boolean;
+    gym?: { name: string };
   };
   exercises?: Exercise[];
 }
@@ -71,6 +80,9 @@ export function Routines() {
   const { data: assignedUsers = [], isLoading: isLoadingAssignedUsers } = useRoutineAssignedUsers(viewingAssignedUsersRoutineId || '');
   const deleteRoutineMutation = useDeleteRoutine();
   const toggleRoutineActiveMutation = useToggleRoutineActive();
+  const { data: routineStats } = useRoutineStats(viewingRoutineId || '');
+  const { data: ratings } = useRoutineRatings(viewingRoutineId || '');
+  const rateRoutineMutation = useRateRoutine();
 
   const filteredRoutines = routines.filter((routine: RoutineData) =>
     routine.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -361,7 +373,7 @@ export function Routines() {
           <DialogHeader>
             <DialogTitle className="text-2xl text-primary">Detalle de la Rutina</DialogTitle>
             <DialogDescription>
-              Visualiza toda la información y ejercicios de esta plantilla de rutina
+              Visualiza toda la información, ejercicios y estadísticas de esta plantilla
             </DialogDescription>
           </DialogHeader>
           {isLoadingRoutine && (
@@ -388,7 +400,8 @@ export function Routines() {
 
               <p className="text-muted-foreground">{viewingRoutine.description}</p>
 
-              <div className="grid grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+              {/* Información y Estadísticas */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Duración</p>
                   <p className="font-semibold">{viewingRoutine.duration_weeks} semanas</p>
@@ -403,7 +416,96 @@ export function Routines() {
                     {viewingRoutine.is_active ? 'Activa' : 'Inactiva'}
                   </p>
                 </div>
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Asignada a</p>
+                  <p className="font-semibold flex items-center gap-1">
+                    <Users className="w-4 h-4 text-primary" />
+                    {routineStats?.assigned_count ?? 0} persona{routineStats?.assigned_count !== 1 ? 's' : ''}
+                  </p>
+                </div>
               </div>
+
+              {/* Creador */}
+              <div className="flex items-center justify-between p-4 bg-muted/40 rounded-lg border border-border">
+                <div className="flex items-center gap-3">
+                  <UserCircle className="w-10 h-10 text-primary opacity-70" />
+                  <div>
+                    <p className="text-sm text-muted-foreground">Creado por</p>
+                    <p className="font-semibold">
+                      {viewingRoutine.creator?.name || viewingRoutine.creator_user?.name || 'Desconocido'}
+                    </p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {viewingRoutine.creator_user?.gym ? (
+                        <>
+                          <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                          <p className="text-xs text-muted-foreground">
+                            {viewingRoutine.creator_user.gym.name}
+                          </p>
+                        </>
+                      ) : viewingRoutine.creator_user?.is_free_user ? (
+                        <p className="text-xs text-muted-foreground italic">
+                          Persona autónoma
+                        </p>
+                      ) : viewingRoutine.creator ? (
+                        <p className="text-xs text-muted-foreground">
+                          Staff del gimnasio
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Calificaciones */}
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                  <Star className="w-4 h-4 text-[#eab308]" />
+                  Calificaciones
+                </h3>
+                <div className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
+                        key={star}
+                        className={`w-6 h-6 cursor-pointer transition-colors ${
+                          star <= Math.round(routineStats?.avg_rating || 0)
+                            ? 'fill-[#eab308] text-[#eab308]'
+                            : 'text-muted-foreground hover:text-[#eab308]'
+                        }`}
+                        onClick={() => {
+                          if (user?.id && viewingRoutineId) {
+                            rateRoutineMutation.mutate({
+                              routineId: viewingRoutineId,
+                              userId: user.id,
+                              rating: star,
+                            });
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-bold text-lg">{routineStats?.avg_rating || 0}</span>
+                    <span className="text-muted-foreground"> / 5</span>
+                    <span className="text-muted-foreground ml-2">
+                      ({routineStats?.ratings_count || 0} calificación{routineStats?.ratings_count !== 1 ? 'es' : ''})
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notas del creador */}
+              {viewingRoutine.notes && (
+                <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+                  <h3 className="text-sm font-semibold text-primary flex items-center gap-1 mb-2">
+                    <StickyNote className="w-4 h-4" />
+                    Notas del creador
+                  </h3>
+                  <p className="text-sm whitespace-pre-line text-muted-foreground">
+                    {viewingRoutine.notes}
+                  </p>
+                </div>
+              )}
 
               {/* Ejercicios */}
               {viewingRoutine.exercises && viewingRoutine.exercises.length > 0 ? (

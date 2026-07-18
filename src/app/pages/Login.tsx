@@ -6,22 +6,29 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Dumbbell, Loader2, AlertCircle, UserPlus, LogIn } from 'lucide-react';
+import { Dumbbell, Loader2, AlertCircle, UserPlus, LogIn, Building2, User } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { Toaster } from '../components/ui/sonner';
+import { useGymByCode } from '../hooks/useUserRoutines';
 
 export function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [registrationType, setRegistrationType] = useState<'free' | 'gym'>('free');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [cedula, setCedula] = useState('');
   const [phone, setPhone] = useState('');
+  const [gymCode, setGymCode] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showCredentials, setShowCredentials] = useState(false);
+
+  const { data: foundGym, isLoading: searchingGym } = useGymByCode(
+    registrationType === 'gym' && gymCode.trim().length > 0 ? gymCode.trim() : ''
+  );
 
   const { login, user } = useAuth();
   const navigate = useNavigate();
@@ -103,7 +110,24 @@ export function Login() {
         throw new Error('Error al crear la cuenta');
       }
 
-      // 3. Crear registro en la tabla users
+      // 3. Validar código de gimnasio si aplica
+      let gymId = null;
+      if (registrationType === 'gym') {
+        if (!gymCode.trim()) {
+          throw new Error('Debes ingresar el código del gimnasio');
+        }
+        const { data: gym } = await supabase
+          .from('gyms')
+          .select('id')
+          .eq('code', gymCode.trim())
+          .maybeSingle();
+        if (!gym) {
+          throw new Error('Código de gimnasio inválido. Verifica el código e intenta de nuevo.');
+        }
+        gymId = gym.id;
+      }
+
+      // 4. Crear registro en la tabla users
       const { error: userError } = await supabase
         .from('users')
         .insert([{
@@ -117,6 +141,8 @@ export function Login() {
           is_activated: true,
           auth_user_id: authData.user.id,
           created_at: new Date().toISOString(),
+          is_free_user: registrationType === 'free',
+          gym_id: gymId,
         }]);
 
       if (userError) {
@@ -125,7 +151,11 @@ export function Login() {
         throw new Error('Error al crear el perfil de usuario. Por favor contacta al administrador.');
       }
 
-      toast.success(`¡Cuenta creada exitosamente! Tu número de miembro es: ${memberNumber}`);
+      toast.success(
+        registrationType === 'free'
+          ? `¡Cuenta creada! Bienvenido al entrenamiento libre. Tu número de miembro: ${memberNumber}`
+          : `¡Cuenta creada exitosamente! Tu número de miembro es: ${memberNumber}`
+      );
       
       // Cambiar a modo login y prellenar el email
       setMode('login');
@@ -134,6 +164,7 @@ export function Login() {
       setName('');
       setCedula('');
       setPhone('');
+      setGymCode('');
       
     } catch (error: any) {
       console.error('Error en registro:', error);
@@ -145,52 +176,24 @@ export function Login() {
 
   // Función para generar número de miembro único
   const generateUniqueMemberNumber = async (): Promise<string> => {
-    let attempts = 0;
-    const maxAttempts = 10;
+    // Usar timestamp para generar número único (evita RLS que bloquea lectura de otros registros)
+    const ts = Date.now().toString(36).toUpperCase().slice(-6);
+    const memberNumber = `GM-${ts}`;
 
-    while (attempts < maxAttempts) {
-      try {
-        // Obtener el último número de miembro registrado
-        const { data: lastMember, error } = await supabase
-          .from('users')
-          .select('member_number')
-          .order('member_number', { ascending: false })
-          .limit(1)
-          .single();
+    // Verificar que no exista (por si acaso)
+    const { data: existing } = await supabase
+      .from('users')
+      .select('member_number')
+      .eq('member_number', memberNumber)
+      .maybeSingle();
 
-        let nextNumber = 1;
-
-        if (!error && lastMember && lastMember.member_number) {
-          // Extraer el número del formato GM-XXXX
-          const match = lastMember.member_number.match(/GM-(\d+)/);
-          if (match) {
-            nextNumber = parseInt(match[1], 10) + 1;
-          }
-        }
-
-        // Formatear con ceros a la izquierda (GM-0001, GM-0002, etc.)
-        const memberNumber = `GM-${String(nextNumber).padStart(4, '0')}`;
-
-        // Verificar que no exista (doble verificación por seguridad)
-        const { data: existing } = await supabase
-          .from('users')
-          .select('member_number')
-          .eq('member_number', memberNumber)
-          .single();
-
-        if (!existing) {
-          return memberNumber;
-        }
-
-        attempts++;
-      } catch (error) {
-        attempts++;
-      }
+    if (existing) {
+      // Colisión extremadamente rara, reintentar con otro timestamp
+      const ts2 = Date.now().toString(36).toUpperCase().slice(-4);
+      return `GM-${ts2}${Math.random().toString(36).slice(2, 4).toUpperCase()}`;
     }
 
-    // Si después de varios intentos no se pudo generar, usar timestamp
-    const timestamp = Date.now().toString().slice(-4);
-    return `GM-${timestamp}`;
+    return memberNumber;
   };
 
   const fillCredentials = (role: 'admin' | 'trainer' | 'reception' | 'user') => {
@@ -264,7 +267,9 @@ export function Login() {
               <Alert className="border-primary/50 bg-primary/10">
                 <UserPlus className="h-4 w-4 text-primary" />
                 <AlertDescription className="text-primary ml-2">
-                  Regístrate para acceder a tus rutinas, seguimiento de progreso y pagar tu mensualidad
+                  {registrationType === 'free'
+                    ? 'Regístrate en modo libre para crear tus rutinas, seguir tu progreso y entrenar por tu cuenta.'
+                    : 'Regístrate para vincularte a un gimnasio y recibir asignación de entrenadores.'}
                 </AlertDescription>
               </Alert>
             )}
@@ -369,6 +374,70 @@ export function Login() {
                   disabled={isLoading}
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground/70"
                 />
+              </div>
+            )}
+
+            {mode === 'register' && (
+              <div className="space-y-3">
+                <Label className="text-foreground/80">Tipo de Registro</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setRegistrationType('free'); setGymCode(''); }}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                      registrationType === 'free'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-muted hover:border-primary/50 text-muted-foreground'
+                    }`}
+                  >
+                    <User className="w-6 h-6" />
+                    <span className="text-sm font-semibold">Entrenamiento Libre</span>
+                    <span className="text-xs text-center opacity-70">
+                      Sin gimnasio, tú gestionas tus rutinas
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationType('gym')}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                      registrationType === 'gym'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-muted hover:border-primary/50 text-muted-foreground'
+                    }`}
+                  >
+                    <Building2 className="w-6 h-6" />
+                    <span className="text-sm font-semibold">Asociado a un Gym</span>
+                    <span className="text-xs text-center opacity-70">
+                      Vinculado a un gimnasio con entrenadores
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {mode === 'register' && registrationType === 'gym' && (
+              <div className="space-y-2">
+                <Label htmlFor="gymCode" className="text-foreground/80">
+                  Código del Gimnasio <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="gymCode"
+                  type="text"
+                  placeholder="Ej: GYM-LTQ-001"
+                  value={gymCode}
+                  onChange={(e) => setGymCode(e.target.value)}
+                  disabled={isLoading}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground/70"
+                />
+                {searchingGym && gymCode.trim().length > 0 && (
+                  <p className="text-xs text-muted-foreground">Buscando gimnasio...</p>
+                )}
+                {foundGym && !searchingGym && (
+                  <p className="text-xs text-primary">✓ {foundGym.name} encontrado</p>
+                )}
+                {!foundGym && !searchingGym && gymCode.trim().length >= 5 && (
+                  <p className="text-xs text-destructive">✗ Código no encontrado</p>
+                )}
               </div>
             )}
 

@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { usePhysicalProgress } from '../hooks/usePhysicalProgress';
+import { usePhysicalProgress, useCreatePhysicalProgress } from '../hooks/usePhysicalProgress';
 import { useTrainingAnalytics } from '../hooks/useTrainingAnalytics';
 import { useProgressPhotos, useUploadProgressPhoto, useDeleteProgressPhoto } from '../hooks/useProgressPhotos';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { formatDate } from '../lib/format';
 
@@ -19,13 +20,12 @@ import {
 import {
   TrendingUp, TrendingDown, Activity, Calendar, Dumbbell, BarChart3,
   Camera, Trash2, Target, Zap, Award,
-  Plus, Loader2, X, Clock,
+  Plus, Loader2, X, Clock, Lock, AlertCircle,
 } from 'lucide-react';
 
 export function MyProgress() {
   const { user: authUser } = useAuth();
   const userId = authUser?.id || '';
-  const userDbId = authUser?.userDbId || '';
 
   const { data: progress = [], isLoading: loadingProgress } = usePhysicalProgress(userId);
   const { data: analytics, isLoading: loadingAnalytics } = useTrainingAnalytics(userId);
@@ -39,6 +39,37 @@ export function MyProgress() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [viewPeriod, setViewPeriod] = useState<'weekly' | 'monthly' | 'total'>('weekly');
+  const createProgress = useCreatePhysicalProgress();
+
+  const [pWeight, setPWeight] = useState('');
+  const [pBodyFat, setPBodyFat] = useState('');
+  const [pMuscleMass, setPMuscleMass] = useState('');
+  const [pNotes, setPNotes] = useState('');
+
+  const isFreeUser = authUser?.is_free_user ?? false;
+  const lastProgressDate = progress.length > 0 ? new Date(progress[0].date) : null;
+  const daysSinceLastProgress = lastProgressDate ? Math.floor((Date.now() - lastProgressDate.getTime()) / (1000 * 60 * 60 * 24)) : Infinity;
+  const canRegister = !isFreeUser || daysSinceLastProgress >= 7;
+  const daysUntilNext = Math.max(0, 7 - daysSinceLastProgress);
+
+  const handleRegisterProgress = () => {
+    if (!pWeight || !userId) return;
+    createProgress.mutate({
+      user_id: userId,
+      weight: parseFloat(pWeight),
+      body_fat: pBodyFat ? parseFloat(pBodyFat) : undefined,
+      muscle_mass: pMuscleMass ? parseFloat(pMuscleMass) : undefined,
+      notes: pNotes || undefined,
+    }, {
+      onSuccess: () => {
+        setPWeight('');
+        setPBodyFat('');
+        setPMuscleMass('');
+        setPNotes('');
+      },
+    });
+  };
 
   const latestRecord = progress.length > 0 ? progress[0] : null;
   const firstRecord = progress.length > 0 ? progress[progress.length - 1] : null;
@@ -72,6 +103,16 @@ export function MyProgress() {
     volumen: Math.round(w.total_volume),
     sesiones: w.session_count,
   }));
+
+  const last12Months = analytics?.monthlyVolume.slice(-12) || [];
+  const monthlyChartData = last12Months.map(m => {
+    const d = new Date(m.month_start + 'T00:00:00');
+    return {
+      mes: d.toLocaleDateString('es-ES', { month: 'short', year: '2-digit' }),
+      volumen: Math.round(m.total_volume),
+      sesiones: m.session_count,
+    };
+  });
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -151,14 +192,88 @@ export function MyProgress() {
               </CardContent>
             </Card>
           ) : progress.length === 0 ? (
-            <Card>
-              <CardContent className="py-12">
-                <p className="text-center text-muted-foreground">
-                  Aún no tienes registros de progreso físico.<br />
-                  Tu entrenador registrará tus mediciones periódicamente.
-                </p>
-              </CardContent>
-            </Card>
+            <div className="space-y-6">
+              <Card>
+                <CardContent className="py-8">
+                  <div className="text-center text-muted-foreground space-y-2">
+                    <Activity className="w-12 h-12 mx-auto opacity-30" />
+                    <p>Aún no tienes registros de progreso físico.</p>
+                    <p className="text-sm">Registra tu primera medición para comenzar el seguimiento.</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Plus className="w-5 h-5" />
+                    Registrar Primera Medición
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Peso (kg) *</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={pWeight}
+                          onChange={(e) => setPWeight(e.target.value)}
+                          placeholder="70.5"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Grasa Corporal (%)</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={pBodyFat}
+                          onChange={(e) => setPBodyFat(e.target.value)}
+                          placeholder="15.5"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Masa Muscular (kg)</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={pMuscleMass}
+                          onChange={(e) => setPMuscleMass(e.target.value)}
+                          placeholder="55.5"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Notas</Label>
+                      <Textarea
+                        value={pNotes}
+                        onChange={(e) => setPNotes(e.target.value)}
+                        placeholder="Observaciones..."
+                        rows={2}
+                      />
+                    </div>
+                    <Button
+                      onClick={handleRegisterProgress}
+                      disabled={createProgress.isPending || !pWeight}
+                      className="w-full"
+                    >
+                      {createProgress.isPending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Plus className="w-4 h-4 mr-2" />
+                      )}
+                      Registrar Medición
+                    </Button>
+                    {isFreeUser && (
+                      <p className="text-xs text-center text-muted-foreground">
+                        Como usuario libre, puedes registrar tu progreso cada 7 días.
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           ) : (
             <>
               <div className="grid gap-4 md:grid-cols-3">
@@ -216,6 +331,95 @@ export function MyProgress() {
                   </CardContent>
                 </Card>
               </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    {isFreeUser && !canRegister ? <Lock className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                    Registrar Nueva Medición
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {isFreeUser && !canRegister ? (
+                    <div className="text-center py-6 space-y-3">
+                      <Lock className="w-12 h-12 mx-auto text-muted-foreground opacity-30" />
+                      <p className="text-muted-foreground">
+                        Puedes registrar tu progreso cada 7 días.
+                      </p>
+                      <p className="text-sm font-medium text-yellow-500">
+                        Próximo registro disponible en {daysUntilNext} día{daysUntilNext !== 1 ? 's' : ''}
+                      </p>
+                      <div className="w-full bg-muted rounded-full h-2 max-w-xs mx-auto">
+                        <div
+                          className="bg-yellow-500 h-2 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, (daysSinceLastProgress / 7) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label>Peso (kg) *</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={pWeight}
+                            onChange={(e) => setPWeight(e.target.value)}
+                            placeholder="70.5"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Grasa Corporal (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={pBodyFat}
+                            onChange={(e) => setPBodyFat(e.target.value)}
+                            placeholder="15.5"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Masa Muscular (kg)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={pMuscleMass}
+                            onChange={(e) => setPMuscleMass(e.target.value)}
+                            placeholder="55.5"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Notas</Label>
+                        <Textarea
+                          value={pNotes}
+                          onChange={(e) => setPNotes(e.target.value)}
+                          placeholder="Observaciones..."
+                          rows={2}
+                        />
+                      </div>
+                      <Button
+                        onClick={handleRegisterProgress}
+                        disabled={createProgress.isPending || !pWeight}
+                        className="w-full"
+                      >
+                        {createProgress.isPending ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4 mr-2" />
+                        )}
+                        Registrar Medición
+                      </Button>
+                      {isFreeUser && (
+                        <p className="text-xs text-center text-muted-foreground">
+                          Como usuario libre, puedes registrar tu progreso cada 7 días.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader>
@@ -397,100 +601,330 @@ export function MyProgress() {
                 <div className="text-center text-muted-foreground space-y-2">
                   <BarChart3 className="w-12 h-12 mx-auto opacity-30" />
                   <p>Aún no hay suficiente datos de entrenamiento.</p>
-                  <p className="text-sm">Comienza a registrar tus entrenamientos para ver tu resumen semanal.</p>
+                  <p className="text-sm">Comienza a registrar tus entrenamientos para ver tu resumen de progreso.</p>
                 </div>
               </CardContent>
             </Card>
           ) : (
             <>
-              <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Sesiones</CardTitle>
-                    <Dumbbell className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-primary">{analytics.currentWeekSessions}</div>
-                    <p className="text-xs text-muted-foreground">esta semana</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Ejercicios</CardTitle>
-                    <Target className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-primary">{analytics.currentWeekExercises}</div>
-                    <p className="text-xs text-muted-foreground">esta semana</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Volumen</CardTitle>
-                    <Zap className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-primary">{Math.round(analytics.currentWeekVolume).toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground">kg totales esta semana</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Racha</CardTitle>
-                    <Award className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-yellow-500">{analytics.streakDays}</div>
-                    <p className="text-xs text-muted-foreground">días seguidos entrenando</p>
-                  </CardContent>
-                </Card>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant={viewPeriod === 'weekly' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewPeriod('weekly')}
+                >
+                  <Calendar className="w-4 h-4 mr-1" />
+                  Semanal
+                </Button>
+                <Button
+                  variant={viewPeriod === 'monthly' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewPeriod('monthly')}
+                >
+                  <Calendar className="w-4 h-4 mr-1" />
+                  Mensual
+                </Button>
+                <Button
+                  variant={viewPeriod === 'total' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewPeriod('total')}
+                >
+                  <BarChart3 className="w-4 h-4 mr-1" />
+                  Total
+                </Button>
               </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5" />
-                    Volumen Semanal
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={volumeChartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis dataKey="semana" stroke="#888" fontSize={12} />
-                      <YAxis stroke="#888" fontSize={12} />
-                      <Tooltip contentStyle={{ backgroundColor: '#1a1a24', border: '1px solid #2a2a3a', borderRadius: '8px', color: '#f0f0f5' }} />
-                      <Legend />
-                      <Bar dataKey="volumen" fill="#10f94e" radius={[4, 4, 0, 0]} name="Volumen (kg)" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+              {viewPeriod === 'weekly' && (
+                <>
+                  <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Sesiones</CardTitle>
+                        <Dumbbell className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{analytics.currentWeekSessions}</div>
+                        <p className="text-xs text-muted-foreground">esta semana</p>
+                      </CardContent>
+                    </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="w-5 h-5" />
-                    Historial Semanal
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {last8Weeks.slice().reverse().map(w => (
-                      <div key={w.week_start} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div>
-                          <p className="font-medium">Semana del {formatDate(w.week_start)}</p>
-                          <p className="text-xs text-muted-foreground">{w.session_count} sesión(es) · {w.total_exercises} ejercicio(s)</p>
-                        </div>
-                        <p className="text-sm font-bold text-primary">{Math.round(w.total_volume).toLocaleString()} kg</p>
-                      </div>
-                    ))}
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Ejercicios</CardTitle>
+                        <Target className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{analytics.currentWeekExercises}</div>
+                        <p className="text-xs text-muted-foreground">esta semana</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Volumen</CardTitle>
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{Math.round(analytics.currentWeekVolume).toLocaleString()}</div>
+                        <p className="text-xs text-muted-foreground">kg totales esta semana</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Racha</CardTitle>
+                        <Award className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-yellow-500">{analytics.streakDays}</div>
+                        <p className="text-xs text-muted-foreground">días seguidos entrenando</p>
+                      </CardContent>
+                    </Card>
                   </div>
-                </CardContent>
-              </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5" />
+                        Volumen Semanal
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={volumeChartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                          <XAxis dataKey="semana" stroke="#888" fontSize={12} />
+                          <YAxis stroke="#888" fontSize={12} />
+                          <Tooltip contentStyle={{ backgroundColor: '#1a1a24', border: '1px solid #2a2a3a', borderRadius: '8px', color: '#f0f0f5' }} />
+                          <Legend />
+                          <Bar dataKey="volumen" fill="#10f94e" radius={[4, 4, 0, 0]} name="Volumen (kg)" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Clock className="w-5 h-5" />
+                        Historial Semanal
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {last8Weeks.slice().reverse().map(w => (
+                          <div key={w.week_start} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div>
+                              <p className="font-medium">Semana del {formatDate(w.week_start)}</p>
+                              <p className="text-xs text-muted-foreground">{w.session_count} sesión(es) · {w.total_exercises} ejercicio(s)</p>
+                            </div>
+                            <p className="text-sm font-bold text-primary">{Math.round(w.total_volume).toLocaleString()} kg</p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+
+              {viewPeriod === 'monthly' && (
+                <>
+                  <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Sesiones</CardTitle>
+                        <Dumbbell className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{analytics.currentMonthSessions}</div>
+                        <p className="text-xs text-muted-foreground">este mes</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Ejercicios</CardTitle>
+                        <Target className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{analytics.currentMonthExercises}</div>
+                        <p className="text-xs text-muted-foreground">este mes</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Volumen</CardTitle>
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{Math.round(analytics.currentMonthVolume).toLocaleString()}</div>
+                        <p className="text-xs text-muted-foreground">kg totales este mes</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Racha</CardTitle>
+                        <Award className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-yellow-500">{analytics.streakDays}</div>
+                        <p className="text-xs text-muted-foreground">días seguidos entrenando</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5" />
+                        Volumen Mensual
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={monthlyChartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                          <XAxis dataKey="mes" stroke="#888" fontSize={12} />
+                          <YAxis stroke="#888" fontSize={12} />
+                          <Tooltip contentStyle={{ backgroundColor: '#1a1a24', border: '1px solid #2a2a3a', borderRadius: '8px', color: '#f0f0f5' }} />
+                          <Legend />
+                          <Bar dataKey="volumen" fill="#00d4ff" radius={[4, 4, 0, 0]} name="Volumen (kg)" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Clock className="w-5 h-5" />
+                        Historial Mensual
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {last12Months.slice().reverse().map(m => {
+                          const d = new Date(m.month_start + 'T00:00:00');
+                          const monthLabel = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                          return (
+                            <div key={m.month_start} className="flex items-center justify-between p-3 border rounded-lg">
+                              <div>
+                                <p className="font-medium capitalize">{monthLabel}</p>
+                                <p className="text-xs text-muted-foreground">{m.session_count} sesión(es) · {m.total_exercises} ejercicio(s)</p>
+                              </div>
+                              <p className="text-sm font-bold text-primary">{Math.round(m.total_volume).toLocaleString()} kg</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+
+              {viewPeriod === 'total' && (
+                <>
+                  <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Sesiones Totales</CardTitle>
+                        <Dumbbell className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{analytics.totalSessions}</div>
+                        <p className="text-xs text-muted-foreground">en total</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Ejercicios</CardTitle>
+                        <Target className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{analytics.totalExercises}</div>
+                        <p className="text-xs text-muted-foreground">distintos realizados</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Volumen Total</CardTitle>
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{Math.round(analytics.totalVolume).toLocaleString()}</div>
+                        <p className="text-xs text-muted-foreground">kg acumulados</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Días Entrenados</CardTitle>
+                        <Activity className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">{analytics.totalTrainingDays}</div>
+                        <p className="text-xs text-muted-foreground">días de entrenamiento</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Racha Actual</CardTitle>
+                        <Award className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-yellow-500">{analytics.streakDays}</div>
+                        <p className="text-xs text-muted-foreground">días seguidos entrenando</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Vol. Promedio</CardTitle>
+                        <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">
+                          {analytics.totalSessions > 0 ? Math.round(analytics.totalVolume / analytics.totalSessions).toLocaleString() : 0}
+                        </div>
+                        <p className="text-xs text-muted-foreground">kg promedio por sesión</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Sesiones/Semana</CardTitle>
+                        <Activity className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">
+                          {analytics.weeklyVolume.length > 0 ? (analytics.totalSessions / analytics.weeklyVolume.length).toFixed(1) : 0}
+                        </div>
+                        <p className="text-xs text-muted-foreground">promedio semanal</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Vol./Semana</CardTitle>
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-primary">
+                          {analytics.weeklyVolume.length > 0 ? Math.round(analytics.totalVolume / analytics.weeklyVolume.length).toLocaleString() : 0}
+                        </div>
+                        <p className="text-xs text-muted-foreground">kg promedio por semana</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </>
+              )}
             </>
           )}
         </TabsContent>

@@ -59,7 +59,7 @@ export function UserDetail() {
   
   // Obtener rutinas disponibles y asignaciones del usuario
   const { data: availableRoutines, isLoading: loadingRoutines } = useRoutines();
-  const { data: userRoutineAssignments, isLoading: loadingAssignments } = useRoutineAssignments(id);
+  const { data: userRoutineAssignments, isLoading: loadingAssignments, error: routineError } = useRoutineAssignments(id || '');
   const assignRoutineMutation = useAssignRoutine();
   
   // Obtener entrenadores disponibles
@@ -73,10 +73,10 @@ export function UserDetail() {
   const { user: currentUser } = useAuth();
   
   // Obtener asistencia del usuario
-  const { data: userAttendanceData, isLoading: loadingAttendance } = useUserAttendance(id || '');
+  const { data: userAttendanceData, isLoading: loadingAttendance, error: attendanceError } = useUserAttendance(id || '');
   
   // Obtener progreso físico del usuario
-  const { data: userPhysicalProgress, isLoading: loadingPhysicalProgress } = usePhysicalProgress(id || '');
+  const { data: userPhysicalProgress, isLoading: loadingPhysicalProgress, error: progressError } = usePhysicalProgress(id || '');
   const createPhysicalProgressMutation = useCreatePhysicalProgress();
   const deletePhysicalProgressMutation = useDeletePhysicalProgress();
 
@@ -599,6 +599,11 @@ export function UserDetail() {
                 <div className="text-center py-8">
                   <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
                 </div>
+              ) : attendanceError ? (
+                <div className="flex flex-col items-center justify-center py-8 text-destructive">
+                  <AlertCircle className="w-12 h-12 mb-2" />
+                  <p className="text-sm">Error al cargar asistencia</p>
+                </div>
               ) : userAttendanceData && userAttendanceData.length > 0 ? (
                 <div className="space-y-3">
                   {userAttendanceData.map((attendance) => (
@@ -633,6 +638,17 @@ export function UserDetail() {
 
         {/* Progress Tab */}
         <TabsContent value="progress" className="space-y-6">
+          {progressError ? (
+            <Card className="bg-card border-border">
+              <CardContent className="py-8">
+                <div className="flex flex-col items-center justify-center text-destructive">
+                  <AlertCircle className="w-12 h-12 mb-2" />
+                  <p className="text-sm">Error al cargar progreso físico</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+          <>
           <Card className="bg-card border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -751,6 +767,8 @@ export function UserDetail() {
               )}
             </CardContent>
           </Card>
+          </>
+          )}
         </TabsContent>
 
         {/* Routines Tab */}
@@ -761,6 +779,15 @@ export function UserDetail() {
                 <div className="text-center">
                   <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-2" />
                   <p className="text-muted-foreground">Cargando rutinas...</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : routineError ? (
+            <Card className="bg-card border-border">
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center justify-center text-destructive">
+                  <AlertCircle className="w-12 h-12 mb-2" />
+                  <p className="text-sm">Error al cargar rutinas</p>
                 </div>
               </CardContent>
             </Card>
