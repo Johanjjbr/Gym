@@ -88,13 +88,13 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl mb-2">Dashboard</h1>
+          <h1 className="text-2xl sm:text-4xl mb-2">Dashboard</h1>
           <p className="text-muted-foreground">Resumen general del gimnasio</p>
         </div>
         {isAdmin && (
-          <div className="w-64">
+          <div className="w-full sm:w-64">
             <Select value={selectedGymId} onValueChange={setSelectedGymId}>
               <SelectTrigger>
                 <Building2 className="h-4 w-4 mr-2" />

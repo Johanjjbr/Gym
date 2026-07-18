@@ -400,7 +400,7 @@ export function UserDetail() {
 
       {/* Tabs with Details */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-auto">
+        <TabsList className="w-full overflow-x-auto flex-nowrap lg:w-auto">
           <TabsTrigger value="overview">General</TabsTrigger>
           <TabsTrigger value="attendance">Asistencia</TabsTrigger>
           <TabsTrigger value="progress">Progreso Físico</TabsTrigger>
@@ -913,7 +913,7 @@ export function UserDetail() {
                             {inv.status}
                           </Badge>
                         </div>
-                        <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                           <div>
                             <p className="text-muted-foreground">Factura</p>
                             <p className="font-mono text-xs">{inv.invoice_number}</p>

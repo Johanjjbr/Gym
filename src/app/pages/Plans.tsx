@@ -97,12 +97,12 @@ export function Plans() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl mb-2">Planes</h1>
+          <h1 className="text-2xl sm:text-4xl mb-2">Planes</h1>
           <p className="text-muted-foreground">Configuración de membresías y precios</p>
         </div>
-        <Button className="bg-primary text-black hover:bg-primary/90 font-bold" onClick={openCreate}>
+        <Button className="bg-primary text-black hover:bg-primary/90 font-bold w-full sm:w-auto" onClick={openCreate}>
           <Plus className="w-4 h-4 mr-2" />
           Nuevo Plan
         </Button>

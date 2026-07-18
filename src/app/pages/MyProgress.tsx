@@ -173,7 +173,7 @@ export function MyProgress() {
       </div>
 
       <Tabs defaultValue="composicion">
-        <TabsList>
+        <TabsList className="overflow-x-auto flex-nowrap w-full">
           <TabsTrigger value="composicion">
             <Activity className="w-4 h-4" />
             Composición
