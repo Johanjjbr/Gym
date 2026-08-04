@@ -208,6 +208,10 @@ export const handlers = [
     return HttpResponse.json({ success: true })
   }),
 
+  http.delete(`${API_BASE}/invoices/:id`, () => {
+    return HttpResponse.json({ success: true })
+  }),
+
   http.get(`${API_BASE}/staff`, () => {
     return HttpResponse.json(mockStaff)
   }),

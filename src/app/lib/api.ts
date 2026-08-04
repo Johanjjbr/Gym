@@ -499,6 +499,12 @@ export const invoices = {
       body: JSON.stringify(data),
     });
   },
+
+  delete: async (id: string) => {
+    return apiRequest(`/invoices/${id}`, {
+      method: 'DELETE',
+    });
+  },
 };
 
 // =============================================

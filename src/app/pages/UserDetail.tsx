@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
-import { useUserInvoices, usePayInvoice, useCreateInvoice } from '../hooks/useInvoices';
+import { useUserInvoices, usePayInvoice, useCreateInvoice, useDeleteInvoice } from '../hooks/useInvoices';
 import { usePlans } from '../hooks/usePlans';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
@@ -31,6 +31,10 @@ export function UserDetail() {
   const [invoiceConcept, setInvoiceConcept] = useState('');
   const [invoiceAmount, setInvoiceAmount] = useState('');
   const [invoiceNotes, setInvoiceNotes] = useState('');
+  const [invoiceMonth, setInvoiceMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [isAssignRoutineDialogOpen, setIsAssignRoutineDialogOpen] = useState(false);
   const [isAssignTrainerDialogOpen, setIsAssignTrainerDialogOpen] = useState(false);
   const [isCreatePaymentDialogOpen, setIsCreatePaymentDialogOpen] = useState(false);
@@ -41,6 +45,7 @@ export function UserDetail() {
   const [endDate, setEndDate] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [progressToDelete, setProgressToDelete] = useState<string | null>(null);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<any>(null);
   
   // Estados para el formulario de pago de factura
   const [payInvoiceAmount, setPayInvoiceAmount] = useState('');
@@ -82,6 +87,9 @@ export function UserDetail() {
 
   // Hook para generar facturas (plan u otro motivo)
   const createInvoiceMutation = useCreateInvoice();
+
+  // Hook para eliminar facturas
+  const deleteInvoiceMutation = useDeleteInvoice();
   
   // Obtener usuario actual del staff usando el contexto de autenticación
   const { user: currentUser } = useAuth();
@@ -164,23 +172,38 @@ export function UserDetail() {
   const openInvoiceDialog = () => {
     setInvoiceType(user?.plan_id ? 'plan' : 'other');
     setInvoiceConcept('');
-    setInvoiceAmount('');
+    setInvoiceAmount(userPlan?.price ? String(userPlan.price) : '');
     setInvoiceNotes('');
+    setInvoiceMonth(() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
     setIsInvoiceDialogOpen(true);
   };
 
   const handleGenerateInvoice = () => {
     if (!id) return;
 
+    const dueDate = invoiceMonth ? `${invoiceMonth}-01T00:00:00` : undefined;
+
     if (invoiceType === 'plan') {
       if (!user?.plan_id) {
         toast.error('El usuario no tiene un plan asignado');
+        return;
+      }
+      const planPrice = Number(userPlan?.price) || 0;
+      const amount = invoiceAmount !== '' ? parseFloat(invoiceAmount) : planPrice;
+      if (Number.isNaN(amount) || amount <= 0) {
+        toast.error('El monto debe ser mayor a cero');
         return;
       }
       createInvoiceMutation.mutate({
         user_id: id,
         source: 'plan',
         plan_id: user.plan_id,
+        amount,
+        due_date: dueDate,
+        notes: invoiceNotes || undefined,
       }, {
         onSuccess: () => {
           setIsInvoiceDialogOpen(false);
@@ -199,6 +222,7 @@ export function UserDetail() {
         source: 'other',
         concept: invoiceConcept,
         amount: parseFloat(invoiceAmount),
+        due_date: dueDate,
         notes: invoiceNotes || undefined,
       }, {
         onSuccess: () => {
@@ -209,6 +233,13 @@ export function UserDetail() {
         },
       });
     }
+  };
+
+  const handleDeleteInvoice = () => {
+    if (!invoiceToDelete) return;
+    deleteInvoiceMutation.mutate(invoiceToDelete.id, {
+      onSuccess: () => setInvoiceToDelete(null),
+    });
   };
 
   const assignRoutine = () => {
@@ -972,6 +1003,12 @@ export function UserDetail() {
                           Pagar
                         </Button>
                       )}
+                      <Button size="sm" variant="ghost"
+                        className="hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setInvoiceToDelete(inv)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -1016,61 +1053,89 @@ export function UserDetail() {
               </Button>
             </div>
 
+            <div>
+              <Label>Mes de la factura <span className="text-destructive">*</span></Label>
+              <Input
+                type="month"
+                value={invoiceMonth}
+                onChange={(e) => setInvoiceMonth(e.target.value)}
+                className="bg-input border-border"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                La factura tendrá como vencimiento el primer día del mes seleccionado.
+              </p>
+            </div>
+
             {invoiceType === 'plan' ? (
               user?.plan_id ? (
-                <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="font-semibold">{userPlan?.name || user.plan || 'Plan'}</p>
-                    <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
-                      Mensualidad
-                    </Badge>
+                <>
+                  <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="font-semibold">{userPlan?.name || user.plan || 'Plan'}</p>
+                      <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
+                        Mensualidad
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Monto del plan: Bs {(Number(userPlan?.price) || 0).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Se generará una factura pendiente por el plan actual. Puedes ajustar el monto si es necesario.
+                    </p>
                   </div>
-                  <p className="text-2xl font-bold text-primary">
-                    Bs {(Number(userPlan?.price) || 0).toLocaleString()}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Se generará una factura pendiente por el plan actual.
-                  </p>
-                </div>
+                  <div>
+                    <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={invoiceAmount}
+                      onChange={(e) => setInvoiceAmount(e.target.value)}
+                      placeholder="450"
+                      className="bg-input border-border"
+                    />
+                  </div>
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground py-4 text-center">
                   El usuario no tiene un plan asignado. Selecciona "Otro motivo" o asígnale un plan primero.
                 </p>
               )
             ) : (
-              <>
-                <div>
-                  <Label>Concepto <span className="text-destructive">*</span></Label>
-                  <Input
-                    value={invoiceConcept}
-                    onChange={(e) => setInvoiceConcept(e.target.value)}
-                    placeholder="Ej: Suplementos, inscripción, membresía especial..."
-                    className="bg-input border-border"
-                  />
-                </div>
-                <div>
-                  <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={invoiceAmount}
-                    onChange={(e) => setInvoiceAmount(e.target.value)}
-                    placeholder="450"
-                    className="bg-input border-border"
-                  />
-                </div>
-                <div>
-                  <Label>Notas (Opcional)</Label>
-                  <Textarea
-                    value={invoiceNotes}
-                    onChange={(e) => setInvoiceNotes(e.target.value)}
-                    placeholder="Información adicional..."
-                    className="bg-input border-border"
-                    rows={3}
-                  />
-                </div>
-              </>
+              <div>
+                <Label>Concepto <span className="text-destructive">*</span></Label>
+                <Input
+                  value={invoiceConcept}
+                  onChange={(e) => setInvoiceConcept(e.target.value)}
+                  placeholder="Ej: Suplementos, inscripción, membresía especial..."
+                  className="bg-input border-border"
+                />
+              </div>
             )}
+
+            {invoiceType === 'other' && (
+              <div>
+                <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={invoiceAmount}
+                  onChange={(e) => setInvoiceAmount(e.target.value)}
+                  placeholder="450"
+                  className="bg-input border-border"
+                />
+              </div>
+            )}
+
+            <div>
+              <Label>Notas (Opcional)</Label>
+              <Textarea
+                value={invoiceNotes}
+                onChange={(e) => setInvoiceNotes(e.target.value)}
+                placeholder="Información adicional..."
+                className="bg-input border-border"
+                rows={3}
+              />
+            </div>
 
             <div className="flex justify-end gap-2 pt-4">
               <Button
@@ -1487,6 +1552,32 @@ export function UserDetail() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => progressToDelete && deleteProgress(progressToDelete)}>
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Invoice Confirmation */}
+      <AlertDialog open={!!invoiceToDelete} onOpenChange={() => setInvoiceToDelete(null)}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar Factura</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de eliminar la factura {invoiceToDelete?.invoice_number} por Bs {Number(invoiceToDelete?.amount || 0).toLocaleString()}? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteInvoice}
+              disabled={deleteInvoiceMutation.isPending}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {deleteInvoiceMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Eliminando...</>
+              ) : (
+                'Eliminar'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -395,7 +395,7 @@ app.post("/invoices", async (c) => {
       const { data: plan } = await supabase.from('plans').select('id, name, price').eq('id', effectivePlanId).single();
       if (!plan) return c.json({ error: 'Plan no encontrado' }, 404);
       finalPlanId = plan.id;
-      finalAmount = plan.price;
+      finalAmount = amount != null ? amount : plan.price;
       finalConcept = plan.name;
     } else {
       if (!concept || !amount) {
@@ -425,6 +425,21 @@ app.post("/invoices", async (c) => {
   } catch (error) {
     console.error('Error creando factura:', error);
     return c.json({ error: 'Error creando factura' }, 500);
+  }
+});
+
+app.delete("/invoices/:id", async (c) => {
+  try {
+    const { id } = c.req.param();
+    const { data: invoice, error: getError } = await supabase
+      .from('invoices').select('id').eq('id', id).maybeSingle();
+    if (getError) throw getError;
+    if (!invoice) return c.json({ error: 'Factura no encontrada' }, 404);
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    if (error) throw error;
+    return c.json({ message: 'Factura eliminada' });
+  } catch (error) {
+    return c.json({ error: 'Error eliminando factura' }, 500);
   }
 });
 

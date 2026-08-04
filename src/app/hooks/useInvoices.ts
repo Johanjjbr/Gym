@@ -66,3 +66,18 @@ export function usePayInvoice() {
     },
   });
 }
+
+export function useDeleteInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => invoices.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Factura eliminada exitosamente');
+    },
+    onError: (error: Error) => {
+      toast.error('Error al eliminar factura', { description: error.message });
+    },
+  });
+}

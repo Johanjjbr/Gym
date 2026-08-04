@@ -162,6 +162,11 @@ describe('API - Invoices', () => {
     const response = await fetch(`${API_BASE}/invoices/inv-2/pay`, { method: 'PUT' })
     expect(response.status).toBe(200)
   })
+
+  it('deletes an invoice', async () => {
+    const response = await fetch(`${API_BASE}/invoices/inv-2`, { method: 'DELETE' })
+    expect(response.status).toBe(200)
+  })
 })
 
 describe('API - Attendance', () => {

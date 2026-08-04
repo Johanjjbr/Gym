@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { useInvoices, usePayInvoice, useCreateInvoice } from './useInvoices'
+import { useInvoices, usePayInvoice, useCreateInvoice, useDeleteInvoice } from './useInvoices'
 import { TestWrapper } from '../../test/test-utils'
 import { server } from '../../test/mocks/server'
 import { http, HttpResponse } from 'msw'
@@ -97,6 +97,33 @@ describe('useCreateInvoice', () => {
         concept: '',
         amount: 0,
       })
+    } catch (e) {
+    }
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+  })
+})
+
+describe('useDeleteInvoice', () => {
+  it('deletes an invoice successfully', async () => {
+    const { result } = renderHook(() => useDeleteInvoice(), { wrapper: TestWrapper })
+
+    await result.current.mutateAsync('inv-2')
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
+  it('handles delete invoice error', async () => {
+    server.use(
+      http.delete(`${API_BASE}/invoices/inv-999`, () => {
+        return HttpResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      })
+    )
+
+    const { result } = renderHook(() => useDeleteInvoice(), { wrapper: TestWrapper })
+
+    try {
+      await result.current.mutateAsync('inv-999')
     } catch (e) {
     }
 

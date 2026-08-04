@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Search, DollarSign, Loader2, AlertCircle, CheckCircle, X, CreditCard, Users, Calendar, Filter } from 'lucide-react';
-import { useInvoices, usePayInvoice } from '../hooks/useInvoices';
+import { Search, DollarSign, Loader2, AlertCircle, CheckCircle, X, CreditCard, Users, Calendar, Filter, Trash2 } from 'lucide-react';
+import { useInvoices, usePayInvoice, useDeleteInvoice } from '../hooks/useInvoices';
 import { useUsers } from '../hooks/useUsers';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { useNavigate } from 'react-router';
@@ -26,10 +27,12 @@ export function Invoices() {
   const [payReference, setPayReference] = useState('');
   const [payNotes, setPayNotes] = useState('');
   const [payAmount, setPayAmount] = useState('');
+  const [invoiceToDelete, setInvoiceToDelete] = useState<any>(null);
 
   const { data: invoicesData, isLoading, error } = useInvoices();
   const { data: users } = useUsers();
   const payInvoice = usePayInvoice();
+  const deleteInvoice = useDeleteInvoice();
 
   const getUserName = (userId: string) => {
     const user = users?.find((u: any) => u.id === userId);
@@ -89,6 +92,13 @@ export function Invoices() {
       onSuccess: () => {
         setPayingInvoice(null);
       },
+    });
+  };
+
+  const handleDelete = () => {
+    if (!invoiceToDelete) return;
+    deleteInvoice.mutate(invoiceToDelete.id, {
+      onSuccess: () => setInvoiceToDelete(null),
     });
   };
 
@@ -302,6 +312,11 @@ export function Invoices() {
                           onClick={() => navigate(`/usuarios/${inv.user_id}`)}>
                           <Users className="w-4 h-4" />
                         </Button>
+                        <Button size="sm" variant="ghost"
+                          className="hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => setInvoiceToDelete(inv)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -370,6 +385,32 @@ export function Invoices() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Invoice Confirmation */}
+      <AlertDialog open={!!invoiceToDelete} onOpenChange={() => setInvoiceToDelete(null)}>
+        <AlertDialogContent className="bg-card border-border max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground">Eliminar Factura</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              ¿Estás seguro de eliminar la factura {invoiceToDelete?.invoice_number} de {getUserName(invoiceToDelete?.user_id)}? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="border-border hover:bg-muted">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteInvoice.isPending}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold"
+            >
+              {deleteInvoice.isPending ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</>
+              ) : (
+                <><Trash2 className="w-4 h-4 mr-2" />Eliminar</>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
