@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { userSchema, type UserFormData } from '../lib/validations';
+import { emptyToNull } from '../lib/emptyToNull';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
 import { usePlans } from '../hooks/usePlans';
 import { useStaff } from '../hooks/useStaff';
@@ -161,6 +162,14 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
         plan: selectedPlan?.name || data.plan,
         plan_id: data.plan_id || null,
         start_date: data.start_date || new Date().toISOString().split('T')[0],
+        next_payment: emptyToNull(data.next_payment),
+        gender: emptyToNull(data.gender),
+        birth_date: emptyToNull(data.birth_date),
+        photo: emptyToNull(data.photo),
+        address: emptyToNull(data.address),
+        emergency_contact: emptyToNull(data.emergency_contact),
+        notes: emptyToNull(data.notes),
+        medical_notes: emptyToNull(data.medical_notes),
       };
       if (isEdit) {
         await updateUser.mutateAsync({ id: user.id, data: submitData });
@@ -329,7 +338,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                     control={control}
                     name="gender"
                     render={({ field }) => (
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
                         <SelectTrigger className="bg-muted border-border text-foreground">
                           <SelectValue placeholder="Seleccionar..." />
                         </SelectTrigger>
@@ -379,7 +388,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                     control={control}
                     name="plan_id"
                     render={({ field }) => (
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
                         <SelectTrigger className="bg-muted border-border text-foreground">
                           <SelectValue placeholder="Seleccionar plan" />
                         </SelectTrigger>
@@ -406,7 +415,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                     control={control}
                     name="status"
                     render={({ field }) => (
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
                         <SelectTrigger className="bg-muted border-border text-foreground">
                           <SelectValue placeholder="Seleccionar estado" />
                         </SelectTrigger>

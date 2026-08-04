@@ -14,19 +14,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
-import { useUserInvoices, usePayInvoice } from '../hooks/useInvoices';
+import { useUserInvoices, usePayInvoice, useCreateInvoice } from '../hooks/useInvoices';
+import { usePlans } from '../hooks/usePlans';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
 import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
 import { PaymentCalendar } from '../components/PaymentCalendar';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
 import { formatDate } from '../lib/format';
 
 export function UserDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
+  const [invoiceType, setInvoiceType] = useState<'plan' | 'other'>('plan');
+  const [invoiceConcept, setInvoiceConcept] = useState('');
+  const [invoiceAmount, setInvoiceAmount] = useState('');
+  const [invoiceNotes, setInvoiceNotes] = useState('');
   const [isAssignRoutineDialogOpen, setIsAssignRoutineDialogOpen] = useState(false);
   const [isAssignTrainerDialogOpen, setIsAssignTrainerDialogOpen] = useState(false);
   const [isCreatePaymentDialogOpen, setIsCreatePaymentDialogOpen] = useState(false);
@@ -59,7 +63,11 @@ export function UserDetail() {
   
   // Obtener facturas reales del usuario
   const { data: userInvoices, isLoading: loadingPayments } = useUserInvoices(id || '');
-  
+
+  // Planes disponibles (para resolver precio/nombre del plan del usuario)
+  const { data: plansList } = usePlans();
+  const userPlan = plansList?.find((p: any) => p.id === user?.plan_id);
+
   // Obtener rutinas disponibles y asignaciones del usuario
   const { data: availableRoutines, isLoading: loadingRoutines } = useRoutines();
   const { data: userRoutineAssignments, isLoading: loadingAssignments, error: routineError } = useRoutineAssignments(id || '');
@@ -71,6 +79,9 @@ export function UserDetail() {
   
   // Hook para pagar facturas
   const payInvoiceMutation = usePayInvoice();
+
+  // Hook para generar facturas (plan u otro motivo)
+  const createInvoiceMutation = useCreateInvoice();
   
   // Obtener usuario actual del staff usando el contexto de autenticación
   const { user: currentUser } = useAuth();
@@ -150,36 +161,53 @@ export function UserDetail() {
     }
   };
 
-  const generateInvoice = async () => {
-    if (!id || !user?.plan_id) {
-      toast.error('El usuario no tiene un plan asignado');
-      return;
-    }
-    try {
-      const { data: plan } = await supabase.from('plans').select('price, name').eq('id', user.plan_id).single();
-      if (!plan) {
-        toast.error('Plan no encontrado');
+  const openInvoiceDialog = () => {
+    setInvoiceType(user?.plan_id ? 'plan' : 'other');
+    setInvoiceConcept('');
+    setInvoiceAmount('');
+    setInvoiceNotes('');
+    setIsInvoiceDialogOpen(true);
+  };
+
+  const handleGenerateInvoice = () => {
+    if (!id) return;
+
+    if (invoiceType === 'plan') {
+      if (!user?.plan_id) {
+        toast.error('El usuario no tiene un plan asignado');
         return;
       }
-      const { data: existing } = await supabase.from('invoices').select('id').order('created_at', { ascending: false }).limit(1);
-      const nextNum = (existing?.length || 0) + 1;
-      const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}`;
-      const { error } = await supabase.from('invoices').insert({
+      createInvoiceMutation.mutate({
         user_id: id,
+        source: 'plan',
         plan_id: user.plan_id,
-        invoice_number: invoiceNumber,
-        amount: plan.price,
-        due_date: new Date().toISOString(),
-        status: 'Pendiente',
-        notes: plan.name,
+      }, {
+        onSuccess: () => {
+          setIsInvoiceDialogOpen(false);
+          setInvoiceConcept('');
+          setInvoiceAmount('');
+          setInvoiceNotes('');
+        },
       });
-      if (error) throw error;
-      toast.success('Factura generada exitosamente', {
-        description: `Factura ${invoiceNumber} creada para ${user.name}`,
+    } else {
+      if (!invoiceConcept || !invoiceAmount) {
+        toast.error('Concepto y monto son requeridos');
+        return;
+      }
+      createInvoiceMutation.mutate({
+        user_id: id,
+        source: 'other',
+        concept: invoiceConcept,
+        amount: parseFloat(invoiceAmount),
+        notes: invoiceNotes || undefined,
+      }, {
+        onSuccess: () => {
+          setIsInvoiceDialogOpen(false);
+          setInvoiceConcept('');
+          setInvoiceAmount('');
+          setInvoiceNotes('');
+        },
       });
-      setIsInvoiceDialogOpen(false);
-    } catch (error: any) {
-      toast.error('Error al generar factura', { description: error.message });
     }
   };
 
@@ -325,7 +353,7 @@ export function UserDetail() {
         </div>
         <Button
           className="bg-primary text-primary-foreground hover:bg-primary/90"
-          onClick={() => setIsInvoiceDialogOpen(true)}
+          onClick={openInvoiceDialog}
         >
           <Download className="w-4 h-4 mr-2" />
           Generar Factura
@@ -918,16 +946,16 @@ export function UserDetail() {
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                           <div>
+                            <p className="text-muted-foreground">Concepto</p>
+                            <p>{inv.concept || inv.plans?.name || '-'}</p>
+                          </div>
+                          <div>
                             <p className="text-muted-foreground">Factura</p>
                             <p className="font-mono text-xs">{inv.invoice_number}</p>
                           </div>
                           <div>
                             <p className="text-muted-foreground">Vencimiento</p>
                             <p>{formatDate(inv.due_date)}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Método</p>
-                            <p>{inv.method || '-'}</p>
                           </div>
                         </div>
                       </div>
@@ -968,29 +996,82 @@ export function UserDetail() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>Concepto</Label>
-              <Input
-                placeholder="Ej: Mensualidad Premium - Marzo 2026"
-                className="bg-input border-border"
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={invoiceType === 'plan' ? 'default' : 'outline'}
+                onClick={() => setInvoiceType('plan')}
+                disabled={!user?.plan_id}
+                className={invoiceType === 'plan' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border-border hover:bg-muted'}
+              >
+                Del plan
+              </Button>
+              <Button
+                type="button"
+                variant={invoiceType === 'other' ? 'default' : 'outline'}
+                onClick={() => setInvoiceType('other')}
+                className={invoiceType === 'other' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border-border hover:bg-muted'}
+              >
+                Otro motivo
+              </Button>
             </div>
-            <div>
-              <Label>Monto (Bs)</Label>
-              <Input
-                type="number"
-                placeholder="450"
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Notas (Opcional)</Label>
-              <Textarea
-                placeholder="Información adicional..."
-                className="bg-input border-border"
-                rows={3}
-              />
-            </div>
+
+            {invoiceType === 'plan' ? (
+              user?.plan_id ? (
+                <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-semibold">{userPlan?.name || user.plan || 'Plan'}</p>
+                    <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
+                      Mensualidad
+                    </Badge>
+                  </div>
+                  <p className="text-2xl font-bold text-primary">
+                    Bs {(Number(userPlan?.price) || 0).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Se generará una factura pendiente por el plan actual.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  El usuario no tiene un plan asignado. Selecciona "Otro motivo" o asígnale un plan primero.
+                </p>
+              )
+            ) : (
+              <>
+                <div>
+                  <Label>Concepto <span className="text-destructive">*</span></Label>
+                  <Input
+                    value={invoiceConcept}
+                    onChange={(e) => setInvoiceConcept(e.target.value)}
+                    placeholder="Ej: Suplementos, inscripción, membresía especial..."
+                    className="bg-input border-border"
+                  />
+                </div>
+                <div>
+                  <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={invoiceAmount}
+                    onChange={(e) => setInvoiceAmount(e.target.value)}
+                    placeholder="450"
+                    className="bg-input border-border"
+                  />
+                </div>
+                <div>
+                  <Label>Notas (Opcional)</Label>
+                  <Textarea
+                    value={invoiceNotes}
+                    onChange={(e) => setInvoiceNotes(e.target.value)}
+                    placeholder="Información adicional..."
+                    className="bg-input border-border"
+                    rows={3}
+                  />
+                </div>
+              </>
+            )}
+
             <div className="flex justify-end gap-2 pt-4">
               <Button
                 variant="outline"
@@ -1000,10 +1081,20 @@ export function UserDetail() {
               </Button>
               <Button
                 className="bg-primary hover:bg-primary/90"
-                onClick={() => generateInvoice(user)}
+                onClick={handleGenerateInvoice}
+                disabled={createInvoiceMutation.isPending || (invoiceType === 'plan' && !user?.plan_id)}
               >
-                <Download className="w-4 h-4 mr-2" />
-                Generar y Descargar
+                {createInvoiceMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generando...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    Generar Factura
+                  </>
+                )}
               </Button>
             </div>
           </div>

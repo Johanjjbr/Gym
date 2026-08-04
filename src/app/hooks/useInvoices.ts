@@ -28,6 +28,29 @@ export function useUserInvoices(userId: string) {
   });
 }
 
+export function useCreateInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      user_id: string;
+      source: 'plan' | 'other';
+      plan_id?: string;
+      concept?: string;
+      amount?: number;
+      due_date?: string;
+      notes?: string;
+    }) => invoices.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Factura generada exitosamente');
+    },
+    onError: (error: Error) => {
+      toast.error('Error al generar factura', { description: error.message });
+    },
+  });
+}
+
 export function usePayInvoice() {
   const queryClient = useQueryClient();
   return useMutation({

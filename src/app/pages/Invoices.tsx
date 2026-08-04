@@ -264,6 +264,7 @@ export function Invoices() {
                 <TableRow>
                   <TableHead>Factura</TableHead>
                   <TableHead>Usuario</TableHead>
+                  <TableHead>Concepto</TableHead>
                   <TableHead>Monto</TableHead>
                   <TableHead>Vencimiento</TableHead>
                   <TableHead>Método</TableHead>
@@ -276,6 +277,7 @@ export function Invoices() {
                   <TableRow key={inv.id}>
                     <TableCell className="font-mono text-sm">{inv.invoice_number}</TableCell>
                     <TableCell>{getUserName(inv.user_id)}</TableCell>
+                    <TableCell>{inv.concept || inv.plans?.name || '-'}</TableCell>
                     <TableCell><span className="text-primary font-semibold">Bs {Number(inv.amount).toLocaleString()}</span></TableCell>
                     <TableCell>{formatDate(inv.due_date)}</TableCell>
                     <TableCell>{inv.method || '-'}</TableCell>

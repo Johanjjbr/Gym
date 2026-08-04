@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { useInvoices, usePayInvoice } from './useInvoices'
+import { useInvoices, usePayInvoice, useCreateInvoice } from './useInvoices'
 import { TestWrapper } from '../../test/test-utils'
 import { server } from '../../test/mocks/server'
 import { http, HttpResponse } from 'msw'
@@ -58,6 +58,44 @@ describe('usePayInvoice', () => {
       await result.current.mutateAsync({
         id: 'inv-999',
         data: { method: 'Efectivo' },
+      })
+    } catch (e) {
+    }
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+  })
+})
+
+describe('useCreateInvoice', () => {
+  it('creates an invoice successfully', async () => {
+    const { result } = renderHook(() => useCreateInvoice(), { wrapper: TestWrapper })
+
+    await result.current.mutateAsync({
+      user_id: 'user-1',
+      source: 'other',
+      concept: 'Suplementos',
+      amount: 150,
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data?.id).toBe('new-inv-id')
+  })
+
+  it('handles create invoice error', async () => {
+    server.use(
+      http.post(`${API_BASE}/invoices`, () => {
+        return HttpResponse.json({ error: 'Concepto y monto son requeridos' }, { status: 400 })
+      })
+    )
+
+    const { result } = renderHook(() => useCreateInvoice(), { wrapper: TestWrapper })
+
+    try {
+      await result.current.mutateAsync({
+        user_id: 'user-1',
+        source: 'other',
+        concept: '',
+        amount: 0,
       })
     } catch (e) {
     }

@@ -10,6 +10,16 @@ afterEach(() => {
 })
 afterAll(() => server.close())
 
+if (!window.HTMLElement.prototype.hasPointerCapture) {
+  window.HTMLElement.prototype.hasPointerCapture = () => false
+  window.HTMLElement.prototype.setPointerCapture = () => {}
+  window.HTMLElement.prototype.releasePointerCapture = () => {}
+}
+
+if (!window.HTMLElement.prototype.scrollIntoView) {
+  window.HTMLElement.prototype.scrollIntoView = () => {}
+}
+
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({

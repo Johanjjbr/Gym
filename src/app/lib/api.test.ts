@@ -140,6 +140,24 @@ describe('API - Invoices', () => {
     expect(Array.isArray(data)).toBe(true)
   })
 
+  it('creates an invoice', async () => {
+    const newInvoice = {
+      user_id: 'user-1',
+      source: 'other',
+      concept: 'Suplementos',
+      amount: 150,
+    }
+    const response = await fetch(`${API_BASE}/invoices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newInvoice),
+    })
+    const data = await response.json()
+    expect(response.status).toBe(201)
+    expect(data.id).toBe('new-inv-id')
+    expect(data.concept).toBe('Suplementos')
+  })
+
   it('pays an invoice', async () => {
     const response = await fetch(`${API_BASE}/invoices/inv-2/pay`, { method: 'PUT' })
     expect(response.status).toBe(200)

@@ -474,6 +474,21 @@ export const invoices = {
     return apiRequest(`/users/${userId}/invoices`);
   },
 
+  create: async (data: {
+    user_id: string;
+    source: 'plan' | 'other';
+    plan_id?: string;
+    concept?: string;
+    amount?: number;
+    due_date?: string;
+    notes?: string;
+  }) => {
+    return apiRequest('/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   pay: async (id: string, data: {
     method: string;
     reference?: string;

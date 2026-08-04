@@ -160,27 +160,51 @@ app.get("/users/:id", async (c) => {
   }
 });
 
+const EMPTY_TO_NULL_FIELDS = [
+  'next_payment',
+  'gender',
+  'birth_date',
+  'photo',
+  'address',
+  'emergency_contact',
+  'notes',
+  'medical_notes',
+  'plan_id',
+];
+
+function normalizeUserPayload(userData: Record<string, unknown>) {
+  const normalized = { ...userData };
+  for (const field of EMPTY_TO_NULL_FIELDS) {
+    if (normalized[field] === '' || normalized[field] == null) {
+      normalized[field] = null;
+    }
+  }
+  return normalized;
+}
+
 app.post("/users", async (c) => {
   try {
-    const userData = await c.req.json();
+    const userData = normalizeUserPayload(await c.req.json());
     const memberNumber = `GYM-${Date.now().toString().slice(-6)}`;
     const { data, error } = await supabase.from('users').insert({ ...userData, member_number: memberNumber }).select().single();
     if (error) throw error;
     return c.json(data);
   } catch (error) {
-    return c.json({ error: 'Error creando usuario' }, 500);
+    console.error('Error creando usuario:', error);
+    return c.json({ error: 'Error creando usuario', details: error instanceof Error ? error.message : String(error) }, 500);
   }
 });
 
 app.put("/users/:id", async (c) => {
   try {
     const { id } = c.req.param();
-    const userData = await c.req.json();
+    const userData = normalizeUserPayload(await c.req.json());
     const { data, error } = await supabase.from('users').update(userData).eq('id', id).select().single();
     if (error) throw error;
     return c.json(data);
   } catch (error) {
-    return c.json({ error: 'Error actualizando usuario' }, 500);
+    console.error('Error actualizando usuario:', error);
+    return c.json({ error: 'Error actualizando usuario', details: error instanceof Error ? error.message : String(error) }, 500);
   }
 });
 
@@ -352,6 +376,55 @@ app.put("/invoices/:id/pay", async (c) => {
     return c.json(data);
   } catch (error) {
     return c.json({ error: 'Error registrando pago de factura' }, 500);
+  }
+});
+
+app.post("/invoices", async (c) => {
+  try {
+    const { user_id, source, plan_id, concept, amount, due_date, notes } = await c.req.json();
+    if (!user_id) return c.json({ error: 'user_id es requerido' }, 400);
+
+    let finalPlanId: string | null = null;
+    let finalAmount = amount;
+    let finalConcept = concept || '';
+
+    if (source === 'plan') {
+      const { data: user } = await supabase.from('users').select('id, plan_id').eq('id', user_id).single();
+      const effectivePlanId = plan_id || user?.plan_id;
+      if (!effectivePlanId) return c.json({ error: 'El usuario no tiene un plan asignado' }, 400);
+      const { data: plan } = await supabase.from('plans').select('id, name, price').eq('id', effectivePlanId).single();
+      if (!plan) return c.json({ error: 'Plan no encontrado' }, 404);
+      finalPlanId = plan.id;
+      finalAmount = plan.price;
+      finalConcept = plan.name;
+    } else {
+      if (!concept || !amount) {
+        return c.json({ error: 'Concepto y monto son requeridos para facturas por otro motivo' }, 400);
+      }
+    }
+
+    const { data: nextNumber } = await supabase.rpc('generate_invoice_number');
+    const invoiceNumber = nextNumber || `FAC-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+
+    const { data, error } = await supabase
+      .from('invoices')
+      .insert({
+        user_id,
+        plan_id: finalPlanId,
+        invoice_number: invoiceNumber,
+        amount: finalAmount,
+        due_date: due_date || new Date().toISOString(),
+        status: 'Pendiente',
+        concept: finalConcept,
+        notes: notes || null,
+      })
+      .select('*, plans(name)')
+      .single();
+    if (error) throw error;
+    return c.json(data);
+  } catch (error) {
+    console.error('Error creando factura:', error);
+    return c.json({ error: 'Error creando factura' }, 500);
   }
 });
 

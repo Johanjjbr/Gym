@@ -194,6 +194,11 @@ export const handlers = [
     return HttpResponse.json(mockInvoices)
   }),
 
+  http.post(`${API_BASE}/invoices`, async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ ...body as any, id: 'new-inv-id', invoice_number: 'FAC-2026-0001' }, { status: 201 })
+  }),
+
   http.get(`${API_BASE}/users/:userId/invoices`, ({ params }) => {
     const invoices = mockInvoices.filter((i) => i.user_id === params.userId)
     return HttpResponse.json(invoices)
