@@ -18,6 +18,7 @@ import { useUserInvoices, usePayInvoice } from '../hooks/useInvoices';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
 import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
+import { PaymentCalendar } from '../components/PaymentCalendar';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { formatDate } from '../lib/format';
@@ -410,6 +411,8 @@ export function UserDetail() {
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
+          <PaymentCalendar invoices={invoices} />
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Personal Info */}
             <Card className="bg-card border-border">
