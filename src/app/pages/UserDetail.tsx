@@ -143,6 +143,15 @@ export function UserDetail() {
   const userProgress = userPhysicalProgress || [];
   const invoices = userInvoices || [];
 
+  const hasPlanInvoiceForMonth = (month: string) =>
+    !!user?.plan_id &&
+    invoices.some(
+      (inv: any) =>
+        inv.plan_id === user.plan_id &&
+        typeof inv.due_date === 'string' &&
+        inv.due_date.startsWith(month),
+    );
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Activo':
@@ -189,6 +198,10 @@ export function UserDetail() {
     if (invoiceType === 'plan') {
       if (!user?.plan_id) {
         toast.error('El usuario no tiene un plan asignado');
+        return;
+      }
+      if (hasPlanInvoiceForMonth(invoiceMonth)) {
+        toast.error('Ya existe una factura del plan para este mes');
         return;
       }
       const planPrice = Number(userPlan?.price) || 0;
@@ -1083,6 +1096,12 @@ export function UserDetail() {
                       Se generará una factura pendiente por el plan actual. Puedes ajustar el monto si es necesario.
                     </p>
                   </div>
+                  {hasPlanInvoiceForMonth(invoiceMonth) && (
+                    <p className="text-sm text-destructive flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4" />
+                      Ya existe una factura del plan para este mes.
+                    </p>
+                  )}
                   <div>
                     <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
                     <Input
@@ -1147,7 +1166,9 @@ export function UserDetail() {
               <Button
                 className="bg-primary hover:bg-primary/90"
                 onClick={handleGenerateInvoice}
-                disabled={createInvoiceMutation.isPending || (invoiceType === 'plan' && !user?.plan_id)}
+                disabled={createInvoiceMutation.isPending ||
+                  (invoiceType === 'plan' && !user?.plan_id) ||
+                  (invoiceType === 'plan' && hasPlanInvoiceForMonth(invoiceMonth))}
               >
                 {createInvoiceMutation.isPending ? (
                   <>

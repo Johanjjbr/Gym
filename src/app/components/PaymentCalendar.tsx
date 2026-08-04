@@ -24,7 +24,7 @@ export function getPaidMonthKeys(invoices: any[]): Set<string> {
   if (!Array.isArray(invoices)) return paidMonths;
   for (const inv of invoices) {
     if (!inv || inv.status !== 'Pagada') continue;
-    const dateStr = inv.paid_at || inv.due_date;
+    const dateStr = inv.due_date || inv.paid_at;
     if (!dateStr) continue;
     const date = new Date(dateStr);
     if (Number.isNaN(date.getTime())) continue;

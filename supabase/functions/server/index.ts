@@ -397,6 +397,21 @@ app.post("/invoices", async (c) => {
       finalPlanId = plan.id;
       finalAmount = amount != null ? amount : plan.price;
       finalConcept = plan.name;
+
+      const finalDueDate = new Date(due_date || new Date().toISOString());
+      const monthStart = new Date(finalDueDate.getFullYear(), finalDueDate.getMonth(), 1).toISOString();
+      const nextMonthStart = new Date(finalDueDate.getFullYear(), finalDueDate.getMonth() + 1, 1).toISOString();
+      const { data: existing } = await supabase
+        .from('invoices')
+        .select('id')
+        .eq('user_id', user_id)
+        .eq('plan_id', finalPlanId)
+        .gte('due_date', monthStart)
+        .lt('due_date', nextMonthStart)
+        .maybeSingle();
+      if (existing) {
+        return c.json({ error: 'Ya existe una factura del plan para este mes' }, 400);
+      }
     } else {
       if (!concept || !amount) {
         return c.json({ error: 'Concepto y monto son requeridos para facturas por otro motivo' }, 400);
