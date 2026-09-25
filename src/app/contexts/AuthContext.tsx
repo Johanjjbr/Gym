@@ -11,13 +11,7 @@ interface AuthUser {
   phone: string;
   shift: string;
   status: string;
-  photo?: string;
   memberNumber?: string;
-  is_free_user?: boolean;
-  gym_id?: string;
-  gym_name?: string;
-  is_super_admin?: boolean;
-  can_share_routines?: boolean;
 }
 
 interface AuthContextType {
@@ -53,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Usuario regular
           const { data: regularUser, error: userError } = await supabase
             .from('users')
-            .select('id, name, email, phone, photo, member_number, status, is_free_user, gym_id, can_share_routines')
+            .select('id, name, email, phone, member_number, status')
             .eq('auth_user_id', session.user.id)
             .single();
 
@@ -66,11 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               role: 'Usuario' as UserRole,
               shift: '',
               status: regularUser.status || 'Activo',
-              photo: regularUser.photo || undefined,
               memberNumber: regularUser.member_number,
-              is_free_user: regularUser.is_free_user ?? false,
-              gym_id: regularUser.gym_id || undefined,
-              can_share_routines: regularUser.can_share_routines ?? false,
             };
             setUser(userData);
             localStorage.setItem('user', JSON.stringify(userData));
@@ -82,18 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Staff con sesión de Supabase
           const { data: staffUser, error: staffError } = await supabase
             .from('staff')
-            .select('*, gym:gyms!staff_gym_id_fkey(name)')
+            .select('*')
             .eq('email', session.user.email)
             .single();
 
           if (staffUser && !staffError) {
-            const enrichedUser = {
-              ...staffUser,
-              gym_name: staffUser.gym?.name || undefined,
-              gym: undefined,
-            };
-            setUser(enrichedUser);
-            localStorage.setItem('user', JSON.stringify(enrichedUser));
+            setUser(staffUser);
+            localStorage.setItem('user', JSON.stringify(staffUser));
             localStorage.setItem('access_token', session.access_token);
             setIsLoading(false);
             return;
@@ -153,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Obtener datos del usuario regular
           const { data: regularUser } = await supabase
             .from('users')
-            .select('id, name, email, phone, photo, member_number, status, is_free_user, gym_id, can_share_routines')
+            .select('id, name, email, phone, member_number, status')
             .eq('auth_user_id', authData.user.id)
             .single();
 
@@ -166,11 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               role: 'Usuario' as UserRole,
               shift: '',
               status: regularUser.status || 'Activo',
-              photo: regularUser.photo || undefined,
               memberNumber: regularUser.member_number,
-              is_free_user: regularUser.is_free_user ?? false,
-              gym_id: regularUser.gym_id || undefined,
-              can_share_routines: regularUser.can_share_routines ?? false,
             };
             
             setUser(userData);
@@ -184,15 +165,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const response = await api.auth.login(email, password);
         const userData = response.staff;
-        // Enriquecer con nombre del gym si tiene gym_id
-        if (userData.gym_id) {
-          const { data: gym } = await supabase
-            .from('gyms')
-            .select('name')
-            .eq('id', userData.gym_id)
-            .single();
-          userData.gym_name = gym?.name;
-        }
         setUser(userData);
       } catch (apiError: any) {
         // Si ambos métodos fallan, lanzar error

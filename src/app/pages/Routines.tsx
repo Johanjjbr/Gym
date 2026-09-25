@@ -1,17 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Plus, Eye, Trash2, Dumbbell, Calendar, Loader2, Edit, Users, Power, Play, Star, UserCircle, Building2, StickyNote, Trophy } from 'lucide-react';
-import { ExerciseDetailModal } from '../components/ExerciseDetailModal';
-import { useExercises, type Exercise } from '../hooks/useExercises';
+import { Search, Plus, Eye, Trash2, Dumbbell, Calendar, Loader2, Edit, Users, Power } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
-import { useRoutines, useDeleteRoutine, useRoutine, useRoutineAssignedUsers, useToggleRoutineActive, useRoutineStats, useRoutineRatings, useRateRoutine } from '../hooks/useRoutines';
+import { useRoutines, useDeleteRoutine, useRoutine, useRoutineAssignedUsers, useToggleRoutineActive } from '../hooks/useRoutines';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDate } from '../lib/format';
 
 type RoutineLevel = 'Principiante' | 'Intermedio' | 'Avanzado';
 
@@ -36,19 +33,10 @@ interface RoutineData {
   days_per_week: number;
   is_active: boolean;
   created_by: string;
-  created_by_user: string | null;
   created_at: string;
-  notes: string | null;
   creator?: {
     id: string;
     name: string;
-  };
-  creator_user?: {
-    id: string;
-    name: string;
-    gym_id: string | null;
-    is_free_user: boolean;
-    gym?: { name: string };
   };
   exercises?: Exercise[];
 }
@@ -68,21 +56,16 @@ export function Routines() {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingRoutineId, setViewingRoutineId] = useState<string | null>(null);
   const [viewingAssignedUsersRoutineId, setViewingAssignedUsersRoutineId] = useState<string | null>(null);
-  const [detailExercise, setDetailExercise] = useState<Exercise | null>(null);
 
   // Auth context
   const { user } = useAuth();
 
   // React Query Hooks
   const { data: routines = [], isLoading, error } = useRoutines();
-  const { data: allExercises = [] } = useExercises();
   const { data: viewingRoutine, isLoading: isLoadingRoutine } = useRoutine(viewingRoutineId || '');
   const { data: assignedUsers = [], isLoading: isLoadingAssignedUsers } = useRoutineAssignedUsers(viewingAssignedUsersRoutineId || '');
   const deleteRoutineMutation = useDeleteRoutine();
   const toggleRoutineActiveMutation = useToggleRoutineActive();
-  const { data: routineStats } = useRoutineStats(viewingRoutineId || '');
-  const { data: ratings } = useRoutineRatings(viewingRoutineId || '');
-  const rateRoutineMutation = useRateRoutine();
 
   const filteredRoutines = routines.filter((routine: RoutineData) =>
     routine.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -93,11 +76,11 @@ export function Routines() {
   const getLevelColor = (level: RoutineLevel) => {
     switch (level) {
       case 'Principiante':
-        return 'bg-primary/20 text-primary border-primary/30';
+        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
       case 'Intermedio':
         return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
       case 'Avanzado':
-        return 'bg-destructive/20 text-destructive border-destructive/30';
+        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
     }
   };
 
@@ -120,9 +103,9 @@ export function Routines() {
   if (error) {
     return (
       <div className="space-y-6">
-        <Card className="bg-card border-border">
+        <Card className="bg-gray-900 border-gray-800">
           <CardContent className="py-12 text-center">
-            <p className="text-destructive mb-2">Error al cargar las rutinas</p>
+            <p className="text-[#ff3b5c] mb-2">Error al cargar las rutinas</p>
             <p className="text-sm text-muted-foreground">{(error as Error).message}</p>
           </CardContent>
         </Card>
@@ -139,7 +122,7 @@ export function Routines() {
           <p className="text-muted-foreground">Crea y administra plantillas de entrenamiento</p>
         </div>
         <Button 
-          className="bg-primary text-primary-foreground hover:bg-primary/90" 
+          className="bg-[#10f94e] text-black hover:bg-[#0ed145]" 
           onClick={() => navigate('/rutinas/crear')}
         >
           <Plus className="w-4 h-4 mr-2" />
@@ -149,18 +132,18 @@ export function Routines() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-card border-border">
+        <Card className="bg-gray-900 border-gray-800">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <Dumbbell className="w-8 h-8 text-primary" />
+              <Dumbbell className="w-8 h-8 text-[#10f94e]" />
               <div>
                 <p className="text-sm text-muted-foreground">Total Rutinas</p>
-                <p className="text-3xl font-bold text-primary">{routines.length}</p>
+                <p className="text-3xl font-bold text-[#10f94e]">{routines.length}</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
+        <Card className="bg-gray-900 border-gray-800">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
               <Calendar className="w-8 h-8 text-blue-500" />
@@ -173,7 +156,7 @@ export function Routines() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
+        <Card className="bg-gray-900 border-gray-800">
           <CardContent className="p-6">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Principiante</p>
@@ -183,11 +166,11 @@ export function Routines() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
+        <Card className="bg-gray-900 border-gray-800">
           <CardContent className="p-6">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Avanzado</p>
-              <p className="text-3xl font-bold text-destructive">
+              <p className="text-3xl font-bold text-[#ff3b5c]">
                 {routines.filter((r: RoutineData) => r.level === 'Avanzado').length}
               </p>
             </div>
@@ -196,7 +179,7 @@ export function Routines() {
       </div>
 
       {/* Search */}
-      <Card className="bg-card border-border">
+      <Card className="bg-gray-900 border-gray-800">
         <CardContent className="pt-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
@@ -212,9 +195,9 @@ export function Routines() {
 
       {/* Loading State */}
       {isLoading && (
-        <Card className="bg-card border-border">
+        <Card className="bg-gray-900 border-gray-800">
           <CardContent className="py-12 text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#10f94e]" />
             <p className="text-muted-foreground">Cargando rutinas...</p>
           </CardContent>
         </Card>
@@ -226,7 +209,7 @@ export function Routines() {
           {filteredRoutines.map((routine: RoutineData) => (
             <Card 
               key={routine.id} 
-              className="bg-card border-border hover:border-primary/50 transition-colors"
+              className="bg-gray-900 border-gray-800 hover:border-[#10f94e]/50 transition-colors"
             >
               <CardHeader>
                 <div className="flex items-start justify-between mb-2">
@@ -255,13 +238,13 @@ export function Routines() {
                   </div>
                   <div>
                     <p className="text-muted-foreground">Estado</p>
-                    <p className={routine.is_active ? 'text-primary font-semibold' : 'text-muted-foreground'}>
+                    <p className={routine.is_active ? 'text-[#10f94e] font-semibold' : 'text-muted-foreground'}>
                       {routine.is_active ? 'Activa' : 'Inactiva'}
                     </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Creada</p>
-                    <p className="text-xs">{formatDate(routine.created_at)}</p>
+                    <p className="text-xs">{new Date(routine.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
 
@@ -271,11 +254,11 @@ export function Routines() {
                   </div>
                 )}
 
-                <div className="flex gap-2 pt-4 border-t border-border">
+                <div className="flex gap-2 pt-4 border-t border-gray-800">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 hover:bg-primary/10 hover:text-primary hover:border-primary"
+                    className="flex-1 hover:bg-[#10f94e]/10 hover:text-[#10f94e] hover:border-[#10f94e]"
                     onClick={() => setViewingRoutineId(routine.id)}
                   >
                     <Eye className="w-4 h-4 mr-2" />
@@ -287,7 +270,7 @@ export function Routines() {
                     title={routine.is_active ? 'Desactivar rutina' : 'Activar rutina'}
                     className={routine.is_active 
                       ? 'hover:bg-orange-500/10 hover:text-orange-500' 
-                      : 'hover:bg-primary/10 hover:text-primary'
+                      : 'hover:bg-[#10f94e]/10 hover:text-[#10f94e]'
                     }
                     onClick={() => toggleRoutineActiveMutation.mutate({ 
                       id: routine.id, 
@@ -320,12 +303,12 @@ export function Routines() {
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="hover:bg-destructive/10 hover:text-destructive"
+                        className="hover:bg-[#ff3b5c]/10 hover:text-[#ff3b5c]"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </AlertDialogTrigger>
-                    <AlertDialogContent className="bg-card border-border">
+                    <AlertDialogContent className="bg-gray-900 border-gray-800">
                       <AlertDialogHeader>
                         <AlertDialogTitle>Eliminar Rutina</AlertDialogTitle>
                         <AlertDialogDescription>
@@ -336,7 +319,7 @@ export function Routines() {
                         <AlertDialogCancel>Cancelar</AlertDialogCancel>
                         <AlertDialogAction 
                           onClick={() => onDeleteRoutine(routine)} 
-                          className="bg-destructive hover:bg-destructive/90"
+                          className="bg-[#ff3b5c] hover:bg-[#ff3b5c]/90"
                         >
                           Eliminar
                         </AlertDialogAction>
@@ -351,13 +334,13 @@ export function Routines() {
       )}
 
       {!isLoading && filteredRoutines.length === 0 && (
-        <Card className="bg-card border-border">
+        <Card className="bg-gray-900 border-gray-800">
           <CardContent className="py-12 text-center text-muted-foreground">
             <Dumbbell className="w-16 h-16 mx-auto mb-4 opacity-50" />
             <p className="text-lg mb-2">No se encontraron rutinas</p>
             <p className="text-sm">Crea una nueva rutina para comenzar</p>
             <Button 
-              className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90"
+              className="mt-4 bg-[#10f94e] text-black hover:bg-[#0ed145]"
               onClick={() => navigate('/rutinas/crear')}
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -369,16 +352,16 @@ export function Routines() {
 
       {/* View Routine Dialog */}
       <Dialog open={!!viewingRoutineId} onOpenChange={() => setViewingRoutineId(null)}>
-        <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-gray-900 border-gray-800 max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl text-primary">Detalle de la Rutina</DialogTitle>
+            <DialogTitle className="text-2xl text-[#10f94e]">Detalle de la Rutina</DialogTitle>
             <DialogDescription>
-              Visualiza toda la información, ejercicios y estadísticas de esta plantilla
+              Visualiza toda la información y ejercicios de esta plantilla de rutina
             </DialogDescription>
           </DialogHeader>
           {isLoadingRoutine && (
             <div className="py-12 text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#10f94e]" />
               <p className="text-muted-foreground">Cargando rutina...</p>
             </div>
           )}
@@ -400,8 +383,7 @@ export function Routines() {
 
               <p className="text-muted-foreground">{viewingRoutine.description}</p>
 
-              {/* Información y Estadísticas */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+              <div className="grid grid-cols-3 gap-4 p-4 bg-gray-800/50 rounded-lg">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Duración</p>
                   <p className="font-semibold">{viewingRoutine.duration_weeks} semanas</p>
@@ -412,120 +394,31 @@ export function Routines() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Estado</p>
-                  <p className={viewingRoutine.is_active ? 'text-primary font-semibold' : 'text-muted-foreground'}>
+                  <p className={viewingRoutine.is_active ? 'text-[#10f94e] font-semibold' : 'text-muted-foreground'}>
                     {viewingRoutine.is_active ? 'Activa' : 'Inactiva'}
                   </p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Asignada a</p>
-                  <p className="font-semibold flex items-center gap-1">
-                    <Users className="w-4 h-4 text-primary" />
-                    {routineStats?.assigned_count ?? 0} persona{routineStats?.assigned_count !== 1 ? 's' : ''}
-                  </p>
-                </div>
               </div>
-
-              {/* Creador */}
-              <div className="flex items-center justify-between p-4 bg-muted/40 rounded-lg border border-border">
-                <div className="flex items-center gap-3">
-                  <UserCircle className="w-10 h-10 text-primary opacity-70" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Creado por</p>
-                    <p className="font-semibold">
-                      {viewingRoutine.creator?.name || viewingRoutine.creator_user?.name || 'Desconocido'}
-                    </p>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      {viewingRoutine.creator_user?.gym ? (
-                        <>
-                          <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
-                          <p className="text-xs text-muted-foreground">
-                            {viewingRoutine.creator_user.gym.name}
-                          </p>
-                        </>
-                      ) : viewingRoutine.creator_user?.is_free_user ? (
-                        <p className="text-xs text-muted-foreground italic">
-                          Persona autónoma
-                        </p>
-                      ) : viewingRoutine.creator ? (
-                        <p className="text-xs text-muted-foreground">
-                          Staff del gimnasio
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Calificaciones */}
-              <div>
-                <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-1">
-                  <Star className="w-4 h-4 text-[#eab308]" />
-                  Calificaciones
-                </h3>
-                <div className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg">
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`w-6 h-6 cursor-pointer transition-colors ${
-                          star <= Math.round(routineStats?.avg_rating || 0)
-                            ? 'fill-[#eab308] text-[#eab308]'
-                            : 'text-muted-foreground hover:text-[#eab308]'
-                        }`}
-                        onClick={() => {
-                          if (user?.id && viewingRoutineId) {
-                            rateRoutineMutation.mutate({
-                              routineId: viewingRoutineId,
-                              userId: user.id,
-                              rating: star,
-                            });
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <div className="text-sm">
-                    <span className="font-bold text-lg">{routineStats?.avg_rating || 0}</span>
-                    <span className="text-muted-foreground"> / 5</span>
-                    <span className="text-muted-foreground ml-2">
-                      ({routineStats?.ratings_count || 0} calificación{routineStats?.ratings_count !== 1 ? 'es' : ''})
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Notas del creador */}
-              {viewingRoutine.notes && (
-                <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
-                  <h3 className="text-sm font-semibold text-primary flex items-center gap-1 mb-2">
-                    <StickyNote className="w-4 h-4" />
-                    Notas del creador
-                  </h3>
-                  <p className="text-sm whitespace-pre-line text-muted-foreground">
-                    {viewingRoutine.notes}
-                  </p>
-                </div>
-              )}
 
               {/* Ejercicios */}
               {viewingRoutine.exercises && viewingRoutine.exercises.length > 0 ? (
                 <div className="space-y-4">
-                  <h3 className="text-xl font-semibold text-primary">
+                  <h3 className="text-xl font-semibold text-[#10f94e]">
                     Ejercicios ({viewingRoutine.exercises.length})
                   </h3>
                   {Object.entries(getExercisesByDay(viewingRoutine.exercises)).map(([day, exercises]) => (
                     <div key={day} className="space-y-2">
-                      <h4 className="font-semibold text-lg border-b border-border pb-2">
+                      <h4 className="font-semibold text-lg border-b border-gray-800 pb-2">
                         {DAYS_MAP[parseInt(day)]} ({exercises.length} ejercicios)
                       </h4>
                       <div className="space-y-2">
                         {exercises.map((exercise, idx) => (
                           <div 
                             key={exercise.id}
-                            className="p-3 bg-muted/50 rounded-lg border border-border"
+                            className="p-3 bg-gray-800/50 rounded-lg border border-gray-700"
                           >
                             <div className="flex items-start gap-3">
-                              <span className="text-sm font-mono text-primary font-bold">
+                              <span className="text-sm font-mono text-[#10f94e] font-bold">
                                 #{idx + 1}
                               </span>
                               <div className="flex-1">
@@ -562,7 +455,7 @@ export function Routines() {
 
       {/* Assigned Users Dialog */}
       <Dialog open={!!viewingAssignedUsersRoutineId} onOpenChange={() => setViewingAssignedUsersRoutineId(null)}>
-        <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-gray-900 border-gray-800 max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl text-purple-500">Usuarios Asignados</DialogTitle>
             <DialogDescription>
@@ -586,7 +479,7 @@ export function Routines() {
                     {assignedUsers.map((assignment: any) => (
                       <div 
                         key={assignment.id}
-                        className="p-4 bg-muted/50 rounded-lg border border-border hover:border-purple-500/50 transition-colors"
+                        className="p-4 bg-gray-800/50 rounded-lg border border-gray-700 hover:border-purple-500/50 transition-colors"
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -597,7 +490,7 @@ export function Routines() {
                               <Badge 
                                 variant="outline" 
                                 className={assignment.is_active 
-                                  ? 'bg-primary/20 text-primary border-primary/30' 
+                                  ? 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30' 
                                   : 'bg-gray-500/20 text-gray-500 border-gray-500/30'
                                 }
                               >
@@ -608,13 +501,13 @@ export function Routines() {
                               <p>📧 {assignment.user?.email || 'Sin email'}</p>
                               {assignment.user?.phone && <p>📱 {assignment.user.phone}</p>}
                               <p className="mt-2">
-                                <span className="text-muted-foreground">Inicio:</span>{' '}
-                                {formatDate(assignment.start_date)}
+                                <span className="text-gray-400">Inicio:</span>{' '}
+                                {new Date(assignment.start_date).toLocaleDateString()}
                               </p>
                               {assignment.end_date && (
                                 <p>
-                                  <span className="text-muted-foreground">Fin:</span>{' '}
-                                  {formatDate(assignment.end_date)}
+                                  <span className="text-gray-400">Fin:</span>{' '}
+                                  {new Date(assignment.end_date).toLocaleDateString()}
                                 </p>
                               )}
                               {assignment.assigner && (

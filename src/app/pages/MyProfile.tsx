@@ -1,20 +1,15 @@
-import { useState } from 'react';
-import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Pencil } from 'lucide-react';
+import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUser } from '../hooks/useUsers';
 import { usePhysicalProgress } from '../hooks/usePhysicalProgress';
-import { EditProfileDialog } from '../components/EditProfileDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { formatDate } from '../lib/format';
 
 export function MyProfile() {
   const { user: authUser } = useAuth();
   const { data: user, isLoading: userLoading } = useUser(authUser?.id || '');
   const { data: progressData = [], isLoading: progressLoading } = usePhysicalProgress(authUser?.id || '');
-  const [editOpen, setEditOpen] = useState(false);
 
   if (userLoading || !user) {
     return (
@@ -30,7 +25,7 @@ export function MyProfile() {
   // Preparar datos para el gráfico de peso
   const weightChartData = progressData
     .map(p => ({
-      date: formatDate(p.date),
+      date: new Date(p.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
       peso: p.weight,
     }))
     .reverse();
@@ -44,19 +39,11 @@ export function MyProfile() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl mb-2">Mi Perfil</h1>
-          <p className="text-muted-foreground">
-            Información personal y estadísticas
-          </p>
-        </div>
-        {authUser?.is_free_user && (
-          <Button onClick={() => setEditOpen(true)} variant="outline" className="gap-2">
-            <Pencil className="w-4 h-4" />
-            Editar Perfil
-          </Button>
-        )}
+      <div>
+        <h1 className="text-3xl mb-2">Mi Perfil</h1>
+        <p className="text-muted-foreground">
+          Información personal y estadísticas
+        </p>
       </div>
 
       {/* Profile Card */}
@@ -105,14 +92,6 @@ export function MyProfile() {
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                  <Hash className="w-4 h-4" />
-                  <span>Cédula</span>
-                </div>
-                <p className="font-medium">{user.cedula || 'No registrada'}</p>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-muted-foreground text-sm">
                   <CreditCard className="w-4 h-4" />
                   <span>N° Miembro</span>
                 </div>
@@ -125,7 +104,11 @@ export function MyProfile() {
                   <span>Fecha de Inicio</span>
                 </div>
                 <p className="font-medium">
-                  {formatDate(user.startDate)}
+                  {new Date(user.startDate).toLocaleDateString('es-ES', { 
+                    day: 'numeric', 
+                    month: 'long', 
+                    year: 'numeric' 
+                  })}
                 </p>
               </div>
 
@@ -138,7 +121,7 @@ export function MyProfile() {
                   <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
                     user.status === 'Activo' 
                       ? 'bg-primary/10 text-primary' 
-                      : user.status === 'Suspendido'
+                      : user.status === 'Moroso'
                       ? 'bg-destructive/10 text-destructive'
                       : 'bg-muted text-muted-foreground'
                   }`}>
@@ -165,7 +148,11 @@ export function MyProfile() {
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Próximo Pago</p>
               <p className="text-lg font-medium">
-                {formatDate(user.nextPayment)}
+                {new Date(user.nextPayment).toLocaleDateString('es-ES', { 
+                  day: 'numeric', 
+                  month: 'long', 
+                  year: 'numeric' 
+                })}
               </p>
             </div>
             {user.trainer_name && (
@@ -186,7 +173,7 @@ export function MyProfile() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <p className="text-3xl font-bold">{(lastProgress?.weight ?? user.weight) ? `${(lastProgress?.weight ?? user.weight)} kg` : 'Sin datos'}</p>
+              <p className="text-3xl font-bold">{lastProgress?.weight || user.weight} kg</p>
               {weightChange !== 0 && (
                 <div className={`flex items-center gap-1 text-sm ${
                   weightChange < 0 ? 'text-primary' : 'text-destructive'
@@ -204,7 +191,7 @@ export function MyProfile() {
             <CardTitle className="text-base">Estatura</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{user.height ? `${user.height} cm` : 'Sin datos'}</p>
+            <p className="text-3xl font-bold">{user.height} cm</p>
           </CardContent>
         </Card>
 
@@ -269,16 +256,6 @@ export function MyProfile() {
       )}
 
       {/* Additional Stats */}
-      {user && (
-        <EditProfileDialog
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          user={{ id: user.id, name: user.name, phone: user.phone, weight: user.weight, height: user.height }}
-          isFreeUser={authUser?.is_free_user}
-          lastProgressDate={progressData.length > 0 ? progressData[0].date : null}
-        />
-      )}
-
       {lastProgress && (lastProgress.bodyFat || lastProgress.muscleMass) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {lastProgress.bodyFat && (

@@ -1,6 +1,7 @@
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
+import * as kv from "./kv_store.tsx";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const app = new Hono().basePath('/server');
@@ -48,24 +49,18 @@ app.get("/health", (c) => {
 
 app.post("/auth/signup", async (c) => {
   try {
-    const { email, password, name, role, phone, shift, gym_id } = await c.req.json();
+    const { email, password, name, role, phone, shift } = await c.req.json();
     const authToken = c.req.header('Authorization')?.split(' ')[1];
     if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
       const { data: currentUser } = await supabase.auth.getUser(authToken);
       if (currentUser.user) {
         const { data: currentStaff } = await supabase
           .from('staff')
-          .select('role, is_super_admin, gym_id')
+          .select('role')
           .eq('auth_user_id', currentUser.user.id)
           .single();
         if (!currentStaff || currentStaff.role !== 'Administrador') {
           return c.json({ error: 'Solo administradores pueden crear usuarios de staff' }, 403);
-        }
-        // Si no es super admin, forzar gym_id al mismo del admin
-        if (!currentStaff.is_super_admin) {
-          if (gym_id && gym_id !== currentStaff.gym_id) {
-            return c.json({ error: 'No puedes crear personal para otro gimnasio' }, 403);
-          }
         }
       }
     }
@@ -74,7 +69,7 @@ app.post("/auth/signup", async (c) => {
     });
     if (authError) return c.json({ error: authError.message }, 400);
     const { data: staffData, error: staffError } = await supabase
-      .from('staff').insert({ auth_user_id: authData.user.id, name, role, email, phone, shift: shift || 'No asignado', status: 'Activo', gym_id: gym_id || null }).select().single();
+      .from('staff').insert({ auth_user_id: authData.user.id, name, role, email, phone, shift: shift || 'No asignado', status: 'Activo' }).select().single();
     if (staffError) { await supabase.auth.admin.deleteUser(authData.user.id); return c.json({ error: staffError.message }, 400); }
     return c.json({ message: 'Usuario creado exitosamente', user: authData.user, staff: staffData });
   } catch (error) {
@@ -135,11 +130,8 @@ app.post("/auth/logout", async (c) => {
 
 app.get("/users", async (c) => {
   try {
-    const gymId = c.req.query('gym_id');
-    let query = supabase
-      .from('users').select('*, trainer:staff!users_assigned_trainer_fkey (id, name, role)');
-    if (gymId) query = query.eq('gym_id', gymId);
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('users').select('*, trainer:staff!users_assigned_trainer_fkey (id, name, role)').order('created_at', { ascending: false });
     if (error) throw error;
     const formattedData = data?.map(user => ({ ...user, trainer_name: user.trainer?.name || null, trainer: undefined }));
     return c.json(formattedData);
@@ -160,51 +152,27 @@ app.get("/users/:id", async (c) => {
   }
 });
 
-const EMPTY_TO_NULL_FIELDS = [
-  'next_payment',
-  'gender',
-  'birth_date',
-  'photo',
-  'address',
-  'emergency_contact',
-  'notes',
-  'medical_notes',
-  'plan_id',
-];
-
-function normalizeUserPayload(userData: Record<string, unknown>) {
-  const normalized = { ...userData };
-  for (const field of EMPTY_TO_NULL_FIELDS) {
-    if (normalized[field] === '' || normalized[field] == null) {
-      normalized[field] = null;
-    }
-  }
-  return normalized;
-}
-
 app.post("/users", async (c) => {
   try {
-    const userData = normalizeUserPayload(await c.req.json());
+    const userData = await c.req.json();
     const memberNumber = `GYM-${Date.now().toString().slice(-6)}`;
     const { data, error } = await supabase.from('users').insert({ ...userData, member_number: memberNumber }).select().single();
     if (error) throw error;
     return c.json(data);
   } catch (error) {
-    console.error('Error creando usuario:', error);
-    return c.json({ error: 'Error creando usuario', details: error instanceof Error ? error.message : String(error) }, 500);
+    return c.json({ error: 'Error creando usuario' }, 500);
   }
 });
 
 app.put("/users/:id", async (c) => {
   try {
     const { id } = c.req.param();
-    const userData = normalizeUserPayload(await c.req.json());
+    const userData = await c.req.json();
     const { data, error } = await supabase.from('users').update(userData).eq('id', id).select().single();
     if (error) throw error;
     return c.json(data);
   } catch (error) {
-    console.error('Error actualizando usuario:', error);
-    return c.json({ error: 'Error actualizando usuario', details: error instanceof Error ? error.message : String(error) }, 500);
+    return c.json({ error: 'Error actualizando usuario' }, 500);
   }
 });
 
@@ -241,7 +209,7 @@ app.post("/users/:id/assign-trainer", async (c) => {
 app.get("/trainers", async (c) => {
   try {
     const { data, error } = await supabase
-      .from('staff').select('id, name, email, phone, shift, status, gym_id').eq('role', 'Entrenador').eq('status', 'Activo').order('name');
+      .from('staff').select('id, name, email, phone, shift, status').eq('role', 'Entrenador').eq('status', 'Activo').order('name');
     if (error) throw error;
     return c.json(data);
   } catch (error) {
@@ -252,7 +220,7 @@ app.get("/trainers", async (c) => {
 app.get("/users/without-trainer", async (c) => {
   try {
     const { data, error } = await supabase
-      .from('users').select('id, name, email, phone, member_number, status, plan, plan_id').is('assigned_trainer', null).eq('status', 'Activo').order('created_at', { ascending: false });
+      .from('users').select('id, name, email, phone, member_number, status, plan').is('assigned_trainer', null).eq('status', 'Activo').order('created_at', { ascending: false });
     if (error) throw error;
     return c.json(data);
   } catch (error) {
@@ -260,213 +228,50 @@ app.get("/users/without-trainer", async (c) => {
   }
 });
 
-app.get("/plans", async (c) => {
+app.get("/payments", async (c) => {
   try {
-    const { data, error } = await supabase.from('plans').select('*').order('name');
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo planes' }, 500);
-  }
-});
-
-app.post("/plans", async (c) => {
-  try {
-    const planData = await c.req.json();
-    const { data, error } = await supabase.from('plans').insert(planData).select().single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error creando plan' }, 500);
-  }
-});
-
-app.put("/plans/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const planData = await c.req.json();
-    const { data, error } = await supabase.from('plans').update(planData).eq('id', id).select().single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error actualizando plan' }, 500);
-  }
-});
-
-app.delete("/plans/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const { count: userCount } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('plan_id', id);
-    if (userCount && userCount > 0) {
-      return c.json({ error: 'No se puede eliminar el plan porque tiene usuarios asignados' }, 400);
-    }
-    const { error } = await supabase.from('plans').delete().eq('id', id);
-    if (error) throw error;
-    return c.json({ message: 'Plan eliminado' });
-  } catch (error) {
-    return c.json({ error: 'Error eliminando plan' }, 500);
-  }
-});
-
-app.get("/invoices", async (c) => {
-  try {
-    const { user_id, status, gym_id } = c.req.query();
-    let query = supabase.from('invoices').select('*, users!inner (name, member_number, gym_id), plans (name)');
+    const { user_id } = c.req.query();
+    let query = supabase.from('payments').select('*, users (name, member_number)').order('date', { ascending: false });
     if (user_id) query = query.eq('user_id', user_id);
-    if (status) query = query.eq('status', status);
-    if (gym_id) query = query.eq('users.gym_id', gym_id);
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data, error } = await query;
     if (error) throw error;
     return c.json(data);
   } catch (error) {
-    return c.json({ error: 'Error obteniendo facturas' }, 500);
+    return c.json({ error: 'Error obteniendo pagos' }, 500);
   }
 });
 
-app.get("/users/:userId/invoices", async (c) => {
+app.get("/users/:userId/payments", async (c) => {
   try {
     const userId = c.req.param('userId');
     const { data, error } = await supabase
-      .from('invoices').select('*, plans (name)').eq('user_id', userId).order('created_at', { ascending: false });
+      .from('payments').select('*, users (name, member_number)').eq('user_id', userId).order('date', { ascending: false });
     if (error) throw error;
     return c.json(data || []);
   } catch (error) {
-    return c.json({ error: 'Error obteniendo facturas del usuario' }, 500);
+    return c.json({ error: 'Error obteniendo pagos del usuario' }, 500);
   }
 });
 
-app.put("/invoices/:id/pay", async (c) => {
+app.post("/payments", async (c) => {
   try {
-    const { id } = c.req.param();
-    const { method, reference, notes } = await c.req.json();
-    
-    const { data: invoice, error: getError } = await supabase
-      .from('invoices').select('*, plans(name)').eq('id', id).single();
-    if (getError) throw getError;
-    if (!invoice) return c.json({ error: 'Factura no encontrada' }, 404);
-    if (invoice.status === 'Pagada') return c.json({ error: 'La factura ya está pagada' }, 400);
-
-    const paidAt = new Date().toISOString();
-    
-    const { data, error: updateError } = await supabase
-      .from('invoices').update({ 
-        status: 'Pagada', paid_at: paidAt, method, reference, notes 
-      }).eq('id', id).select('*, users (name, member_number), plans (name)').single();
-    if (updateError) throw updateError;
-
-    const planId = invoice.plan_id;
-    if (planId) {
-      const { data: plan } = await supabase.from('plans').select('duration_days').eq('id', planId).single();
-      if (plan) {
-        const { data: user } = await supabase.from('users').select('plan_id').eq('id', invoice.user_id).single();
-        const effectivePlanId = user?.plan_id || planId;
-        if (effectivePlanId) {
-          const { data: effectivePlan } = await supabase.from('plans').select('duration_days').eq('id', effectivePlanId).single();
-          if (effectivePlan) {
-            const nextPayment = new Date();
-            nextPayment.setDate(nextPayment.getDate() + effectivePlan.duration_days);
-            await supabase.from('users').update({ 
-              next_payment: nextPayment.toISOString(), status: 'Activo', updated_at: new Date().toISOString() 
-            }).eq('id', invoice.user_id);
-          }
-        }
-      }
+    const paymentData = await c.req.json();
+    const { data, error } = await supabase.from('payments').insert(paymentData).select().single();
+    if (error) throw error;
+    if (paymentData.user_id && paymentData.next_payment) {
+      await supabase.from('users').update({ next_payment: paymentData.next_payment, status: 'Activo' }).eq('id', paymentData.user_id);
     }
-    
     return c.json(data);
   } catch (error) {
-    return c.json({ error: 'Error registrando pago de factura' }, 500);
-  }
-});
-
-app.post("/invoices", async (c) => {
-  try {
-    const { user_id, source, plan_id, concept, amount, due_date, notes } = await c.req.json();
-    if (!user_id) return c.json({ error: 'user_id es requerido' }, 400);
-
-    let finalPlanId: string | null = null;
-    let finalAmount = amount;
-    let finalConcept = concept || '';
-
-    if (source === 'plan') {
-      const { data: user } = await supabase.from('users').select('id, plan_id').eq('id', user_id).single();
-      const effectivePlanId = plan_id || user?.plan_id;
-      if (!effectivePlanId) return c.json({ error: 'El usuario no tiene un plan asignado' }, 400);
-      const { data: plan } = await supabase.from('plans').select('id, name, price').eq('id', effectivePlanId).single();
-      if (!plan) return c.json({ error: 'Plan no encontrado' }, 404);
-      finalPlanId = plan.id;
-      finalAmount = amount != null ? amount : plan.price;
-      finalConcept = plan.name;
-
-      const finalDueDate = new Date(due_date || new Date().toISOString());
-      const monthStart = new Date(finalDueDate.getFullYear(), finalDueDate.getMonth(), 1).toISOString();
-      const nextMonthStart = new Date(finalDueDate.getFullYear(), finalDueDate.getMonth() + 1, 1).toISOString();
-      const { data: existing } = await supabase
-        .from('invoices')
-        .select('id')
-        .eq('user_id', user_id)
-        .eq('plan_id', finalPlanId)
-        .gte('due_date', monthStart)
-        .lt('due_date', nextMonthStart)
-        .maybeSingle();
-      if (existing) {
-        return c.json({ error: 'Ya existe una factura del plan para este mes' }, 400);
-      }
-    } else {
-      if (!concept || !amount) {
-        return c.json({ error: 'Concepto y monto son requeridos para facturas por otro motivo' }, 400);
-      }
-    }
-
-    const { data: nextNumber } = await supabase.rpc('generate_invoice_number');
-    const invoiceNumber = nextNumber || `FAC-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
-
-    const { data, error } = await supabase
-      .from('invoices')
-      .insert({
-        user_id,
-        plan_id: finalPlanId,
-        invoice_number: invoiceNumber,
-        amount: finalAmount,
-        due_date: due_date || new Date().toISOString(),
-        status: 'Pendiente',
-        concept: finalConcept,
-        notes: notes || null,
-      })
-      .select('*, plans(name)')
-      .single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    console.error('Error creando factura:', error);
-    return c.json({ error: 'Error creando factura' }, 500);
-  }
-});
-
-app.delete("/invoices/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const { data: invoice, error: getError } = await supabase
-      .from('invoices').select('id').eq('id', id).maybeSingle();
-    if (getError) throw getError;
-    if (!invoice) return c.json({ error: 'Factura no encontrada' }, 404);
-    const { error } = await supabase.from('invoices').delete().eq('id', id);
-    if (error) throw error;
-    return c.json({ message: 'Factura eliminada' });
-  } catch (error) {
-    return c.json({ error: 'Error eliminando factura' }, 500);
+    return c.json({ error: 'Error creando pago' }, 500);
   }
 });
 
 app.get("/staff", async (c) => {
   try {
-    const { data, error } = await supabase
-      .from('staff')
-      .select('*, gym:gyms!staff_gym_id_fkey(name)')
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('staff').select('*').order('created_at', { ascending: false });
     if (error) throw error;
-    const enriched = data?.map(s => ({ ...s, gym_name: s.gym?.name || null, gym: undefined }));
-    return c.json(enriched);
+    return c.json(data);
   } catch (error) {
     return c.json({ error: 'Error obteniendo staff' }, 500);
   }
@@ -475,13 +280,9 @@ app.get("/staff", async (c) => {
 app.get("/staff/:id", async (c) => {
   try {
     const { id } = c.req.param();
-    const { data, error } = await supabase
-      .from('staff')
-      .select('*, gym:gyms!staff_gym_id_fkey(name)')
-      .eq('id', id)
-      .single();
+    const { data, error } = await supabase.from('staff').select('*').eq('id', id).single();
     if (error) throw error;
-    return c.json({ ...data, gym_name: data.gym?.name || null, gym: undefined });
+    return c.json(data);
   } catch (error) {
     return c.json({ error: 'Error obteniendo staff' }, 500);
   }
@@ -489,22 +290,19 @@ app.get("/staff/:id", async (c) => {
 
 app.post("/staff", async (c) => {
   try {
-    const { email, password, name, role, phone, shift, gym_id } = await c.req.json();
+    const { email, password, name, role, phone, shift } = await c.req.json();
     const authToken = c.req.header('Authorization')?.split(' ')[1];
     if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
       const { data: currentUser } = await supabase.auth.getUser(authToken);
       if (currentUser.user) {
-        const { data: currentStaff } = await supabase.from('staff').select('role, is_super_admin, gym_id').eq('auth_user_id', currentUser.user.id).single();
+        const { data: currentStaff } = await supabase.from('staff').select('role').eq('auth_user_id', currentUser.user.id).single();
         if (!currentStaff || currentStaff.role !== 'Administrador') return c.json({ error: 'Solo administradores pueden crear usuarios de staff' }, 403);
-        if (!currentStaff.is_super_admin && gym_id && gym_id !== currentStaff.gym_id) {
-          return c.json({ error: 'No puedes crear personal para otro gimnasio' }, 403);
-        }
       }
     }
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name, role } });
     if (authError) return c.json({ error: authError.message }, 400);
     const { data: staffData, error: staffError } = await supabase
-      .from('staff').insert({ auth_user_id: authData.user.id, name, role, email, phone, shift: shift || 'No asignado', status: 'Activo', gym_id: gym_id || null }).select().single();
+      .from('staff').insert({ auth_user_id: authData.user.id, name, role, email, phone, shift: shift || 'No asignado', status: 'Activo' }).select().single();
     if (staffError) { await supabase.auth.admin.deleteUser(authData.user.id); return c.json({ error: staffError.message }, 400); }
     return c.json(staffData);
   } catch (error) {
@@ -540,53 +338,14 @@ app.delete("/staff/:id", async (c) => {
 
 app.get("/attendance", async (c) => {
   try {
-    const { date, user_id } = c.req.query();
+    const { date } = c.req.query();
     let query = supabase.from('attendance').select('*, users (name, member_number)').order('created_at', { ascending: false });
     if (date) query = query.eq('date', date);
-    if (user_id) query = query.eq('user_id', user_id);
     const { data, error } = await query;
     if (error) throw error;
     return c.json(data);
   } catch (error) {
     return c.json({ error: 'Error obteniendo asistencia' }, 500);
-  }
-});
-
-app.get("/physical-progress", async (c) => {
-  try {
-    const { user_id } = c.req.query();
-    let query = supabase.from('physical_progress').select('*').order('date', { ascending: false });
-    if (user_id) query = query.eq('user_id', user_id);
-    const { data, error } = await query;
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo progreso físico' }, 500);
-  }
-});
-
-app.post("/physical-progress", async (c) => {
-  try {
-    const progressData = await c.req.json();
-    const { data, error } = await supabase.from('physical_progress').insert([{
-      ...progressData,
-      date: progressData.date || new Date().toISOString(),
-    }]).select().single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error registrando progreso físico' }, 500);
-  }
-});
-
-app.delete("/physical-progress/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const { error } = await supabase.from('physical_progress').delete().eq('id', id);
-    if (error) throw error;
-    return c.json({ message: 'Registro eliminado' });
-  } catch (error) {
-    return c.json({ error: 'Error eliminando registro de progreso' }, 500);
   }
 });
 
@@ -674,66 +433,6 @@ app.delete("/routines/:id", async (c) => {
   }
 });
 
-app.get("/routines/:id/stats", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const { count: assignedCount, error: countError } = await supabase
-      .from('user_routine_assignments')
-      .select('id', { count: 'exact', head: true })
-      .eq('routine_id', id)
-      .eq('is_active', true);
-    if (countError) throw countError;
-
-    const { data: ratingData, error: ratingError } = await supabase
-      .from('routine_ratings')
-      .select('rating')
-      .eq('routine_id', id);
-    if (ratingError) throw ratingError;
-
-    const avgRating = ratingData.length > 0
-      ? ratingData.reduce((sum: number, r: any) => sum + r.rating, 0) / ratingData.length
-      : 0;
-
-    return c.json({
-      assigned_count: assignedCount || 0,
-      avg_rating: Math.round(avgRating * 10) / 10,
-      ratings_count: ratingData.length,
-    });
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo estadísticas' }, 500);
-  }
-});
-
-app.get("/routines/:id/ratings", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const { data, error } = await supabase
-      .from('routine_ratings')
-      .select('id, user_id, rating, created_at')
-      .eq('routine_id', id);
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo calificaciones' }, 500);
-  }
-});
-
-app.post("/routines/:id/ratings", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const { user_id, rating } = await c.req.json();
-    const { data, error } = await supabase
-      .from('routine_ratings')
-      .upsert({ routine_id: id, user_id, rating }, { onConflict: 'routine_id,user_id' })
-      .select()
-      .single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error registrando calificación' }, 500);
-  }
-});
-
 app.get("/exercises", async (c) => {
   try {
     const { data, error } = await supabase.from('exercises').select('*').order('name');
@@ -817,39 +516,15 @@ app.post("/routine-assignments", async (c) => {
 
 app.get("/stats", async (c) => {
   try {
-    const gymId = c.req.query('gym_id');
-    let usersQuery = supabase.from('users').select('*', { count: 'exact', head: true });
-    let activeQuery = supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
-    let suspendedQuery = supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Suspendido');
-    let staffQuery = supabase.from('staff').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
-
-    if (gymId) {
-      usersQuery = usersQuery.eq('gym_id', gymId);
-      activeQuery = activeQuery.eq('gym_id', gymId);
-      suspendedQuery = suspendedQuery.eq('gym_id', gymId);
-      staffQuery = staffQuery.eq('gym_id', gymId);
-    }
-
-    const { count: totalUsers } = await usersQuery;
-    const { count: activeUsers } = await activeQuery;
-    const { count: delinquentUsers } = await suspendedQuery;
-    const { count: totalStaff } = await staffQuery;
-
+    const { count: totalUsers } = await supabase.from('users').select('*', { count: 'exact', head: true });
+    const { count: activeUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
+    const { count: delinquentUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('status', 'Moroso');
     const firstDayOfMonth = new Date(); firstDayOfMonth.setDate(1); firstDayOfMonth.setHours(0, 0, 0, 0);
-    let invQuery = supabase.from('invoices').select('amount').eq('status', 'Pagada').gte('paid_at', firstDayOfMonth.toISOString());
-    if (gymId) {
-      invQuery = invQuery.in('user_id', (await supabase.from('users').select('id').eq('gym_id', gymId)).data?.map(u => u.id) || []);
-    }
-    const { data: monthlyInvoices } = await invQuery;
-    const monthlyRevenue = monthlyInvoices?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
-
+    const { data: monthlyPayments } = await supabase.from('payments').select('amount').eq('status', 'Pagado').gte('date', firstDayOfMonth.toISOString());
+    const monthlyRevenue = monthlyPayments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
     const today = new Date().toISOString().split('T')[0];
-    let attQuery = supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('date', today).eq('type', 'Entrada');
-    if (gymId) {
-      attQuery = attQuery.in('user_id', (await supabase.from('users').select('id').eq('gym_id', gymId)).data?.map(u => u.id) || []);
-    }
-    const { count: todayAttendance } = await attQuery;
-
+    const { count: todayAttendance } = await supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('date', today).eq('type', 'Entrada');
+    const { count: totalStaff } = await supabase.from('staff').select('*', { count: 'exact', head: true }).eq('status', 'Activo');
     return c.json({ totalUsers: totalUsers || 0, activeUsers: activeUsers || 0, delinquentUsers: delinquentUsers || 0, monthlyRevenue, todayAttendance: todayAttendance || 0, totalStaff: totalStaff || 0 });
   } catch (error) {
     return c.json({ error: 'Error obteniendo estadísticas' }, 500);
@@ -875,11 +550,11 @@ app.post("/seed", async (c) => {
       } else { console.log(`⏭️  Staff ya existe: ${staffData.email}`); }
     }
     const members = [
-      { member_number: 'GYM-001', cedula: 'V-12345678', name: 'Carlos Rodríguez', email: 'carlos@example.com', phone: '0414-1234567', status: 'Activo', plan: 'Plan Mensual', start_date: '2025-02-01', next_payment: '2025-03-01', weight: 75.5, height: 1.75, imc: 24.65 },
-      { member_number: 'GYM-002', cedula: 'V-23456789', name: 'María González', email: 'maria@example.com', phone: '0424-2345678', status: 'Activo', plan: 'Plan Trimestral', start_date: '2025-01-15', next_payment: '2025-04-15', weight: 62.0, height: 1.65, imc: 22.77 },
-      { member_number: 'GYM-003', cedula: 'V-34567890', name: 'José Pérez', email: 'jose@example.com', phone: '0412-3456789', status: 'Suspendido', plan: 'Plan Mensual', start_date: '2024-12-01', next_payment: '2025-02-01', weight: 80.0, height: 1.80, imc: 24.69 },
-      { member_number: 'GYM-004', cedula: 'V-45678901', name: 'Ana Martínez', email: 'ana@example.com', phone: '0426-4567890', status: 'Activo', plan: 'Plan Anual', start_date: '2025-01-01', next_payment: '2026-01-01', weight: 58.5, height: 1.62, imc: 22.30 },
-      { member_number: 'GYM-005', cedula: 'V-56789012', name: 'Luis Hernández', email: 'luis@example.com', phone: '0414-5678901', status: 'Inactivo', plan: 'Plan Mensual', start_date: '2024-11-15', next_payment: '2024-12-15', weight: 88.0, height: 1.78, imc: 27.76 }
+      { member_number: 'GYM-001', name: 'Carlos Rodríguez', email: 'carlos@example.com', phone: '0414-1234567', status: 'Activo', plan: 'Plan Mensual', start_date: '2025-02-01', next_payment: '2025-03-01', weight: 75.5, height: 1.75, imc: 24.65 },
+      { member_number: 'GYM-002', name: 'María González', email: 'maria@example.com', phone: '0424-2345678', status: 'Activo', plan: 'Plan Trimestral', start_date: '2025-01-15', next_payment: '2025-04-15', weight: 62.0, height: 1.65, imc: 22.77 },
+      { member_number: 'GYM-003', name: 'José Pérez', email: 'jose@example.com', phone: '0412-3456789', status: 'Moroso', plan: 'Plan Mensual', start_date: '2024-12-01', next_payment: '2025-02-01', weight: 80.0, height: 1.80, imc: 24.69 },
+      { member_number: 'GYM-004', name: 'Ana Martínez', email: 'ana@example.com', phone: '0426-4567890', status: 'Activo', plan: 'Plan Anual', start_date: '2025-01-01', next_payment: '2026-01-01', weight: 58.5, height: 1.62, imc: 22.30 },
+      { member_number: 'GYM-005', name: 'Luis Hernández', email: 'luis@example.com', phone: '0414-5678901', status: 'Inactivo', plan: 'Plan Mensual', start_date: '2024-11-15', next_payment: '2024-12-15', weight: 88.0, height: 1.78, imc: 27.76 }
     ];
     const createdMembers = [];
     for (const memberData of members) {
@@ -890,266 +565,15 @@ app.post("/seed", async (c) => {
       }
     }
     if (createdMembers.length > 0) {
-      for (const member of createdMembers) {
-        if (!member.id || !member.next_payment) continue;
-        const { data: plan } = await supabase.from('plans').select('id, price').eq('name', 'Mensual').maybeSingle();
-        if (!plan) continue;
-        const invoiceNumber = 'FAC-2025-' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
-        await supabase.from('invoices').insert({
-          user_id: member.id,
-          plan_id: plan.id,
-          invoice_number: invoiceNumber,
-          amount: plan.price,
-          due_date: member.next_payment,
-          paid_at: member.start_date,
-          status: 'Pagada',
-          method: 'Efectivo',
-        });
-      }
+      const payments = [
+        { user_id: createdMembers[0]?.id, amount: 50.00, date: '2025-02-01', next_payment: '2025-03-01', status: 'Pagado', method: 'Efectivo' },
+        { user_id: createdMembers[1]?.id, amount: 135.00, date: '2025-01-15', next_payment: '2025-04-15', status: 'Pagado', method: 'Transferencia' }
+      ];
+      for (const payment of payments) { if (payment.user_id) await supabase.from('payments').insert(payment); }
     }
     return c.json({ success: true, message: 'Seed completado exitosamente', created: { staff: createdStaff.length, members: createdMembers.length }, credentials: { admin: 'admin@gymteques.com / Admin123!', trainer: 'trainer@gymteques.com / Trainer123!', reception: 'recepcion@gymteques.com / Recepcion123!' } });
   } catch (error) {
     return c.json({ error: 'Error ejecutando seed' }, 500);
-  }
-});
-
-// =============================================
-// GIMNASIOS (Gym Settings)
-// =============================================
-
-app.get("/gyms", async (c) => {
-  try {
-    const includeInactive = c.req.query('include_inactive') === 'true';
-    let query = supabase.from('gyms').select('*').order('name');
-    if (!includeInactive) query = query.eq('is_active', true);
-    const { data, error } = await query;
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo gimnasios' }, 500);
-  }
-});
-
-app.get("/gyms/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const { data, error } = await supabase.from('gyms').select('*').eq('id', id).single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo gimnasio' }, 500);
-  }
-});
-
-app.post("/gyms", async (c) => {
-  try {
-    const authToken = c.req.header('Authorization')?.split(' ')[1];
-    let currentStaff: any = null;
-    if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
-      const { data: currentUser } = await supabase.auth.getUser(authToken);
-      if (currentUser.user) {
-        const { data: staff } = await supabase.from('staff').select('role, is_super_admin, id').eq('auth_user_id', currentUser.user.id).single();
-        currentStaff = staff;
-        if (!staff || !staff.is_super_admin) {
-          return c.json({ error: 'Solo el super admin puede crear gimnasios' }, 403);
-        }
-      }
-    }
-    const gymData = await c.req.json();
-    const { data, error } = await supabase.from('gyms').insert({ ...gymData, is_active: true }).select().single();
-    if (error) throw error;
-    // Auto-asignar el gym al super admin que lo creó
-    if (currentStaff) {
-      await supabase.from('admin_gyms').insert({ staff_id: currentStaff.id, gym_id: data.id }).select().single();
-    }
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error creando gimnasio' }, 500);
-  }
-});
-
-app.put("/gyms/:id", async (c) => {
-  try {
-    const { id } = c.req.param();
-    const authToken = c.req.header('Authorization')?.split(' ')[1];
-    if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
-      const { data: currentUser } = await supabase.auth.getUser(authToken);
-      if (currentUser.user) {
-        const { data: currentStaff } = await supabase.from('staff').select('role, is_super_admin, gym_id').eq('auth_user_id', currentUser.user.id).single();
-        if (!currentStaff || currentStaff.role !== 'Administrador') {
-          return c.json({ error: 'Solo administradores pueden modificar gimnasios' }, 403);
-        }
-        if (!currentStaff.is_super_admin && id !== currentStaff.gym_id) {
-          return c.json({ error: 'No puedes modificar un gimnasio que no te pertenece' }, 403);
-        }
-      }
-    }
-    const gymData = await c.req.json();
-    const { data, error } = await supabase.from('gyms').update({ ...gymData, updated_at: new Date().toISOString() }).eq('id', id).select().single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error actualizando gimnasio' }, 500);
-  }
-});
-
-// =============================================
-// RESEÑAS DE GIMNASIOS
-// =============================================
-
-app.get("/gym-reviews/:gymId", async (c) => {
-  try {
-    const gymId = c.req.param('gymId');
-    const { data, error } = await supabase
-      .from('gym_reviews')
-      .select('*, users(name)')
-      .eq('gym_id', gymId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return c.json(data || []);
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo reseñas' }, 500);
-  }
-});
-
-app.get("/gym-reviews/my/:gymId", async (c) => {
-  try {
-    const gymId = c.req.param('gymId');
-    const authToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!authToken) return c.json(null);
-    const { data: { user } } = await supabase.auth.getUser(authToken);
-    if (!user) return c.json(null);
-    const { data: userData } = await supabase.from('users').select('id').eq('auth_user_id', user.id).single();
-    if (!userData) return c.json(null);
-    const { data, error } = await supabase
-      .from('gym_reviews')
-      .select('*')
-      .eq('gym_id', gymId)
-      .eq('user_id', userData.id)
-      .maybeSingle();
-    if (error && error.code !== 'PGRST116') throw error;
-    return c.json(data || null);
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo reseña' }, 500);
-  }
-});
-
-app.post("/gym-reviews", async (c) => {
-  try {
-    const { gym_id, rating, comment } = await c.req.json();
-    const authToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!authToken) return c.json({ error: 'No autorizado' }, 401);
-    const { data: { user } } = await supabase.auth.getUser(authToken);
-    if (!user) return c.json({ error: 'No autorizado' }, 401);
-    const { data: userData } = await supabase.from('users').select('id, start_date').eq('auth_user_id', user.id).single();
-    if (!userData) return c.json({ error: 'Usuario no encontrado' }, 404);
-    const daysSinceStart = Math.floor((Date.now() - new Date(userData.start_date).getTime()) / (1000 * 60 * 60 * 24));
-    if (daysSinceStart < 30) return c.json({ error: 'Debes tener al menos 30 días como miembro para calificar' }, 400);
-    const { data, error } = await supabase
-      .from('gym_reviews')
-      .insert({ gym_id, user_id: userData.id, rating, comment: comment || null })
-      .select()
-      .single();
-    if (error) {
-      if (error.code === '23505') return c.json({ error: 'Ya calificaste este gimnasio' }, 400);
-      throw error;
-    }
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error creando reseña' }, 500);
-  }
-});
-
-app.put("/gym-reviews/:id", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const { rating, comment } = await c.req.json();
-    const { data, error } = await supabase
-      .from('gym_reviews')
-      .update({ rating, comment })
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error actualizando reseña' }, 500);
-  }
-});
-
-app.delete("/gym-reviews/:id", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const { error } = await supabase.from('gym_reviews').delete().eq('id', id);
-    if (error) throw error;
-    return c.json({ message: 'Reseña eliminada' });
-  } catch (error) {
-    return c.json({ error: 'Error eliminando reseña' }, 500);
-  }
-});
-
-// =============================================
-// GYMS DEL ADMINISTRADOR
-// =============================================
-
-app.get("/admin-gyms", async (c) => {
-  try {
-    const authToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!authToken) return c.json({ error: 'No autorizado' }, 401);
-    const { data: { user } } = await supabase.auth.getUser(authToken);
-    if (!user) return c.json({ error: 'No autorizado' }, 401);
-    const { data: staffData } = await supabase.from('staff').select('id, is_super_admin').eq('auth_user_id', user.id).single();
-    if (!staffData) return c.json({ error: 'Staff no encontrado' }, 404);
-    let query = supabase.from('admin_gyms').select('*, gym:gyms!admin_gyms_gym_id_fkey(name, is_active)');
-    if (!staffData.is_super_admin) query = query.eq('staff_id', staffData.id);
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
-    return c.json((data || []).map((ag: any) => ({ ...ag, gym_name: ag.gym?.name, gym: undefined })));
-  } catch (error) {
-    return c.json({ error: 'Error obteniendo gyms del admin' }, 500);
-  }
-});
-
-app.post("/admin-gyms", async (c) => {
-  try {
-    const { staff_id, gym_id } = await c.req.json();
-    const authToken = c.req.header('Authorization')?.split(' ')[1];
-    if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
-      const { data: currentUser } = await supabase.auth.getUser(authToken);
-      if (currentUser.user) {
-        const { data: currentStaff } = await supabase.from('staff').select('is_super_admin').eq('auth_user_id', currentUser.user.id).single();
-        if (!currentStaff || !currentStaff.is_super_admin) {
-          return c.json({ error: 'Solo super admin puede asignar gyms' }, 403);
-        }
-      }
-    }
-    const { data, error } = await supabase.from('admin_gyms').insert({ staff_id, gym_id }).select().single();
-    if (error) throw error;
-    return c.json(data);
-  } catch (error) {
-    return c.json({ error: 'Error asignando gym al admin' }, 500);
-  }
-});
-
-app.delete("/admin-gyms/:staffId/:gymId", async (c) => {
-  try {
-    const staffId = c.req.param('staffId');
-    const gymId = c.req.param('gymId');
-    const authToken = c.req.header('Authorization')?.split(' ')[1];
-    if (authToken && authToken !== Deno.env.get('SUPABASE_ANON_KEY')) {
-      const { data: currentUser } = await supabase.auth.getUser(authToken);
-      if (currentUser.user) {
-        const { data: currentStaff } = await supabase.from('staff').select('is_super_admin').eq('auth_user_id', currentUser.user.id).single();
-        if (!currentStaff || !currentStaff.is_super_admin) {
-          return c.json({ error: 'Solo super admin puede quitar gyms' }, 403);
-        }
-      }
-    }
-    const { error } = await supabase.from('admin_gyms').delete().eq('staff_id', staffId).eq('gym_id', gymId);
-    if (error) throw error;
-    return c.json({ message: 'Gym removido del admin' });
-  } catch (error) {
-    return c.json({ error: 'Error removiendo gym del admin' }, 500);
   }
 });
 

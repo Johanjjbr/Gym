@@ -1,13 +1,37 @@
 export type UserRole = 'Administrador' | 'Entrenador' | 'Recepción' | 'Usuario';
 
+export type PermissionAction = 'view' | 'create' | 'edit' | 'delete';
+
+export interface ModulePermission {
+  id: string;
+  role: UserRole;
+  module_path: string;
+  can_view: boolean;
+  can_create: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+  gym_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoleModulePermissionInput {
+  role: UserRole;
+  module_path: string;
+  can_view?: boolean;
+  can_create?: boolean;
+  can_edit?: boolean;
+  can_delete?: boolean;
+  gym_id?: string | null;
+}
+
 export interface User {
   id: string;
-  cedula: string;
   name: string;
   email: string;
   phone: string;
   memberNumber: string;
-  status: 'Activo' | 'Inactivo' | 'Moroso' | 'Suspendido';
+  status: 'Activo' | 'Inactivo' | 'Moroso';
   plan: string;
   startDate: string;
   nextPayment: string;
@@ -17,67 +41,6 @@ export interface User {
   photo?: string;
   trainer_id?: string;
   trainer_name?: string;
-  gym_id?: string;
-  is_free_user?: boolean;
-  can_share_routines?: boolean;
-}
-
-export interface Gym {
-  id: string;
-  name: string;
-  address?: string;
-  phone?: string;
-  email?: string;
-  code: string;
-  description?: string;
-  logo_url?: string;
-  schedule?: Record<string, { abre: string; cierra: string }>;
-  social_links?: {
-    instagram?: string;
-    whatsapp?: string;
-    twitter?: string;
-    tiktok?: string;
-    youtube?: string;
-  };
-  latitude?: number;
-  longitude?: number;
-  rating?: number;
-  staff_count?: number;
-  users_count?: number;
-  review_count?: number;
-  is_active: boolean;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface GymReview {
-  id: string;
-  gym_id: string;
-  user_id: string;
-  rating: number;
-  comment?: string;
-  created_at: string;
-}
-
-export interface GymFormData {
-  name: string;
-  address?: string;
-  phone?: string;
-  email?: string;
-  code: string;
-  description?: string;
-  logo_url?: string;
-  schedule?: Record<string, { abre: string; cierra: string }>;
-  social_links?: {
-    instagram?: string;
-    whatsapp?: string;
-    twitter?: string;
-    tiktok?: string;
-    youtube?: string;
-  };
-  latitude?: number;
-  longitude?: number;
-  is_active: boolean;
 }
 
 export interface Payment {
@@ -100,9 +63,6 @@ export interface Staff {
   shift: string;
   status: 'Activo' | 'Inactivo';
   photo?: string;
-  gym_id?: string;
-  gym_name?: string;
-  is_super_admin?: boolean;
 }
 
 export interface Attendance {
@@ -122,7 +82,6 @@ export interface PhysicalProgress {
   bodyFat?: number;
   muscleMass?: number;
   notes?: string;
-  bodyMeasurements?: Record<string, number>;
 }
 
 export interface Routine {
@@ -173,10 +132,6 @@ export interface ExerciseTemplate {
   weight?: string; // ej: "Peso corporal", "5kg"
   instructions?: string;
   videoUrl?: string;
-  imageUrl?: string;
-  gifUrl?: string;
-  target?: string;
-  equipment?: string;
   order: number;
 }
 
@@ -222,8 +177,6 @@ export interface SetLog {
   reps: number;
   weight: number;
   isCompleted: boolean;
-  durationSeconds?: number;
-  distanceKm?: number;
 }
 
 export interface Invoice {

@@ -18,10 +18,10 @@ export const userKeys = {
 /**
  * Hook para obtener todos los usuarios
  */
-export function useUsers(gymId?: string) {
+export function useUsers() {
   return useQuery({
-    queryKey: [...userKeys.all, gymId ? { gymId } : {}],
-    queryFn: () => users.getAll(gymId),
+    queryKey: userKeys.all,
+    queryFn: users.getAll,
     staleTime: 1000 * 60 * 5, // 5 minutos
     refetchOnWindowFocus: true,
     enabled: !!localStorage.getItem('access_token'), // Solo ejecutar si hay token
@@ -53,14 +53,10 @@ export function useCreateUser() {
       const activationToken = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
       
       // Crear el usuario directamente en Supabase con el token
-      const defaultNextPayment = new Date();
-      defaultNextPayment.setMonth(defaultNextPayment.getMonth() + 1);
-      
       const { data: newUser, error } = await supabase
         .from('users')
         .insert([{
           ...data,
-          next_payment: data.next_payment || defaultNextPayment.toISOString(),
           activation_token: activationToken,
           is_activated: false,
           member_number: `GYM${Date.now().toString().slice(-6)}`, // Generar número de miembro

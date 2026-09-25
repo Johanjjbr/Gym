@@ -4,8 +4,7 @@ import { UserLayout } from './pages/UserLayout';
 import { Dashboard } from './pages/Dashboard';
 import { Users } from './pages/Users';
 import { UserDetail } from './pages/UserDetail';
-import { Invoices } from './pages/Invoices';
-import { Plans } from './pages/Plans';
+import { Billing } from './pages/Billing';
 import { StaffPage } from './pages/Staff';
 import { Attendance } from './pages/Attendance';
 import { Reports } from './pages/Reports';
@@ -14,8 +13,6 @@ import { RoutineBuilder } from './pages/RoutineBuilder';
 import { MyWorkout } from './pages/MyWorkout';
 import { MyProfile } from './pages/MyProfile';
 import { MyTraining } from './pages/MyTraining';
-import { UserRoutines } from './pages/UserRoutines';
-import { UserRoutineCreator } from './pages/UserRoutineCreator';
 import { MyProgress } from './pages/MyProgress';
 import { MyAttendance } from './pages/MyAttendance';
 import { MyPayments } from './pages/MyPayments';
@@ -26,9 +23,7 @@ import { DatabaseDiagnostic } from './pages/DatabaseDiagnostic';
 import { RoutineDiagnostic } from './pages/RoutineDiagnostic';
 import { MigrateRoutines } from './pages/MigrateRoutines';
 import { RoutineAssignmentDebug } from './pages/RoutineAssignmentDebug';
-import { Exercises } from './pages/Exercises';
-import { GymSettings } from './pages/GymSettings';
-import { GymRating } from './pages/GymRating';
+import { AdminPermissions } from './pages/AdminPermissions';
 
 export const router = createBrowserRouter([
   // Ruta pública - Login
@@ -74,19 +69,16 @@ export const router = createBrowserRouter([
         }
       },
       { path: 'mi-entrenamiento', Component: MyTraining },
-      { path: 'rutinas', Component: UserRoutines },
-      { path: 'rutinas/crear', Component: UserRoutineCreator },
       { path: 'mi-perfil', Component: MyProfile },
       { path: 'progreso', Component: MyProgress },
       { path: 'asistencia', Component: MyAttendance },
-      { path: 'facturas', Component: MyPayments },
-      { path: 'valorar-gimnasio', Component: GymRating },
+      { path: 'pagos', Component: MyPayments },
       { path: 'diagnostico-rutina', Component: RoutineDiagnostic },
       { path: 'migrar-rutinas', Component: MigrateRoutines },
       { path: 'debug-asignaciones', Component: RoutineAssignmentDebug },
     ],
   },
-  // Rutas protegidas - Staff (Con Layout administrativo)
+// Rutas protegidas - Staff (Con Layout administrativo)
   {
     path: '/',
     Component: Layout,
@@ -94,18 +86,16 @@ export const router = createBrowserRouter([
       { index: true, Component: Dashboard },
       { path: 'usuarios', Component: Users },
       { path: 'usuarios/:id', Component: UserDetail },
-      { path: 'facturas', Component: Invoices },
-      { path: 'planes', Component: Plans },
+      { path: 'facturacion', Component: Billing },
       { path: 'personal', Component: StaffPage },
       { path: 'asistencia', Component: Attendance },
-      { path: 'ejercicios', Component: Exercises },
       { path: 'rutinas', Component: Routines },
       { path: 'rutinas/crear', Component: RoutineBuilder },
       { path: 'rutinas/:id/editar', Component: RoutineBuilder },
       { path: 'mi-entrenamiento', Component: MyWorkout },
-      { path: 'gimnasios', Component: GymSettings },
       { path: 'reportes', Component: Reports },
-   //   { path: 'migrar-rutinas', Component: MigrateRoutines },
+      { path: 'admin/permisos', Component: AdminPermissions },
+    //   { path: 'migrar-rutinas', Component: MigrateRoutines },
     ],
   },
 ]);

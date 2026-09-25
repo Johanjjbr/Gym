@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Plus, Trash2, Save, Loader2, Play, Image } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Save, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -13,10 +13,8 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { ExerciseCombobox } from '../components/ExerciseCombobox';
-import { ExerciseDetailModal } from '../components/ExerciseDetailModal';
 import { toast } from 'sonner';
 import { useCreateRoutine, useUpdateRoutine, useRoutine } from '../hooks/useRoutines';
-import { useExercises, type Exercise } from '../hooks/useExercises';
 import { useAuth } from '../contexts/AuthContext';
 
 const DAYS_MAP = [
@@ -49,8 +47,6 @@ export function RoutineBuilder() {
   const updateRoutineMutation = useUpdateRoutine();
   const { data: routineData, isLoading: isLoadingRoutine } = useRoutine(routineId || '');
   const { user } = useAuth();
-  const { data: allExercises = [] } = useExercises();
-  const [detailExercise, setDetailExercise] = useState<Exercise | null>(null);
 
   // Datos de la rutina (maestro)
   const [name, setName] = useState('');
@@ -59,7 +55,6 @@ export function RoutineBuilder() {
   const [category, setCategory] = useState('');
   const [durationWeeks, setDurationWeeks] = useState(4);
   const [daysPerWeek, setDaysPerWeek] = useState(3);
-  const [notes, setNotes] = useState('');
 
   // Ejercicios (detalle)
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -73,7 +68,6 @@ export function RoutineBuilder() {
       setCategory(routineData.category || '');
       setDurationWeeks(routineData.duration_weeks || 4);
       setDaysPerWeek(routineData.days_per_week || 3);
-      setNotes(routineData.notes || '');
       
       // Cargar ejercicios
       if (routineData.exercises && routineData.exercises.length > 0) {
@@ -150,7 +144,6 @@ export function RoutineBuilder() {
       category: category.trim() || 'General',
       duration_weeks: durationWeeks,
       days_per_week: daysPerWeek,
-      notes: notes.trim(),
       created_by: user.id,
       exercises: exercises.map(ex => ({
         exercise_name: ex.exercise_name.trim(),
@@ -196,7 +189,7 @@ export function RoutineBuilder() {
       <div className="container mx-auto p-4 md:p-6 max-w-6xl">
         <Card className="bg-gray-900 border-gray-800">
           <CardContent className="py-12 text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#10f94e]" />
             <p className="text-muted-foreground">Cargando rutina...</p>
           </CardContent>
         </Card>
@@ -232,7 +225,7 @@ export function RoutineBuilder() {
         {/* Información General */}
         <Card className="bg-gray-900 border-gray-800">
           <CardHeader>
-            <CardTitle className="text-primary">Información General</CardTitle>
+            <CardTitle className="text-[#10f94e]">Información General</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -284,17 +277,6 @@ export function RoutineBuilder() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="notes">Notas del creador</Label>
-                <Textarea
-                  id="notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Anotaciones, observaciones o recomendaciones sobre esta rutina..."
-                  className="min-h-[80px]"
-                />
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="days">Días por semana</Label>
                 <Input
                   id="days"
@@ -324,7 +306,7 @@ export function RoutineBuilder() {
         <Card className="bg-gray-900 border-gray-800">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-primary">Ejercicios</CardTitle>
+              <CardTitle className="text-[#10f94e]">Ejercicios</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
                 {exercises.length} ejercicio{exercises.length !== 1 ? 's' : ''} agregado{exercises.length !== 1 ? 's' : ''}
               </p>
@@ -332,7 +314,7 @@ export function RoutineBuilder() {
             <Button
               type="button"
               onClick={handleAddExercise}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
             >
               <Plus className="h-4 w-4 mr-2" />
               Añadir Ejercicio
@@ -363,43 +345,17 @@ export function RoutineBuilder() {
                             className="p-4 bg-gray-800/50 rounded-lg border border-gray-700 space-y-3"
                           >
                             <div className="flex items-start gap-2">
-                              <span className="text-sm font-mono text-primary mt-2">
+                              <span className="text-sm font-mono text-[#10f94e] mt-2">
                                 #{idx + 1}
                               </span>
                               <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                 <div className="lg:col-span-2 space-y-2">
                                   <Label className="text-xs">Nombre del Ejercicio *</Label>
-                                  <div className="flex gap-2">
-                                    <div className="flex-1">
-                                      <ExerciseCombobox
-                                        value={exercise.exercise_name}
-                                        onValueChange={(value) => handleExerciseChange(exercise.id, 'exercise_name', value)}
-                                        placeholder="Seleccionar o crear ejercicio"
-                                      />
-                                    </div>
-                                    {(() => {
-                                      const found = allExercises.find((e) => e.name === exercise.exercise_name);
-                                      return found ? (
-                                        <div className="flex items-center gap-1 flex-shrink-0">
-                                          {found.image_url && (
-                                            <img src={found.image_url} alt="" className="w-9 h-9 rounded object-cover border border-border" />
-                                          )}
-                                          {found.gif_url && (
-                                            <Button
-                                              type="button"
-                                              variant="outline"
-                                              size="icon"
-                                              className="w-9 h-9"
-                                              onClick={() => setDetailExercise(found)}
-                                              title="Ver GIF animado"
-                                            >
-                                              <Play className="w-4 h-4" />
-                                            </Button>
-                                          )}
-                                        </div>
-                                      ) : null;
-                                    })()}
-                                  </div>
+                                  <ExerciseCombobox
+                                    value={exercise.exercise_name}
+                                    onValueChange={(value) => handleExerciseChange(exercise.id, 'exercise_name', value)}
+                                    placeholder="Seleccionar o crear ejercicio"
+                                  />
                                 </div>
 
                                 <div className="space-y-2">
@@ -468,7 +424,7 @@ export function RoutineBuilder() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleRemoveExercise(exercise.id)}
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -496,7 +452,7 @@ export function RoutineBuilder() {
           </Button>
           <Button
             type="submit"
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
             disabled={createRoutineMutation.isPending || updateRoutineMutation.isPending}
           >
             {(createRoutineMutation.isPending || updateRoutineMutation.isPending) ? (
@@ -513,12 +469,6 @@ export function RoutineBuilder() {
           </Button>
         </div>
       </form>
-
-      <ExerciseDetailModal
-        exercise={detailExercise}
-        open={!!detailExercise}
-        onOpenChange={(open) => { if (!open) setDetailExercise(null); }}
-      />
     </div>
   );
 }

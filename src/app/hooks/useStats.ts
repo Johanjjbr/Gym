@@ -14,10 +14,10 @@ export const statsKeys = {
 /**
  * Hook para obtener estadísticas del dashboard
  */
-export function useDashboardStats(gymId?: string) {
+export function useDashboardStats() {
   return useQuery({
-    queryKey: [...statsKeys.dashboard, gymId ? { gymId } : {}],
-    queryFn: () => stats.getDashboard(gymId),
+    queryKey: statsKeys.dashboard,
+    queryFn: stats.getDashboard,
     staleTime: 1000 * 60 * 1, // 1 minuto (estadísticas deben estar actualizadas)
     refetchOnWindowFocus: true,
     refetchInterval: 1000 * 60 * 5, // Refrescar cada 5 minutos automáticamente

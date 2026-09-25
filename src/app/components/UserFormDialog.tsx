@@ -1,13 +1,15 @@
-import { useEffect, useState, useRef } from 'react';
+/**
+ * Componente de ejemplo: Formulario de Usuario con Zod + React Query
+ * Muestra cómo integrar validación y mutaciones correctamente
+ */
+
+import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { userSchema, type UserFormData } from '../lib/validations';
-import { emptyToNull } from '../lib/emptyToNull';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
-import { usePlans } from '../hooks/usePlans';
 import { useStaff } from '../hooks/useStaff';
 import { ActivationModal } from './ActivationModal';
-import { uploadFile } from '../lib/upload';
 import {
   Dialog,
   DialogContent,
@@ -21,7 +23,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
-import { Loader2, Camera, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -33,23 +35,19 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   const isEdit = !!user;
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
-  const { data: plans } = usePlans();
   const [calculatedBMI, setCalculatedBMI] = useState<number | null>(null);
   const [activationData, setActivationData] = useState<{
     token: string;
     userName: string;
     userEmail: string;
   } | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(user?.photo || null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Función para obtener categoría de IMC
   const getBMICategory = (imc: number) => {
     if (imc < 18.5) return { label: 'Bajo peso', color: 'text-yellow-400' };
-    if (imc < 25) return { label: 'Normal', color: 'text-primary' };
+    if (imc < 25) return { label: 'Normal', color: 'text-[#10f94e]' };
     if (imc < 30) return { label: 'Sobrepeso', color: 'text-orange-400' };
-    return { label: 'Obesidad', color: 'text-destructive' };
+    return { label: 'Obesidad', color: 'text-[#ff3b5c]' };
   };
 
   const {
@@ -96,24 +94,17 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   useEffect(() => {
     if (user && open) {
       // Resetear el formulario con los datos del usuario
-      const selectedPlan = plans?.find((p: any) => p.id === user.plan_id) || plans?.find((p: any) => p.name === user.plan);
       reset({
-        cedula: user.cedula || '',
         name: user.name || '',
         email: user.email || '',
         phone: user.phone || '',
         birth_date: user.birth_date || '',
         gender: user.gender || '',
         address: user.address || '',
-        plan_id: user.plan_id || (selectedPlan?.id || ''),
-        plan: selectedPlan?.name || user.plan || '',
+        plan: user.plan || '',
         status: user.status || 'Activo',
-        start_date: user.start_date
-          ? new Date(user.start_date).toISOString().split('T')[0]
-          : new Date().toISOString().split('T')[0],
-        next_payment: user.next_payment
-          ? new Date(user.next_payment).toISOString().split('T')[0]
-          : '',
+        start_date: user.start_date || new Date().toISOString().split('T')[0],
+        next_payment: user.next_payment || '',
         weight: user.weight?.toString() || '',
         height: user.height?.toString() || '',
         emergency_contact: user.emergency_contact || '',
@@ -131,52 +122,16 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     }
   }, [user, open, reset]);
 
-  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setPhotoPreview(URL.createObjectURL(file));
-    setUploading(true);
-    try {
-      const url = await uploadFile(file, 'user-photos', 'users');
-      setValue('photo', url);
-    } catch (err) {
-      console.error('Error uploading photo:', err);
-      setPhotoPreview(null);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const removePhoto = () => {
-    setPhotoPreview(null);
-    setValue('photo', '');
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
   const onSubmit = async (data: UserFormData) => {
     try {
-      const selectedPlan = plans?.find((p: any) => p.id === data.plan_id);
-      const submitData = {
-        ...data,
-        plan: selectedPlan?.name || data.plan,
-        plan_id: data.plan_id || null,
-        start_date: data.start_date || new Date().toISOString().split('T')[0],
-        next_payment: emptyToNull(data.next_payment),
-        gender: emptyToNull(data.gender),
-        birth_date: emptyToNull(data.birth_date),
-        photo: emptyToNull(data.photo),
-        address: emptyToNull(data.address),
-        emergency_contact: emptyToNull(data.emergency_contact),
-        notes: emptyToNull(data.notes),
-        medical_notes: emptyToNull(data.medical_notes),
-      };
+      // El número de miembro se genera automáticamente en el backend
+      // No es necesario enviarlo en la creación
       if (isEdit) {
-        await updateUser.mutateAsync({ id: user.id, data: submitData });
+        await updateUser.mutateAsync({ id: user.id, data });
         reset();
         onOpenChange(false);
       } else {
-        const result = await createUser.mutateAsync(submitData);
+        const result = await createUser.mutateAsync(data);
         reset();
         onOpenChange(false);
         
@@ -196,12 +151,12 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 border-gray-700">
           <DialogHeader>
-            <DialogTitle className="text-2xl text-foreground">
+            <DialogTitle className="text-2xl text-white">
               {isEdit ? 'Editar Usuario' : 'Nuevo Usuario'}
             </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
+            <DialogDescription className="text-gray-400">
               {isEdit
                 ? 'Modifica los datos del usuario. Los campos con * son obligatorios.'
                 : 'Completa los datos del nuevo usuario. Los campos con * son obligatorios.'}
@@ -211,111 +166,62 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {/* Información Personal */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-foreground border-b border-border pb-2">
+              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
                 Información Personal
               </h3>
 
-              <div className="flex items-center gap-4 mb-4">
-                <div className="relative w-20 h-20 rounded-full overflow-hidden bg-muted border-2 border-border">
-                  {photoPreview ? (
-                    <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
-                      <Camera className="w-8 h-8" />
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    className="hidden"
-                    id="photo-upload"
-                  />
-                  <Label htmlFor="photo-upload" className="cursor-pointer">
-                    <div className="px-3 py-1.5 text-sm rounded-md bg-muted border border-border text-foreground/80 hover:bg-gray-700 inline-block">
-                      {uploading ? 'Subiendo...' : 'Cambiar foto'}
-                    </div>
-                  </Label>
-                  <input type="hidden" {...register('photo')} />
-                  {photoPreview && (
-                    <button type="button" onClick={removePhoto} className="block text-xs text-red-400 hover:text-red-300 mt-1">
-                      Eliminar foto
-                    </button>
-                  )}
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cedula" className="text-foreground/80">
-                    Cédula <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="cedula"
-                    {...register('cedula')}
-                    disabled={isSubmitting}
-                    className="bg-muted border-border text-foreground"
-                    placeholder="V-12345678"
-                  />
-                  {errors.cedula && (
-                    <p className="text-xs text-destructive">{errors.cedula.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-foreground/80">
-                    Nombre Completo <span className="text-destructive">*</span>
+                  <Label htmlFor="name" className="text-gray-300">
+                    Nombre Completo <span className="text-[#ff3b5c]">*</span>
                   </Label>
                   <Input
                     id="name"
                     {...register('name')}
                     disabled={isSubmitting}
-                    className="bg-muted border-border text-foreground"
+                    className="bg-gray-800 border-gray-700 text-white"
                     placeholder="Juan Pérez"
                   />
                   {errors.name && (
-                    <p className="text-xs text-destructive">{errors.name.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.name.message}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-foreground/80">
-                    Email <span className="text-destructive">*</span>
+                  <Label htmlFor="email" className="text-gray-300">
+                    Email <span className="text-[#ff3b5c]">*</span>
                   </Label>
                   <Input
                     id="email"
                     type="email"
                     {...register('email')}
                     disabled={isSubmitting}
-                    className="bg-muted border-border text-foreground"
+                    className="bg-gray-800 border-gray-700 text-white"
                     placeholder="juan@ejemplo.com"
                   />
                   {errors.email && (
-                    <p className="text-xs text-destructive">{errors.email.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.email.message}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="phone" className="text-foreground/80">
+                  <Label htmlFor="phone" className="text-gray-300">
                     Teléfono
                   </Label>
                   <Input
                     id="phone"
                     {...register('phone')}
                     disabled={isSubmitting}
-                    className="bg-muted border-border text-foreground"
+                    className="bg-gray-800 border-gray-700 text-white"
                     placeholder="04121234567"
                   />
                   {errors.phone && (
-                    <p className="text-xs text-destructive">{errors.phone.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.phone.message}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="birth_date" className="text-foreground/80">
+                  <Label htmlFor="birth_date" className="text-gray-300">
                     Fecha de Nacimiento
                   </Label>
                   <Input
@@ -323,23 +229,23 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                     type="date"
                     {...register('birth_date')}
                     disabled={isSubmitting}
-                    className="bg-muted border-border text-foreground"
+                    className="bg-gray-800 border-gray-700 text-white"
                   />
                   {errors.birth_date && (
-                    <p className="text-xs text-destructive">{errors.birth_date.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.birth_date.message}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="gender" className="text-foreground/80">
+                  <Label htmlFor="gender" className="text-gray-300">
                     Género
                   </Label>
                   <Controller
                     control={control}
                     name="gender"
                     render={({ field }) => (
-                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
-                        <SelectTrigger className="bg-muted border-border text-foreground">
+                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
                           <SelectValue placeholder="Seleccionar..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -351,23 +257,23 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                     )}
                   />
                   {errors.gender && (
-                    <p className="text-xs text-destructive">{errors.gender.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.gender.message}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="address" className="text-foreground/80">
+                  <Label htmlFor="address" className="text-gray-300">
                     Dirección
                   </Label>
                   <Input
                     id="address"
                     {...register('address')}
                     disabled={isSubmitting}
-                    className="bg-muted border-border text-foreground"
+                    className="bg-gray-800 border-gray-700 text-white"
                     placeholder="Los Teques, Lagunetica"
                   />
                   {errors.address && (
-                    <p className="text-xs text-destructive">{errors.address.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.address.message}</p>
                   )}
                 </div>
               </div>
@@ -375,60 +281,47 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
             {/* Información de Membresía */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-foreground border-b border-border pb-2">
+              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
                 Información de Membresía
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="plan_id" className="text-foreground/80">
-                    Tipo de Membresía <span className="text-destructive">*</span>
+                  <Label htmlFor="plan" className="text-gray-300">
+                    Tipo de Membresía <span className="text-[#ff3b5c]">*</span>
                   </Label>
-                  <Controller
-                    control={control}
-                    name="plan_id"
-                    render={({ field }) => (
-                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
-                        <SelectTrigger className="bg-muted border-border text-foreground">
-                          <SelectValue placeholder="Seleccionar plan" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {plans?.filter((p: any) => p.is_active !== false).map((plan: any) => (
-                            <SelectItem key={plan.id} value={plan.id}>
-                              {plan.name} — Bs {plan.price.toLocaleString()}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  {errors.plan_id && (
-                    <p className="text-xs text-destructive">{errors.plan_id.message}</p>
+                  <select
+                    id="plan"
+                    {...register('plan')}
+                    disabled={isSubmitting}
+                    className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
+                  >
+                    <option value="Mensual">Mensual</option>
+                    <option value="Trimestral">Trimestral</option>
+                    <option value="Semestral">Semestral</option>
+                    <option value="Anual">Anual</option>
+                  </select>
+                  {errors.plan && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.plan.message}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="status" className="text-foreground/80">
-                    Estado <span className="text-destructive">*</span>
+                  <Label htmlFor="status" className="text-gray-300">
+                    Estado <span className="text-[#ff3b5c]">*</span>
                   </Label>
-                  <Controller
-                    control={control}
-                    name="status"
-                    render={({ field }) => (
-                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
-                        <SelectTrigger className="bg-muted border-border text-foreground">
-                          <SelectValue placeholder="Seleccionar estado" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Activo">Activo</SelectItem>
-                          <SelectItem value="Inactivo">Inactivo</SelectItem>
-                          <SelectItem value="Suspendido">Suspendido</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
+                  <select
+                    id="status"
+                    {...register('status')}
+                    disabled={isSubmitting}
+                    className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
+                  >
+                    <option value="Activo">Activo</option>
+                    <option value="Inactivo">Inactivo</option>
+                    <option value="Suspendido">Suspendido</option>
+                  </select>
                   {errors.status && (
-                    <p className="text-xs text-destructive">{errors.status.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.status.message}</p>
                   )}
                 </div>
               </div>
@@ -436,79 +329,79 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
             {/* Información Adicional */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-foreground border-b border-border pb-2">
+              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
                 Información Adicional
               </h3>
 
               <div className="space-y-2">
-                <Label htmlFor="emergency_contact" className="text-foreground/80">
+                <Label htmlFor="emergency_contact" className="text-gray-300">
                   Contacto de Emergencia
                 </Label>
                 <Input
                   id="emergency_contact"
                   {...register('emergency_contact')}
                   disabled={isSubmitting}
-                  className="bg-muted border-border text-foreground"
+                  className="bg-gray-800 border-gray-700 text-white"
                   placeholder="Nombre: María Pérez, Tel: 0412-9876543"
                 />
                 {errors.emergency_contact && (
-                  <p className="text-xs text-destructive">{errors.emergency_contact.message}</p>
+                  <p className="text-xs text-[#ff3b5c]">{errors.emergency_contact.message}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="notes" className="text-foreground/80">
+                <Label htmlFor="notes" className="text-gray-300">
                   Notas
                 </Label>
                 <Textarea
                   id="notes"
                   {...register('notes')}
                   disabled={isSubmitting}
-                  className="bg-muted border-border text-foreground min-h-[80px]"
+                  className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
                   placeholder="Observaciones médicas, alergias, etc."
                 />
                 {errors.notes && (
-                  <p className="text-xs text-destructive">{errors.notes.message}</p>
+                  <p className="text-xs text-[#ff3b5c]">{errors.notes.message}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="medical_notes" className="text-foreground/80">
+                <Label htmlFor="medical_notes" className="text-gray-300">
                   Notas Médicas
                 </Label>
                 <Textarea
                   id="medical_notes"
                   {...register('medical_notes')}
                   disabled={isSubmitting}
-                  className="bg-muted border-border text-foreground min-h-[80px]"
+                  className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
                   placeholder="Observaciones médicas, alergias, etc."
                 />
                 {errors.medical_notes && (
-                  <p className="text-xs text-destructive">{errors.medical_notes.message}</p>
+                  <p className="text-xs text-[#ff3b5c]">{errors.medical_notes.message}</p>
                 )}
               </div>
 
               {/* Solo mostrar el número de miembro cuando se edita un usuario */}
               {isEdit && (
                 <div className="space-y-2">
-                  <Label htmlFor="member_number" className="text-foreground/80">
+                  <Label htmlFor="member_number" className="text-gray-300">
                     Número de Miembro
                   </Label>
                   <Input
                     id="member_number"
                     {...register('member_number')}
                     disabled={true}
-                    className="bg-muted border-border text-foreground"
+                    className="bg-gray-800 border-gray-700 text-white"
                     placeholder={user?.member_number}
                   />
                   {errors.member_number && (
-                    <p className="text-xs text-destructive">{errors.member_number.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.member_number.message}</p>
                   )}
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="start_date" className="text-foreground/80">
+                <Label htmlFor="start_date" className="text-gray-300">
                   Fecha de Inicio
                 </Label>
                 <Input
@@ -516,18 +409,18 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   type="date"
                   {...register('start_date')}
                   disabled={isEdit || isSubmitting}
-                  className="bg-muted border-border text-foreground"
+                  className="bg-gray-800 border-gray-700 text-white"
                 />
                 {errors.start_date && (
-                  <p className="text-xs text-destructive">{errors.start_date.message}</p>
+                  <p className="text-xs text-[#ff3b5c]">{errors.start_date.message}</p>
                 )}
                 {isEdit && (
-                  <p className="text-xs text-muted-foreground/70">La fecha de inicio no se puede modificar</p>
+                  <p className="text-xs text-gray-500">La fecha de inicio no se puede modificar</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="next_payment" className="text-foreground/80">
+                <Label htmlFor="next_payment" className="text-gray-300">
                   Próximo Pago
                 </Label>
                 <Input
@@ -535,15 +428,15 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   type="date"
                   {...register('next_payment')}
                   disabled={isSubmitting}
-                  className="bg-muted border-border text-foreground"
+                  className="bg-gray-800 border-gray-700 text-white"
                 />
                 {errors.next_payment && (
-                  <p className="text-xs text-destructive">{errors.next_payment.message}</p>
+                  <p className="text-xs text-[#ff3b5c]">{errors.next_payment.message}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="weight" className="text-foreground/80">
+                <Label htmlFor="weight" className="text-gray-300">
                   Peso (kg)
                 </Label>
                 <Input
@@ -552,16 +445,16 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   step="0.01"
                   {...register('weight', { valueAsNumber: false })}
                   disabled={isSubmitting}
-                  className="bg-muted border-border text-foreground"
+                  className="bg-gray-800 border-gray-700 text-white"
                   placeholder="70.5"
                 />
                 {errors.weight && (
-                  <p className="text-xs text-destructive">{errors.weight.message}</p>
+                  <p className="text-xs text-[#ff3b5c]">{errors.weight.message}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="height" className="text-foreground/80">
+                <Label htmlFor="height" className="text-gray-300">
                   Altura (cm)
                 </Label>
                 <Input
@@ -570,17 +463,17 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   step="0.01"
                   {...register('height', { valueAsNumber: false })}
                   disabled={isSubmitting}
-                  className="bg-muted border-border text-foreground"
+                  className="bg-gray-800 border-gray-700 text-white"
                   placeholder="175.5"
                 />
                 {errors.height && (
-                  <p className="text-xs text-destructive">{errors.height.message}</p>
+                  <p className="text-xs text-[#ff3b5c]">{errors.height.message}</p>
                 )}
               </div>
 
               {calculatedBMI !== null && (
                 <div className="space-y-2">
-                  <Label htmlFor="imc" className="text-foreground/80">
+                  <Label htmlFor="imc" className="text-gray-300">
                     IMC (Indice de Masa Corporal)
                   </Label>
                   <Input
@@ -589,12 +482,12 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                     step="0.01"
                     {...register('imc', { valueAsNumber: false })}
                     disabled={isSubmitting}
-                    className="bg-muted border-border text-foreground"
+                    className="bg-gray-800 border-gray-700 text-white"
                     placeholder="22.5"
                     value={calculatedBMI}
                   />
                   {errors.imc && (
-                    <p className="text-xs text-destructive">{errors.imc.message}</p>
+                    <p className="text-xs text-[#ff3b5c]">{errors.imc.message}</p>
                   )}
                   <p className={getBMICategory(calculatedBMI).color}>
                     {getBMICategory(calculatedBMI).label}
@@ -612,14 +505,14 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   onOpenChange(false);
                 }}
                 disabled={isSubmitting}
-                className="border-border hover:bg-muted"
+                className="border-gray-700 hover:bg-gray-800"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="bg-primary hover:bg-primary/90 text-black font-bold"
+                className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
               >
                 {isSubmitting ? (
                   <>

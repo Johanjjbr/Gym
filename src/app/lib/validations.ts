@@ -10,11 +10,6 @@ import { z } from 'zod';
 // =============================================
 
 export const userSchema = z.object({
-  cedula: z.string()
-    .min(1, 'La cédula es requerida')
-    .max(20, 'Cédula demasiado larga')
-    .regex(/^[VEJ]?[-]?\d{5,10}$/, 'Formato inválido (ej: V-12345678)'),
-  
   member_number: z.string()
     .max(50, 'Número de miembro demasiado largo')
     .optional()
@@ -57,15 +52,8 @@ export const userSchema = z.object({
     .optional()
     .or(z.literal('')),
   
-  plan_id: z.string()
-    .uuid('ID de plan inválido')
-    .optional()
-    .or(z.literal('')),
-
-  photo: z.string().optional().or(z.literal('')),
-
-  status: z.enum(['Activo', 'Inactivo', 'Suspendido'], {
-    errorMap: () => ({ message: 'Estado debe ser Activo, Inactivo o Suspendido' })
+  status: z.enum(['Activo', 'Inactivo', 'Moroso', 'Suspendido'], {
+    errorMap: () => ({ message: 'Estado debe ser Activo, Inactivo, Moroso o Suspendido' })
   }),
   
   start_date: z.string()
@@ -139,9 +127,6 @@ export const physicalDataSchema = z.object({
   muscle_mass: z.number()
     .min(0, 'Masa muscular mínima: 0%')
     .max(100, 'Masa muscular máxima: 100%')
-    .optional(),
-  
-  body_measurements: z.record(z.string(), z.number())
     .optional(),
   
   measurement_date: z.string()
@@ -223,13 +208,9 @@ export const staffSchema = z.object({
   shift: z.string()
     .max(50, 'Turno demasiado largo'),
   
-  photo: z.string().optional().or(z.literal('')),
-
   status: z.enum(['Activo', 'Inactivo', 'Vacaciones'], {
     errorMap: () => ({ message: 'Estado inválido' })
   }),
-
-  gym_id: z.string().uuid('ID de gimnasio inválido').optional(),
   
   hire_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato YYYY-MM-DD')
@@ -374,52 +355,6 @@ export const attendanceSchema = z.object({
 });
 
 export type AttendanceFormData = z.infer<typeof attendanceSchema>;
-
-// =============================================
-// GIMNASIOS (Gym Settings)
-// =============================================
-
-export const gymSchema = z.object({
-  name: z.string()
-    .min(2, 'El nombre debe tener al menos 2 caracteres')
-    .max(200, 'El nombre es demasiado largo'),
-
-  code: z.string()
-    .min(3, 'El código debe tener al menos 3 caracteres')
-    .max(20, 'Código demasiado largo')
-    .regex(/^[A-Z0-9-]+$/, 'Solo mayúsculas, números y guiones'),
-
-  address: z.string()
-    .max(500, 'Dirección demasiado larga')
-    .optional()
-    .or(z.literal('')),
-
-  phone: z.string()
-    .max(20, 'Teléfono demasiado largo')
-    .optional()
-    .or(z.literal('')),
-
-  email: z.string()
-    .email('Email inválido')
-    .max(255, 'Email demasiado largo')
-    .optional()
-    .or(z.literal('')),
-
-  description: z.string()
-    .max(2000, 'Descripción demasiado larga')
-    .optional()
-    .or(z.literal('')),
-
-  logo_url: z.string().optional().or(z.literal('')),
-
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  rating: z.number().min(0).max(5).optional(),
-
-  is_active: z.boolean().optional(),
-});
-
-export type GymFormData = z.infer<typeof gymSchema>;
 
 // =============================================
 // LOGIN

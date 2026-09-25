@@ -15,7 +15,7 @@ export function useUserManagement() {
 
   // Queries
   const { data: users, isLoading: loadingUsers, error: usersError } = useUsers();
-  const { data: invoices, isLoading: loadingInvoices } = useInvoices();
+  const { data: payments, isLoading: loadingPayments } = useInvoices();
 
   // Mutations
   const createUser = useCreateUser();
@@ -36,14 +36,14 @@ export function useUserManagement() {
 
   // Enriquecer usuarios con información de pagos
   const enrichedUsers = filteredUsers?.map((user) => {
-    const userInvoices = invoices?.filter((inv: any) => inv.user_id === user.id) || [];
-    const lastInvoice = userInvoices[0];
+    const userPayments = payments?.filter((p: any) => p.user_id === user.id) || [];
+    const lastPayment = userPayments[0]; // Asumiendo que están ordenados por fecha
 
     return {
       ...user,
-      lastInvoice,
-      totalInvoices: userInvoices.length,
-      hasOverdueInvoice: lastInvoice?.status === 'Vencida',
+      lastPayment,
+      totalPayments: userPayments.length,
+      hasOverduePayment: lastPayment?.status === 'Vencido',
     };
   });
 
@@ -96,7 +96,7 @@ export function useUserManagement() {
     stats,
 
     // Estados
-    isLoading: loadingUsers || loadingInvoices,
+    isLoading: loadingUsers || loadingPayments,
     error: usersError,
     isFormOpen,
     searchQuery,

@@ -17,8 +17,6 @@ export const exerciseSchema = z.object({
   description: z.string().optional(),
   muscle_group: z.string().min(1, 'El grupo muscular es obligatorio'),
   equipment: z.string().optional(),
-  image_url: z.string().optional().or(z.literal('')),
-  gif_url: z.string().optional().or(z.literal('')),
 });
 
 export type ExerciseInput = z.infer<typeof exerciseSchema>;
@@ -29,17 +27,6 @@ export interface Exercise {
   description: string | null;
   muscle_group: string;
   equipment: string | null;
-  category: string | null;
-  body_part: string | null;
-  target: string | null;
-  secondary_muscles: string[] | null;
-  instructions_es: string | null;
-  instructions_en: string | null;
-  image_url: string | null;
-  gif_url: string | null;
-  media_id: string | null;
-  external_id: string | null;
-  attribution: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

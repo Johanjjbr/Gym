@@ -1,22 +1,16 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { User as UserIcon, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Menu, X, BookOpen, Star } from 'lucide-react';
+import { User, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Menu, X } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
-import { Toaster } from '../components/ui/sonner';
 import { useState } from 'react';
-import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 
-const getMenuItems = (hasGym: boolean) => [
+const menuItems = [
   { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/usuario/mi-entrenamiento' },
-  { icon: BookOpen, label: 'Rutinas', path: '/usuario/rutinas' },
-  { icon: UserIcon, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
+  { icon: User, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
   { icon: TrendingUp, label: 'Progreso Físico', path: '/usuario/progreso' },
-  ...(hasGym ? [
-    { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
-    { icon: CreditCard, label: 'Mis Facturas', path: '/usuario/facturas' },
-    { icon: Star, label: 'Valorar Gimnasio', path: '/usuario/valorar-gimnasio' },
-  ] : []),
+  { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
+  { icon: CreditCard, label: 'Mis Pagos', path: '/usuario/pagos' },
 ];
 
 export function UserLayout() {
@@ -47,7 +41,6 @@ export function UserLayout() {
   return (
     <ProtectedRoute allowedRoles={['Usuario']}>
       <div className="min-h-screen bg-background">
-        <Toaster position="bottom-right" richColors />
         {/* Mobile Header */}
         <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-[#0f0f16] border-b border-border">
           <div className="flex items-center justify-between p-4">
@@ -105,7 +98,7 @@ export function UserLayout() {
           {/* Navigation */}
           <nav className="flex-1 p-4 overflow-y-auto">
             <ul className="space-y-1">
-              {getMenuItems(!!user?.gym_id).map((item) => {
+              {menuItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
                 
@@ -133,12 +126,11 @@ export function UserLayout() {
           {/* User Profile */}
           <div className="p-4 border-t border-border">
             <div className="flex items-center gap-3 p-3 rounded-lg bg-card">
-              <Avatar className="w-10 h-10">
-                <AvatarImage src={user?.photo} alt={user?.name} />
-                <AvatarFallback className="bg-primary/20 text-primary text-sm">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                <span className="text-primary text-sm">
                   {user ? getInitials(user.name) : 'U'}
-                </AvatarFallback>
-              </Avatar>
+                </span>
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{user?.name || 'Usuario'}</p>
                 <p className="text-xs text-muted-foreground truncate">

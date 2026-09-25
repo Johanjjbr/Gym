@@ -7,13 +7,11 @@ import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { useAttendance, useCreateAttendance } from '../hooks/useAttendance';
 import { useUsers } from '../hooks/useUsers';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router';
-import { formatDate } from '../lib/format';
 
 export function Attendance() {
   const navigate = useNavigate();
@@ -32,8 +30,7 @@ export function Attendance() {
   
   // Filtrar asistencia por búsqueda
   const filteredAttendance = attendance && attendance.length > 0 ? attendance.filter((a: any) =>
-    a.users?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (a.users?.cedula && a.users.cedula.toLowerCase().includes(searchTerm.toLowerCase()))
+    a.users?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   ) : [];
   
   // Calcular asistencia de hoy
@@ -76,7 +73,7 @@ export function Attendance() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
+          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
           <p className="text-gray-400">Cargando asistencia...</p>
         </div>
       </div>
@@ -87,7 +84,7 @@ export function Attendance() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <AlertCircle className="h-16 w-16 text-destructive" />
+        <AlertCircle className="h-16 w-16 text-[#ff3b5c]" />
         <h2 className="text-2xl">Error al cargar asistencia</h2>
         <p className="text-muted-foreground text-center max-w-md">
           Ocurrió un error al cargar los datos de asistencia. Verifica tu conexión a Supabase.
@@ -199,51 +196,53 @@ export function Attendance() {
         </CardHeader>
         <CardContent>
           {filteredAttendance.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Usuario</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Hora</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAttendance.map((record: any) => (
-                  <TableRow key={record.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-muted-foreground" />
-                        {record.users?.name || 'Usuario desconocido'}
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatDate(record.date)}</TableCell>
-                    <TableCell>
-                      <span className="text-primary">{record.time}</span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={record.type === 'Entrada' ? 'bg-primary/20 text-primary border-primary/30' : 'bg-destructive/20 text-destructive border-destructive/30'}>
-                        {record.type === 'Entrada' ? <LogIn className="w-3 h-3 mr-1 inline" /> : <LogOut className="w-3 h-3 mr-1 inline" />}
-                        {record.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="border-primary text-primary hover:bg-primary/10"
-                          onClick={() => navigate(`/usuarios/${record.user_id}`)}
-                        >
-                          Ver Usuario
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-3 px-4 text-muted-foreground">Usuario</th>
+                    <th className="text-left py-3 px-4 text-muted-foreground">Fecha</th>
+                    <th className="text-left py-3 px-4 text-muted-foreground">Hora</th>
+                    <th className="text-left py-3 px-4 text-muted-foreground">Tipo</th>
+                    <th className="text-right py-3 px-4 text-muted-foreground">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAttendance.map((record: any) => (
+                    <tr key={record.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-muted-foreground" />
+                          {record.users?.name || 'Usuario desconocido'}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">{new Date(record.date).toLocaleDateString('es-ES')}</td>
+                      <td className="py-4 px-4">
+                        <span className="text-primary">{record.time}</span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <Badge variant="outline" className={record.type === 'Entrada' ? 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30' : 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30'}>
+                          {record.type === 'Entrada' ? <LogIn className="w-3 h-3 mr-1 inline" /> : <LogOut className="w-3 h-3 mr-1 inline" />}
+                          {record.type}
+                        </Badge>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="border-primary text-primary hover:bg-primary/10"
+                            onClick={() => navigate(`/usuarios/${record.user_id}`)}
+                          >
+                            Ver Usuario
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <UserCheck className="w-16 h-16 mx-auto mb-4 opacity-50" />
@@ -277,7 +276,7 @@ export function Attendance() {
                   ) : users && users.length > 0 ? (
                     users.map((user: any) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.name} - {user.cedula || user.member_number || user.id.slice(0, 8)}
+                        {user.name} - {user.member_number || user.id.slice(0, 8)}
                       </SelectItem>
                     ))
                   ) : (
@@ -297,13 +296,13 @@ export function Attendance() {
                 <SelectContent className="bg-popover border-border">
                   <SelectItem value="Entrada">
                     <div className="flex items-center gap-2">
-                      <LogIn className="w-4 h-4 text-primary" />
+                      <LogIn className="w-4 h-4 text-[#10f94e]" />
                       Entrada
                     </div>
                   </SelectItem>
                   <SelectItem value="Salida">
                     <div className="flex items-center gap-2">
-                      <LogOut className="w-4 h-4 text-destructive" />
+                      <LogOut className="w-4 h-4 text-[#ff3b5c]" />
                       Salida
                     </div>
                   </SelectItem>
@@ -367,7 +366,7 @@ export function Attendance() {
                   ) : users && users.length > 0 ? (
                     users.map((user: any) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.name} - {user.cedula || user.member_number || user.id.slice(0, 8)}
+                        {user.name} - {user.member_number || user.id.slice(0, 8)}
                       </SelectItem>
                     ))
                   ) : (

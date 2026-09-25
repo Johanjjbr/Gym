@@ -33,9 +33,12 @@ export function useAttendance(date?: string) {
 export function useUserAttendance(userId: string) {
   return useQuery({
     queryKey: attendanceKeys.byUser(userId),
-    queryFn: () => attendance.getAll(undefined, userId),
+    queryFn: async () => {
+      const allAttendance = await attendance.getAll();
+      return allAttendance.filter((a: any) => a.user_id === userId);
+    },
     staleTime: 1000 * 60 * 1,
-    enabled: !!userId,
+    enabled: !!userId, // Solo ejecutar si hay userId
   });
 }
 

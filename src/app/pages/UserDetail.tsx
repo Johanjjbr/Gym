@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -14,27 +13,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
-import { useUserInvoices, usePayInvoice, useCreateInvoice, useDeleteInvoice } from '../hooks/useInvoices';
-import { usePlans } from '../hooks/usePlans';
+import { useUserInvoices, useCreateInvoice } from '../hooks/useInvoices';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
 import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
-import { PaymentCalendar } from '../components/PaymentCalendar';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDate } from '../lib/format';
+import { supabase } from '../lib/supabase';
 
 export function UserDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
-  const [invoiceType, setInvoiceType] = useState<'plan' | 'other'>('plan');
-  const [invoiceConcept, setInvoiceConcept] = useState('');
-  const [invoiceAmount, setInvoiceAmount] = useState('');
-  const [invoiceNotes, setInvoiceNotes] = useState('');
-  const [invoiceMonth, setInvoiceMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
   const [isAssignRoutineDialogOpen, setIsAssignRoutineDialogOpen] = useState(false);
   const [isAssignTrainerDialogOpen, setIsAssignTrainerDialogOpen] = useState(false);
   const [isCreatePaymentDialogOpen, setIsCreatePaymentDialogOpen] = useState(false);
@@ -44,15 +33,19 @@ export function UserDetail() {
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
-  const [progressToDelete, setProgressToDelete] = useState<string | null>(null);
-  const [invoiceToDelete, setInvoiceToDelete] = useState<any>(null);
   
-  // Estados para el formulario de pago de factura
-  const [payInvoiceAmount, setPayInvoiceAmount] = useState('');
-  const [payInvoiceMethod, setPayInvoiceMethod] = useState('Efectivo');
-  const [payInvoiceReference, setPayInvoiceReference] = useState('');
-  const [payInvoiceNotes, setPayInvoiceNotes] = useState('');
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  // Estados para el formulario de pago
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentNextDate, setPaymentNextDate] = useState(() => {
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    return nextMonth.toISOString().split('T')[0];
+  });
+  const [paymentStatus, setPaymentStatus] = useState<'Pagado' | 'Pendiente' | 'Vencido'>('Pagado');
+  const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
   
   // Estados para el formulario de progreso físico
   const [progressWeight, setProgressWeight] = useState('');
@@ -60,45 +53,33 @@ export function UserDetail() {
   const [progressMuscleMass, setProgressMuscleMass] = useState('');
   const [progressDate, setProgressDate] = useState(new Date().toISOString().split('T')[0]);
   const [progressNotes, setProgressNotes] = useState('');
-  const [progressMeasurements, setProgressMeasurements] = useState<Record<string, string>>({});
-  const [showProgressMeasurements, setShowProgressMeasurements] = useState(false);
   
   // Usar React Query en lugar de mockData
   const { data: user, isLoading, error } = useUser(id || '');
   
-  // Obtener facturas reales del usuario
-  const { data: userInvoices, isLoading: loadingPayments } = useUserInvoices(id || '');
-
-  // Planes disponibles (para resolver precio/nombre del plan del usuario)
-  const { data: plansList } = usePlans();
-  const userPlan = plansList?.find((p: any) => p.id === user?.plan_id);
-
+  // Obtener pagos reales del usuario
+  const { data: userPayments, isLoading: loadingPayments } = useUserInvoices(id || '');
+  
   // Obtener rutinas disponibles y asignaciones del usuario
   const { data: availableRoutines, isLoading: loadingRoutines } = useRoutines();
-  const { data: userRoutineAssignments, isLoading: loadingAssignments, error: routineError } = useRoutineAssignments(id || '');
+  const { data: userRoutineAssignments, isLoading: loadingAssignments } = useRoutineAssignments(id);
   const assignRoutineMutation = useAssignRoutine();
   
   // Obtener entrenadores disponibles
   const { data: trainers, isLoading: loadingTrainers } = useTrainers();
   const assignTrainerMutation = useAssignTrainer();
   
-  // Hook para pagar facturas
-  const payInvoiceMutation = usePayInvoice();
-
-  // Hook para generar facturas (plan u otro motivo)
-  const createInvoiceMutation = useCreateInvoice();
-
-  // Hook para eliminar facturas
-  const deleteInvoiceMutation = useDeleteInvoice();
+  // Hook para crear pagos
+  const createPaymentMutation = useCreateInvoice();
   
   // Obtener usuario actual del staff usando el contexto de autenticación
   const { user: currentUser } = useAuth();
   
   // Obtener asistencia del usuario
-  const { data: userAttendanceData, isLoading: loadingAttendance, error: attendanceError } = useUserAttendance(id || '');
+  const { data: userAttendanceData, isLoading: loadingAttendance } = useUserAttendance(id || '');
   
   // Obtener progreso físico del usuario
-  const { data: userPhysicalProgress, isLoading: loadingPhysicalProgress, error: progressError } = usePhysicalProgress(id || '');
+  const { data: userPhysicalProgress, isLoading: loadingPhysicalProgress } = usePhysicalProgress(id || '');
   const createPhysicalProgressMutation = useCreatePhysicalProgress();
   const deletePhysicalProgressMutation = useDeletePhysicalProgress();
 
@@ -107,7 +88,7 @@ export function UserDetail() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
+          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
           <p className="text-gray-400">Cargando datos del usuario...</p>
         </div>
       </div>
@@ -118,7 +99,7 @@ export function UserDetail() {
   if (error || !user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <AlertCircle className="h-16 w-16 text-destructive" />
+        <AlertCircle className="h-16 w-16 text-[#ff3b5c]" />
         <h2 className="text-2xl">Usuario no encontrado</h2>
         <p className="text-muted-foreground text-center max-w-md">
           {error 
@@ -130,7 +111,7 @@ export function UserDetail() {
             Volver a Usuarios
           </Button>
           {error && (
-            <Button onClick={() => navigate('/test-supabase')} className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Button onClick={() => navigate('/test-supabase')} className="bg-[#10f94e] text-black hover:bg-[#0ed145]">
               Probar Conexión
             </Button>
           )}
@@ -141,23 +122,15 @@ export function UserDetail() {
 
   // Datos reales obtenidos de los hooks
   const userProgress = userPhysicalProgress || [];
-  const invoices = userInvoices || [];
-
-  const hasPlanInvoiceForMonth = (month: string) =>
-    !!user?.plan_id &&
-    invoices.some(
-      (inv: any) =>
-        inv.plan_id === user.plan_id &&
-        typeof inv.due_date === 'string' &&
-        inv.due_date.startsWith(month),
-    );
+  const userInvoices: any[] = []; // Facturas se manejan desde payments
+  const payments = userPayments || [];
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Activo':
-        return 'bg-primary/20 text-primary border-primary/30';
-      case 'Suspendido':
-        return 'bg-destructive/20 text-destructive border-destructive/30';
+        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
+      case 'Moroso':
+        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       default:
         return 'bg-muted text-muted-foreground';
     }
@@ -165,94 +138,23 @@ export function UserDetail() {
 
   const getPaymentStatusColor = (status: string) => {
     switch (status) {
-      case 'Pagada':
       case 'Pagado':
-        return 'bg-primary/20 text-primary border-primary/30';
+        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
       case 'Pendiente':
         return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
-      case 'Vencida':
       case 'Vencido':
-        return 'bg-destructive/20 text-destructive border-destructive/30';
+        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       default:
         return 'bg-muted text-muted-foreground';
     }
   };
 
-  const openInvoiceDialog = () => {
-    setInvoiceType(user?.plan_id ? 'plan' : 'other');
-    setInvoiceConcept('');
-    setInvoiceAmount(userPlan?.price ? String(userPlan.price) : '');
-    setInvoiceNotes('');
-    setInvoiceMonth(() => {
-      const now = new Date();
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const generateInvoice = (payment: any) => {
+    const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(payments?.length || 0 + 1).padStart(3, '0')}`;
+    toast.success('Factura generada exitosamente', {
+      description: `Factura ${invoiceNumber} lista para descargar`,
     });
-    setIsInvoiceDialogOpen(true);
-  };
-
-  const handleGenerateInvoice = () => {
-    if (!id) return;
-
-    const dueDate = invoiceMonth ? `${invoiceMonth}-01T00:00:00` : undefined;
-
-    if (invoiceType === 'plan') {
-      if (!user?.plan_id) {
-        toast.error('El usuario no tiene un plan asignado');
-        return;
-      }
-      if (hasPlanInvoiceForMonth(invoiceMonth)) {
-        toast.error('Ya existe una factura del plan para este mes');
-        return;
-      }
-      const planPrice = Number(userPlan?.price) || 0;
-      const amount = invoiceAmount !== '' ? parseFloat(invoiceAmount) : planPrice;
-      if (Number.isNaN(amount) || amount <= 0) {
-        toast.error('El monto debe ser mayor a cero');
-        return;
-      }
-      createInvoiceMutation.mutate({
-        user_id: id,
-        source: 'plan',
-        plan_id: user.plan_id,
-        amount,
-        due_date: dueDate,
-        notes: invoiceNotes || undefined,
-      }, {
-        onSuccess: () => {
-          setIsInvoiceDialogOpen(false);
-          setInvoiceConcept('');
-          setInvoiceAmount('');
-          setInvoiceNotes('');
-        },
-      });
-    } else {
-      if (!invoiceConcept || !invoiceAmount) {
-        toast.error('Concepto y monto son requeridos');
-        return;
-      }
-      createInvoiceMutation.mutate({
-        user_id: id,
-        source: 'other',
-        concept: invoiceConcept,
-        amount: parseFloat(invoiceAmount),
-        due_date: dueDate,
-        notes: invoiceNotes || undefined,
-      }, {
-        onSuccess: () => {
-          setIsInvoiceDialogOpen(false);
-          setInvoiceConcept('');
-          setInvoiceAmount('');
-          setInvoiceNotes('');
-        },
-      });
-    }
-  };
-
-  const handleDeleteInvoice = () => {
-    if (!invoiceToDelete) return;
-    deleteInvoiceMutation.mutate(invoiceToDelete.id, {
-      onSuccess: () => setInvoiceToDelete(null),
-    });
+    setIsInvoiceDialogOpen(false);
   };
 
   const assignRoutine = () => {
@@ -301,26 +203,35 @@ export function UserDetail() {
     });
   };
 
-  const handlePayInvoice = () => {
-    if (!selectedInvoiceId || !payInvoiceAmount || !payInvoiceMethod) {
-      toast.error('Por favor completa todos los campos');
+  const createPayment = () => {
+    if (!id || !paymentAmount || !paymentDate || !paymentNextDate || !paymentStatus || !paymentMethod) {
+      toast.error('Por favor completa todos los campos del pago');
       return;
     }
-    payInvoiceMutation.mutate({
-      id: selectedInvoiceId,
-      data: {
-        method: payInvoiceMethod,
-        reference: payInvoiceReference || undefined,
-        notes: payInvoiceNotes || undefined,
-      },
+
+    createPaymentMutation.mutate({
+      user_id: id,
+      amount: parseFloat(paymentAmount),
+      date: paymentDate,
+      next_payment: paymentNextDate,
+      status: paymentStatus,
+      method: paymentMethod,
+      reference: paymentReference,
+      notes: paymentNotes,
     }, {
       onSuccess: () => {
         setIsCreatePaymentDialogOpen(false);
-        setSelectedInvoiceId(null);
-        setPayInvoiceAmount('');
-        setPayInvoiceMethod('Efectivo');
-        setPayInvoiceReference('');
-        setPayInvoiceNotes('');
+        setPaymentAmount('');
+        setPaymentDate(new Date().toISOString().split('T')[0]);
+        setPaymentNextDate(() => {
+          const nextMonth = new Date();
+          nextMonth.setMonth(nextMonth.getMonth() + 1);
+          return nextMonth.toISOString().split('T')[0];
+        });
+        setPaymentStatus('Pagado');
+        setPaymentMethod('Efectivo');
+        setPaymentReference('');
+        setPaymentNotes('');
       },
     });
   };
@@ -331,10 +242,6 @@ export function UserDetail() {
       return;
     }
 
-    const bodyMeasurements: Record<string, number> = {};
-    Object.entries(progressMeasurements).forEach(([key, val]) => {
-      if (val) bodyMeasurements[key] = parseFloat(val);
-    });
     createPhysicalProgressMutation.mutate({
       user_id: id,
       weight: parseFloat(progressWeight),
@@ -342,7 +249,6 @@ export function UserDetail() {
       muscle_mass: progressMuscleMass ? parseFloat(progressMuscleMass) : undefined,
       date: progressDate,
       notes: progressNotes || undefined,
-      body_measurements: Object.keys(bodyMeasurements).length > 0 ? bodyMeasurements : undefined,
     }, {
       onSuccess: () => {
         setIsAddProgressDialogOpen(false);
@@ -351,20 +257,21 @@ export function UserDetail() {
         setProgressMuscleMass('');
         setProgressDate(new Date().toISOString().split('T')[0]);
         setProgressNotes('');
-        setProgressMeasurements({});
-        setShowProgressMeasurements(false);
       },
     });
   };
   
   const deleteProgress = (progressId: string) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este registro?')) {
+      return;
+    }
+    
     deletePhysicalProgressMutation.mutate(progressId);
-    setProgressToDelete(null);
   };
 
   // Prepare chart data - usar datos reales
   const weightChartData = (userPhysicalProgress || []).map((p: any) => ({
-    date: formatDate(p.date),
+    date: new Date(p.date).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }),
     peso: p.weight,
     grasa: p.body_fat || 0,
     musculo: p.muscle_mass || 0,
@@ -397,7 +304,7 @@ export function UserDetail() {
         </div>
         <Button
           className="bg-primary text-primary-foreground hover:bg-primary/90"
-          onClick={openInvoiceDialog}
+          onClick={() => setIsInvoiceDialogOpen(true)}
         >
           <Download className="w-4 h-4 mr-2" />
           Generar Factura
@@ -462,7 +369,7 @@ export function UserDetail() {
                 <p className="text-sm text-muted-foreground">Próximo Pago</p>
                 <p className="text-lg">
                   {user.next_payment 
-                    ? formatDate(user.next_payment)
+                    ? new Date(user.next_payment).toLocaleDateString('es-ES')
                     : 'No definido'}
                 </p>
               </div>
@@ -473,18 +380,16 @@ export function UserDetail() {
 
       {/* Tabs with Details */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="w-full overflow-x-auto flex-nowrap lg:w-auto">
+        <TabsList className="grid w-full grid-cols-5 lg:w-auto">
           <TabsTrigger value="overview">General</TabsTrigger>
           <TabsTrigger value="attendance">Asistencia</TabsTrigger>
           <TabsTrigger value="progress">Progreso Físico</TabsTrigger>
           <TabsTrigger value="routines">Rutinas</TabsTrigger>
-          <TabsTrigger value="payments">Facturas</TabsTrigger>
+          <TabsTrigger value="payments">Pagos</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
-          <PaymentCalendar invoices={invoices} />
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Personal Info */}
             <Card className="bg-card border-border">
@@ -516,13 +421,9 @@ export function UserDetail() {
                     <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
                     <p>
                       {user.start_date 
-                        ? formatDate(user.start_date)
+                        ? new Date(user.start_date).toLocaleDateString('es-ES')
                         : 'No definido'}
                     </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Cédula</p>
-                    <p className="text-primary">{user.cedula || 'No registrada'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Miembro #</p>
@@ -568,7 +469,7 @@ export function UserDetail() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="w-full border-destructive text-destructive hover:bg-destructive/10"
+                      className="w-full border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
                       onClick={() => {
                         if (!id) return;
                         assignTrainerMutation.mutate({
@@ -605,7 +506,7 @@ export function UserDetail() {
               <CardContent>
                 {loadingAssignments ? (
                   <div className="text-center py-8">
-                    <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
+                    <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
                   </div>
                 ) : userRoutineAssignments && userRoutineAssignments.length > 0 ? (
                   <div className="space-y-3">
@@ -627,36 +528,36 @@ export function UserDetail() {
               </CardContent>
             </Card>
 
-            {/* Última Factura */}
+            {/* Último Pago */}
             <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5" />
-                  Última Factura
+                  Último Pago
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {loadingPayments ? (
                   <div className="text-center py-8">
-                    <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
+                    <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
                   </div>
-                ) : invoices && invoices.length > 0 ? (
+                ) : userPayments && userPayments.length > 0 ? (
                   <div className="space-y-3">
                     <div className="p-4 bg-muted rounded-lg">
                       <div className="flex items-center gap-4 mb-2">
-                        <p className="text-2xl text-primary">Bs {Number(invoices[0].amount).toLocaleString()}</p>
-                        <Badge variant="outline" className={getPaymentStatusColor(invoices[0].status)}>
-                          {invoices[0].status}
+                        <p className="text-2xl text-primary">Bs {userPayments[0].amount.toLocaleString()}</p>
+                        <Badge variant="outline" className={getPaymentStatusColor(userPayments[0].status)}>
+                          {userPayments[0].status}
                         </Badge>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
-                          <p className="text-muted-foreground">Factura</p>
-                          <p className="font-mono text-xs">{invoices[0].invoice_number}</p>
+                          <p className="text-muted-foreground">Fecha</p>
+                          <p>{new Date(userPayments[0].date).toLocaleDateString('es-ES')}</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Vencimiento</p>
-                          <p>{formatDate(invoices[0].due_date)}</p>
+                          <p className="text-muted-foreground">Método</p>
+                          <p>{userPayments[0].method}</p>
                         </div>
                       </div>
                     </div>
@@ -664,7 +565,7 @@ export function UserDetail() {
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     <CreditCard className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>No hay facturas registradas</p>
+                    <p>No hay pagos registrados</p>
                   </div>
                 )}
               </CardContent>
@@ -681,12 +582,7 @@ export function UserDetail() {
             <CardContent>
               {loadingAttendance ? (
                 <div className="text-center py-8">
-                  <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
-                </div>
-              ) : attendanceError ? (
-                <div className="flex flex-col items-center justify-center py-8 text-destructive">
-                  <AlertCircle className="w-12 h-12 mb-2" />
-                  <p className="text-sm">Error al cargar asistencia</p>
+                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
                 </div>
               ) : userAttendanceData && userAttendanceData.length > 0 ? (
                 <div className="space-y-3">
@@ -700,7 +596,12 @@ export function UserDetail() {
                           <Calendar className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <p>{formatDate(attendance.date)}</p>
+                          <p>{new Date(attendance.date).toLocaleDateString('es-ES', { 
+                            weekday: 'long', 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric' 
+                          })}</p>
                           <p className="text-sm text-muted-foreground">{attendance.time}</p>
                         </div>
                       </div>
@@ -722,17 +623,6 @@ export function UserDetail() {
 
         {/* Progress Tab */}
         <TabsContent value="progress" className="space-y-6">
-          {progressError ? (
-            <Card className="bg-card border-border">
-              <CardContent className="py-8">
-                <div className="flex flex-col items-center justify-center text-destructive">
-                  <AlertCircle className="w-12 h-12 mb-2" />
-                  <p className="text-sm">Error al cargar progreso físico</p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-          <>
           <Card className="bg-card border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -804,7 +694,7 @@ export function UserDetail() {
             <CardContent>
               {loadingPhysicalProgress ? (
                 <div className="text-center py-8">
-                  <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
+                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
                 </div>
               ) : userPhysicalProgress && userPhysicalProgress.length > 0 ? (
                 <div className="space-y-4">
@@ -816,7 +706,7 @@ export function UserDetail() {
                       <div className="grid grid-cols-4 gap-4 flex-1">
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">Fecha</p>
-                          <p>{formatDate(progress.date)}</p>
+                          <p>{new Date(progress.date).toLocaleDateString('es-ES')}</p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">Peso</p>
@@ -834,8 +724,8 @@ export function UserDetail() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => setProgressToDelete(progress.id)}
+                        className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
+                        onClick={() => deleteProgress(progress.id)}
                         disabled={deletePhysicalProgressMutation.isPending}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -851,8 +741,6 @@ export function UserDetail() {
               )}
             </CardContent>
           </Card>
-          </>
-          )}
         </TabsContent>
 
         {/* Routines Tab */}
@@ -861,17 +749,8 @@ export function UserDetail() {
             <Card className="bg-card border-border">
               <CardContent className="py-12">
                 <div className="text-center">
-                  <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-2" />
+                  <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto mb-2" />
                   <p className="text-muted-foreground">Cargando rutinas...</p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : routineError ? (
-            <Card className="bg-card border-border">
-              <CardContent className="py-12">
-                <div className="flex flex-col items-center justify-center text-destructive">
-                  <AlertCircle className="w-12 h-12 mb-2" />
-                  <p className="text-sm">Error al cargar rutinas</p>
                 </div>
               </CardContent>
             </Card>
@@ -898,7 +777,7 @@ export function UserDetail() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
-                      <p>{assignment.start_date ? formatDate(assignment.start_date) : 'N/A'}</p>
+                      <p>{assignment.start_date ? new Date(assignment.start_date).toLocaleDateString('es-ES') : 'N/A'}</p>
                     </div>
                   </div>
                   
@@ -954,81 +833,111 @@ export function UserDetail() {
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5" />
-                  Facturas
+                  Historial de Pagos
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-primary text-primary hover:bg-primary/10"
-                    onClick={() => setIsCreatePaymentDialogOpen(true)}
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Pagar Factura
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-primary text-primary hover:bg-primary/10"
+                  onClick={() => setIsCreatePaymentDialogOpen(true)}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Registrar Pago
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent>
               {loadingPayments ? (
                 <div className="text-center py-8">
-                  <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto mb-2" />
-                  <p className="text-muted-foreground text-sm">Cargando facturas...</p>
+                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto mb-2" />
+                  <p className="text-muted-foreground text-sm">Cargando pagos...</p>
                 </div>
-              ) : invoices && invoices.length > 0 ? (
+              ) : userPayments && userPayments.length > 0 ? (
                 <div className="space-y-3">
-                  {invoices.map((inv: any) => (
-                    <div key={inv.id}
+                  {userPayments.map((payment: any) => (
+                    <div
+                      key={payment.id}
                       className="flex items-center justify-between p-4 bg-muted rounded-lg"
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-4 mb-2">
-                          <p className="text-2xl text-primary">Bs {Number(inv.amount).toLocaleString()}</p>
-                          <Badge variant="outline" className={getPaymentStatusColor(inv.status)}>
-                            {inv.status}
+                          <p className="text-2xl text-primary">Bs {payment.amount.toLocaleString()}</p>
+                          <Badge variant="outline" className={getPaymentStatusColor(payment.status)}>
+                            {payment.status}
                           </Badge>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                        <div className="grid grid-cols-3 gap-4 text-sm">
                           <div>
-                            <p className="text-muted-foreground">Concepto</p>
-                            <p>{inv.concept || inv.plans?.name || '-'}</p>
+                            <p className="text-muted-foreground">Fecha de Pago</p>
+                            <p>{new Date(payment.date).toLocaleDateString('es-ES')}</p>
                           </div>
                           <div>
-                            <p className="text-muted-foreground">Factura</p>
-                            <p className="font-mono text-xs">{inv.invoice_number}</p>
+                            <p className="text-muted-foreground">Método</p>
+                            <p>{payment.method}</p>
                           </div>
                           <div>
-                            <p className="text-muted-foreground">Vencimiento</p>
-                            <p>{formatDate(inv.due_date)}</p>
+                            <p className="text-muted-foreground">Próximo Pago</p>
+                            <p>{new Date(payment.next_payment).toLocaleDateString('es-ES')}</p>
                           </div>
                         </div>
                       </div>
-                      {inv.status !== 'Pagada' && (
-                        <Button size="sm"
-                          className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
-                          onClick={() => {
-                            setSelectedInvoiceId(inv.id);
-                            setPayInvoiceAmount(String(inv.amount));
-                            setIsCreatePaymentDialogOpen(true);
-                          }}
-                        >
-                          <CreditCard className="w-4 h-4 mr-1" />
-                          Pagar
-                        </Button>
-                      )}
-                      <Button size="sm" variant="ghost"
-                        className="hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => setInvoiceToDelete(inv)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
                   <CreditCard className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p>No hay facturas registradas</p>
+                  <p>No hay registros de pagos</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Facturas Generadas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {userInvoices.length > 0 ? (
+                <div className="space-y-3">
+                  {userInvoices.map((invoice) => (
+                    <div
+                      key={invoice.id}
+                      className="flex items-center justify-between p-4 bg-muted rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 mb-2">
+                          <p className="text-primary">{invoice.invoiceNumber}</p>
+                          <Badge variant="outline" className="bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30">
+                            {invoice.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{invoice.concept}</p>
+                        <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">Fecha</p>
+                            <p>{new Date(invoice.date).toLocaleDateString('es-ES')}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Monto</p>
+                            <p className="text-lg">Bs {invoice.amount.toLocaleString()}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary/10">
+                        <Download className="w-4 h-4 mr-2" />
+                        Descargar
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>No hay facturas generadas</p>
                 </div>
               )}
             </CardContent>
@@ -1046,116 +955,29 @@ export function UserDetail() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant={invoiceType === 'plan' ? 'default' : 'outline'}
-                onClick={() => setInvoiceType('plan')}
-                disabled={!user?.plan_id}
-                className={invoiceType === 'plan' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border-border hover:bg-muted'}
-              >
-                Del plan
-              </Button>
-              <Button
-                type="button"
-                variant={invoiceType === 'other' ? 'default' : 'outline'}
-                onClick={() => setInvoiceType('other')}
-                className={invoiceType === 'other' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border-border hover:bg-muted'}
-              >
-                Otro motivo
-              </Button>
-            </div>
-
             <div>
-              <Label>Mes de la factura <span className="text-destructive">*</span></Label>
+              <Label>Concepto</Label>
               <Input
-                type="month"
-                value={invoiceMonth}
-                onChange={(e) => setInvoiceMonth(e.target.value)}
+                placeholder="Ej: Mensualidad Premium - Marzo 2026"
                 className="bg-input border-border"
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                La factura tendrá como vencimiento el primer día del mes seleccionado.
-              </p>
             </div>
-
-            {invoiceType === 'plan' ? (
-              user?.plan_id ? (
-                <>
-                  <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="font-semibold">{userPlan?.name || user.plan || 'Plan'}</p>
-                      <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
-                        Mensualidad
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Monto del plan: Bs {(Number(userPlan?.price) || 0).toLocaleString()}
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Se generará una factura pendiente por el plan actual. Puedes ajustar el monto si es necesario.
-                    </p>
-                  </div>
-                  {hasPlanInvoiceForMonth(invoiceMonth) && (
-                    <p className="text-sm text-destructive flex items-center gap-1.5">
-                      <AlertCircle className="w-4 h-4" />
-                      Ya existe una factura del plan para este mes.
-                    </p>
-                  )}
-                  <div>
-                    <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={invoiceAmount}
-                      onChange={(e) => setInvoiceAmount(e.target.value)}
-                      placeholder="450"
-                      className="bg-input border-border"
-                    />
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  El usuario no tiene un plan asignado. Selecciona "Otro motivo" o asígnale un plan primero.
-                </p>
-              )
-            ) : (
-              <div>
-                <Label>Concepto <span className="text-destructive">*</span></Label>
-                <Input
-                  value={invoiceConcept}
-                  onChange={(e) => setInvoiceConcept(e.target.value)}
-                  placeholder="Ej: Suplementos, inscripción, membresía especial..."
-                  className="bg-input border-border"
-                />
-              </div>
-            )}
-
-            {invoiceType === 'other' && (
-              <div>
-                <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={invoiceAmount}
-                  onChange={(e) => setInvoiceAmount(e.target.value)}
-                  placeholder="450"
-                  className="bg-input border-border"
-                />
-              </div>
-            )}
-
+            <div>
+              <Label>Monto (Bs)</Label>
+              <Input
+                type="number"
+                placeholder="450"
+                className="bg-input border-border"
+              />
+            </div>
             <div>
               <Label>Notas (Opcional)</Label>
               <Textarea
-                value={invoiceNotes}
-                onChange={(e) => setInvoiceNotes(e.target.value)}
                 placeholder="Información adicional..."
                 className="bg-input border-border"
                 rows={3}
               />
             </div>
-
             <div className="flex justify-end gap-2 pt-4">
               <Button
                 variant="outline"
@@ -1165,22 +987,10 @@ export function UserDetail() {
               </Button>
               <Button
                 className="bg-primary hover:bg-primary/90"
-                onClick={handleGenerateInvoice}
-                disabled={createInvoiceMutation.isPending ||
-                  (invoiceType === 'plan' && !user?.plan_id) ||
-                  (invoiceType === 'plan' && hasPlanInvoiceForMonth(invoiceMonth))}
+                onClick={() => generateInvoice(user)}
               >
-                {createInvoiceMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Generando...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 mr-2" />
-                    Generar Factura
-                  </>
-                )}
+                <Download className="w-4 h-4 mr-2" />
+                Generar y Descargar
               </Button>
             </div>
           </div>
@@ -1346,32 +1156,66 @@ export function UserDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Pay Invoice Dialog */}
+      {/* Create Payment Dialog */}
       <Dialog open={isCreatePaymentDialogOpen} onOpenChange={setIsCreatePaymentDialogOpen}>
         <DialogContent className="bg-card border-border max-w-md">
           <DialogHeader>
-            <DialogTitle>Pagar Factura</DialogTitle>
+            <DialogTitle>Registrar Pago</DialogTitle>
             <DialogDescription>
-              Registrar pago de factura para {user.name}
+              Registrar un nuevo pago para {user.name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Monto (Bs) <span className="text-destructive">*</span></Label>
+              <Label>Monto (Bs)</Label>
               <Input
                 type="number"
-                step="0.01"
-                value={payInvoiceAmount}
-                onChange={(e) => setPayInvoiceAmount(e.target.value)}
-                placeholder="300"
-                className="bg-input border-border text-lg font-bold"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder="450"
+                className="bg-input border-border"
               />
             </div>
             <div>
-              <Label>Método de Pago <span className="text-destructive">*</span></Label>
+              <Label>Fecha de Pago</Label>
+              <Input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Próximo Pago</Label>
+              <Input
+                type="date"
+                value={paymentNextDate}
+                onChange={(e) => setPaymentNextDate(e.target.value)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Estado</Label>
               <Select
-                value={payInvoiceMethod}
-                onValueChange={setPayInvoiceMethod}
+                value={paymentStatus}
+                onValueChange={setPaymentStatus}
+                className="bg-input border-border"
+              >
+                <SelectTrigger className="bg-input border-border">
+                  <SelectValue placeholder="Selecciona un estado" />
+                </SelectTrigger>
+                <SelectContent className="bg-input border-border">
+                  <SelectItem value="Pagado">Pagado</SelectItem>
+                  <SelectItem value="Pendiente">Pendiente</SelectItem>
+                  <SelectItem value="Vencido">Vencido</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Método de Pago</Label>
+              <Select
+                value={paymentMethod}
+                onValueChange={setPaymentMethod}
                 className="bg-input border-border"
               >
                 <SelectTrigger className="bg-input border-border">
@@ -1388,17 +1232,17 @@ export function UserDetail() {
             <div>
               <Label>Referencia (Opcional)</Label>
               <Input
-                value={payInvoiceReference}
-                onChange={(e) => setPayInvoiceReference(e.target.value)}
-                placeholder="Nro. de referencia"
+                value={paymentReference}
+                onChange={(e) => setPaymentReference(e.target.value)}
+                placeholder="Nro. de transferencia, etc."
                 className="bg-input border-border"
               />
             </div>
             <div>
               <Label>Notas (Opcional)</Label>
               <Textarea
-                value={payInvoiceNotes}
-                onChange={(e) => setPayInvoiceNotes(e.target.value)}
+                value={paymentNotes}
+                onChange={(e) => setPaymentNotes(e.target.value)}
                 placeholder="Información adicional..."
                 className="bg-input border-border"
                 rows={3}
@@ -1413,18 +1257,18 @@ export function UserDetail() {
               </Button>
               <Button
                 className="bg-primary hover:bg-primary/90"
-                onClick={handlePayInvoice}
-                disabled={payInvoiceMutation.isPending}
+                onClick={createPayment}
+                disabled={createPaymentMutation.isPending}
               >
-                {payInvoiceMutation.isPending ? (
+                {createPaymentMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Procesando...
+                    Registrando...
                   </>
                 ) : (
                   <>
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    Confirmar Pago
+                    <Plus className="w-4 h-4 mr-2" />
+                    Registrar Pago
                   </>
                 )}
               </Button>
@@ -1476,43 +1320,6 @@ export function UserDetail() {
                 className="bg-input border-border"
               />
             </div>
-
-            <div className="border border-border rounded-lg">
-              <button
-                type="button"
-                onClick={() => setShowProgressMeasurements(!showProgressMeasurements)}
-                className="w-full flex items-center justify-between p-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Medidas Corporales (Opcional)
-                <ChevronDown className={`w-4 h-4 transition-transform ${showProgressMeasurements ? 'rotate-180' : ''}`} />
-              </button>
-              {showProgressMeasurements && (
-                <div className="grid grid-cols-2 gap-3 p-3 pt-0">
-                  {[
-                    ['waist', 'Cintura (cm)'],
-                    ['hip', 'Cadera (cm)'],
-                    ['chest', 'Pecho (cm)'],
-                    ['left_arm', 'Brazo Izq. (cm)'],
-                    ['right_arm', 'Brazo Der. (cm)'],
-                    ['left_thigh', 'Pierna Izq. (cm)'],
-                    ['right_thigh', 'Pierna Der. (cm)'],
-                  ].map(([key, label]) => (
-                    <div key={key} className="space-y-1">
-                      <Label className="text-xs">{label}</Label>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={progressMeasurements[key] || ''}
-                        onChange={(e) => setProgressMeasurements(prev => ({ ...prev, [key]: e.target.value }))}
-                        placeholder="0.0"
-                        className="bg-input border-border h-9"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             <div>
               <Label>Fecha de Medición</Label>
               <Input
@@ -1560,49 +1367,6 @@ export function UserDetail() {
           </div>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={!!progressToDelete} onOpenChange={() => setProgressToDelete(null)}>
-        <AlertDialogContent className="bg-card border-border">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar Medición</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Estás seguro de que deseas eliminar este registro de progreso físico? Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => progressToDelete && deleteProgress(progressToDelete)}>
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete Invoice Confirmation */}
-      <AlertDialog open={!!invoiceToDelete} onOpenChange={() => setInvoiceToDelete(null)}>
-        <AlertDialogContent className="bg-card border-border">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar Factura</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Estás seguro de eliminar la factura {invoiceToDelete?.invoice_number} por Bs {Number(invoiceToDelete?.amount || 0).toLocaleString()}? Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteInvoice}
-              disabled={deleteInvoiceMutation.isPending}
-              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-            >
-              {deleteInvoiceMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Eliminando...</>
-              ) : (
-                'Eliminar'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

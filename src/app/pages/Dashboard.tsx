@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Users, UserCheck, UserX, DollarSign, UserCog, Activity, Loader2, AlertCircle, Building2 } from 'lucide-react';
+import { Users, UserCheck, UserX, DollarSign, UserCog, Activity, Loader2, AlertCircle } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -9,10 +8,6 @@ import { Database, ExternalLink } from 'lucide-react';
 import { useDashboardStats } from '../hooks/useStats';
 import { useUsers } from '../hooks/useUsers';
 import { useInvoices } from '../hooks/useInvoices';
-import { useAdminGyms } from '../hooks/useAdminGyms';
-import { useGyms } from '../hooks/useGyms';
-import { formatDate } from '../lib/format';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 // Mock data para los gráficos
 const monthlyRevenueData = [
@@ -36,25 +31,13 @@ const attendanceData = [
 
 export function Dashboard() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'Administrador' || user?.is_super_admin;
-
-  const { data: adminGyms } = useAdminGyms();
-  const { data: allGyms } = useGyms();
-
-  const [selectedGymId, setSelectedGymId] = useState<string>('');
-
-  const gymFilter = selectedGymId || undefined;
-
-  const availableGyms = user?.is_super_admin
-    ? (allGyms || [])
-    : (adminGyms || []).map((ag: any) => ({ id: ag.gym_id, name: ag.gym_name }));
-
+  
   // Usar React Query para obtener datos reales
-  const { data: stats, isLoading: loadingStats, error: statsError } = useDashboardStats(gymFilter);
-  const { data: users, isLoading: loadingUsers } = useUsers(gymFilter);
-  const { data: invoicesData, isLoading: loadingPayments } = useInvoices({ gym_id: gymFilter });
+  const { data: stats, isLoading: loadingStats, error: statsError } = useDashboardStats();
+  const { data: users, isLoading: loadingUsers } = useUsers();
+  const { data: invoices, isLoading: loadingInvoices } = useInvoices();
 
-  const isLoading = loadingStats || loadingUsers || loadingPayments;
+  const isLoading = loadingStats || loadingUsers || loadingInvoices;
 
   // Calcular estadísticas desde los datos reales
   const totalUsers = users?.length || 0;
@@ -62,7 +45,7 @@ export function Dashboard() {
   const inactiveUsers = users?.filter((u: any) => u.status === 'Inactivo').length || 0;
   const suspendedUsers = users?.filter((u: any) => u.status === 'Suspendido').length || 0;
   
-  const monthlyRevenue = invoicesData?.filter((i: any) => i.status === 'Pagada').reduce((sum: number, i: any) => sum + Number(i.amount), 0) || 0;
+  const monthlyRevenue = invoices?.filter((i: any) => i.status === 'Pagada').reduce((sum: number, i: any) => sum + (i.amount || 0), 0) || 0;
   const totalStaff = stats?.totalStaff || 0;
   const todayAttendance = stats?.todayAttendance || 0;
 
@@ -78,8 +61,8 @@ export function Dashboard() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
-          <p className="text-muted-foreground">Cargando estadísticas...</p>
+          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
+          <p className="text-gray-400">Cargando estadísticas...</p>
         </div>
       </div>
     );
@@ -88,36 +71,18 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-4xl mb-2">Dashboard</h1>
-          <p className="text-muted-foreground">Resumen general del gimnasio</p>
-        </div>
-        {isAdmin && (
-          <div className="w-full sm:w-64">
-            <Select value={selectedGymId} onValueChange={setSelectedGymId}>
-              <SelectTrigger>
-                <Building2 className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Todos los gimnasios" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Todos los gimnasios</SelectItem>
-                {availableGyms.filter(Boolean).map((gym: any) => (
-                  <SelectItem key={gym.id} value={gym.id}>{gym.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+      <div>
+        <h1 className="text-4xl mb-2">Dashboard</h1>
+        <p className="text-muted-foreground">Resumen general del gimnasio</p>
       </div>
 
       {/* Bienvenida */}
       {statsError ? (
-        <Alert className="border-destructive/30 bg-destructive/5">
-          <AlertCircle className="h-5 w-5 text-destructive" />
-          <AlertDescription className="text-foreground/80 ml-2">
+        <Alert className="border-[#ff3b5c]/30 bg-[#ff3b5c]/5">
+          <AlertCircle className="h-5 w-5 text-[#ff3b5c]" />
+          <AlertDescription className="text-gray-300 ml-2">
             <div className="space-y-2">
-              <p className="font-semibold text-foreground">
+              <p className="font-semibold text-white">
                 ⚠️ No se pudo conectar con Supabase
               </p>
               <p className="text-sm">
@@ -126,38 +91,33 @@ export function Dashboard() {
               <div className="flex items-center gap-2 mt-3">
                 <a 
                   href="/test-supabase" 
-                  className="text-primary hover:underline inline-flex items-center gap-1 text-sm"
+                  className="text-[#10f94e] hover:underline inline-flex items-center gap-1 text-sm"
                 >
                   🧪 Ejecutar pruebas de conexión <ExternalLink className="h-3 w-3 inline" />
                 </a>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                📖 Consulta <code className="bg-muted px-1 py-0.5 rounded">ARQUITECTURA_SUPABASE.md</code> para instrucciones de configuración
+              <p className="text-xs text-gray-400 mt-2">
+                📖 Consulta <code className="bg-gray-800 px-1 py-0.5 rounded">ARQUITECTURA_SUPABASE.md</code> para instrucciones de configuración
               </p>
             </div>
           </AlertDescription>
         </Alert>
       ) : (
-        <Alert className="border-primary/30 bg-primary/5">
-          <Database className="h-5 w-5 text-primary" />
-          <AlertDescription className="text-foreground/80 ml-2">
+        <Alert className="border-[#10f94e]/30 bg-[#10f94e]/5">
+          <Database className="h-5 w-5 text-[#10f94e]" />
+          <AlertDescription className="text-gray-300 ml-2">
             <div className="space-y-1">
-              <p className="font-semibold text-foreground">
+              <p className="font-semibold text-white">
                 ✅ ¡Bienvenido, {user?.name}!
               </p>
               <p className="text-sm">
                 Sistema conectado correctamente a Supabase. Mostrando datos en tiempo real.
-                {selectedGymId && availableGyms.find((g: any) => g.id === selectedGymId)?.name && (
-                  <span className="font-semibold ml-1">
-                    — {availableGyms.find((g: any) => g.id === selectedGymId)?.name}
-                  </span>
-                )}
               </p>
               <div className="flex items-center gap-4 mt-2">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-gray-400">
                   📊 <strong>{totalUsers}</strong> usuarios registrados
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-gray-400">
                   💰 <strong>Bs {monthlyRevenue.toLocaleString()}</strong> cobrados
                 </span>
               </div>
@@ -310,21 +270,21 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {invoicesData?.filter((inv: any) => inv.status === 'Pagada').slice(0, 6).map((inv: any) => {
-                const paymentUser = users?.find((u: any) => u.id === inv.user_id);
+              {invoices?.slice(0, 6).map((invoice: any) => {
+                const invoiceUser = users?.find((u: any) => u.id === invoice.user_id);
                 return (
-                  <div key={inv.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                  <div key={invoice.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                     <div>
-                      <p className="text-sm font-medium">{paymentUser?.name || 'Usuario'}</p>
+                      <p className="text-sm font-medium">{invoiceUser?.name || 'Usuario'}</p>
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(inv.paid_at || inv.due_date)}
+                        {new Date(invoice.due_date).toLocaleDateString('es-ES')}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-primary font-semibold">
-                        Bs {inv.amount.toLocaleString()}
+                      <p className="text-sm text-[#10f94e] font-semibold">
+                        Bs {invoice.amount.toLocaleString()}
                       </p>
-                      <p className="text-xs text-muted-foreground">{inv.method}</p>
+                      <p className="text-xs text-muted-foreground">{invoice.method || 'N/A'}</p>
                     </div>
                   </div>
                 );

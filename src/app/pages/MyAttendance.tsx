@@ -6,9 +6,6 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
-import { formatDate } from '../lib/format';
-import { useNavigate } from 'react-router';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 interface AttendanceRecord {
   id: string;
@@ -19,20 +16,14 @@ interface AttendanceRecord {
 
 export function MyAttendance() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
-    if (user && !user.gym_id) {
-      toast.error('Esta sección requiere un gimnasio asignado');
-      navigate('/usuario/mi-entrenamiento', { replace: true });
-      return;
-    }
     loadAttendance();
-  }, [user, filterMonth, filterYear, navigate]);
+  }, [user, filterMonth, filterYear]);
 
   const loadAttendance = async () => {
     if (!user?.id) return;
@@ -61,6 +52,16 @@ export function MyAttendance() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('es-ES', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
   };
 
   const formatTime = (timeStr: string) => {
@@ -167,26 +168,24 @@ export function MyAttendance() {
         </CardHeader>
         <CardContent>
           <div className="flex gap-3">
-            <Select value={String(filterMonth)} onValueChange={(v) => setFilterMonth(Number(v))}>
-              <SelectTrigger className="flex-1 border-border bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border-border">
-                {months.map((month, index) => (
-                  <SelectItem key={index} value={String(index)}>{month}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={String(filterYear)} onValueChange={(v) => setFilterYear(Number(v))}>
-              <SelectTrigger className="w-32 border-border bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border-border">
-                {[2024, 2025, 2026, 2027].map(year => (
-                  <SelectItem key={year} value={String(year)}>{year}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <select 
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(Number(e.target.value))}
+              className="flex-1 h-10 rounded-md border border-input bg-background px-3 py-2"
+            >
+              {months.map((month, index) => (
+                <option key={index} value={index}>{month}</option>
+              ))}
+            </select>
+            <select 
+              value={filterYear}
+              onChange={(e) => setFilterYear(Number(e.target.value))}
+              className="w-32 h-10 rounded-md border border-input bg-background px-3 py-2"
+            >
+              {[2024, 2025, 2026, 2027].map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
           </div>
         </CardContent>
       </Card>
