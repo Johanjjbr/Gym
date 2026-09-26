@@ -14,6 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { toast } from 'sonner';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
 import { useUserInvoices, useCreateInvoice } from '../hooks/useInvoices';
+import { PaymentCalendar } from '../components/PaymentCalendar';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
 import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
@@ -828,6 +829,9 @@ export function UserDetail() {
 
         {/* Payments Tab */}
         <TabsContent value="payments" className="space-y-6">
+          {/* Calendario de Pagos */}
+          <PaymentCalendar invoices={userPayments} />
+
           <Card className="bg-card border-border">
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
