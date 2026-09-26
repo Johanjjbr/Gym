@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { PrintInvoice } from '../../components/PrintInvoice';
+import { PaymentCalendar } from '../components/PaymentCalendar';
 
 interface Invoice {
   id: string;
@@ -236,6 +237,9 @@ export function MyPayments() {
           </CardContent>
         </Card>
       )}
+
+      {/* Calendario de Pagos */}
+      <PaymentCalendar invoices={invoices} />
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
