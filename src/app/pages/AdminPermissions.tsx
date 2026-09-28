@@ -8,7 +8,8 @@ import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useAuth } from '../contexts/AuthContext';
-import { useAllModulePermissions, useUpsertModulePermission } from '../hooks/useModulePermissions';
+import { useAllModulePermissions, useUpsertModulePermission, useDeleteModulePermission, useMyModulePermissions } from '../hooks/useModulePermissions';
+import { useQueryClient } from '@tanstack/react-query';
 import type { UserRole, ModulePermission, RoleModulePermissionInput } from '../types';
 import { toast } from 'sonner';
 
@@ -43,7 +44,9 @@ export function AdminPermissions() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<Map<string, RoleModulePermissionInput>>(new Map());
 
+  const queryClient = useQueryClient();
   const { data: allPermissions, isLoading, error, refetch } = useAllModulePermissions();
+  const { refetch: refetchMyPermissions } = useMyModulePermissions();
   const upsertMutation = useUpsertModulePermission();
   const deleteMutation = useDeleteModulePermission();
 
@@ -98,15 +101,33 @@ export function AdminPermissions() {
 
   const handleSaveAll = async () => {
     try {
+      // 1. Guardar todos los permisos secuencialmente
       for (const [, perm] of pendingChanges) {
         await upsertMutation.mutateAsync(perm);
       }
+      
+      // 2. CACHE NUCLEAR: Eliminar TODOS los cachés relacionados (no solo invalidar)
+      queryClient.removeQueries({ queryKey: ['modulePermissions', 'my'], exact: false });
+      queryClient.removeQueries({ queryKey: ['modulePermissions'], exact: false });
+      
+      // 3. Pequeño delay para propagación DB
+      await new Promise(r => setTimeout(r, 100));
+      
+      // 4. Refetch FORZADO y ESPERAR a que complete
+      await refetchMyPermissions({ throwOnError: true });
+      await refetch({ throwOnError: true });
+      
+      // 3. Debug: log permisos actualizados
+      const updatedMy = queryClient.getQueryData(['modulePermissions', 'my']);
+      console.log('[AdminPermissions] ✅ Cache ELIMINADO, refetch completado. Permisos frescos:', updatedMy);
+      
+      // 4. Limpiar estado local
       setPendingChanges(new Map());
       setHasUnsavedChanges(false);
       toast.success('Permisos guardados exitosamente');
-      refetch();
+      
     } catch (error) {
-      console.error('Error guardando permisos:', error);
+      console.error('[AdminPermissions] Error guardando:', error);
       toast.error('Error al guardar permisos');
     }
   };

@@ -24,6 +24,7 @@ import { MigrateRoutines } from './pages/MigrateRoutines';
 import { RoutineAssignmentDebug } from './pages/RoutineAssignmentDebug';
 import { AdminPermissions } from './pages/AdminPermissions';
 import { Exercises } from './pages/Exercises';
+import { ExerciseDetailPage } from './pages/ExerciseDetailPage';
 import { Plans } from './pages/Plans';
 import { GymSettings } from './pages/GymSettings';
 
@@ -91,6 +92,7 @@ export const router = createBrowserRouter([
       { path: 'rutinas/crear', Component: RoutineBuilder },
       { path: 'rutinas/:id/editar', Component: RoutineBuilder },
       { path: 'ejercicios', Component: Exercises },
+      { path: 'ejercicios/:id', Component: ExerciseDetailPage },
       { path: 'mi-entrenamiento', Component: MyWorkout },
       { path: 'reportes', Component: Reports },
       { path: 'admin/permisos', Component: AdminPermissions },
