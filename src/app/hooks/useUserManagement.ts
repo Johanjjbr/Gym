@@ -43,7 +43,7 @@ export function useUserManagement() {
       ...user,
       lastPayment,
       totalPayments: userPayments.length,
-      hasOverduePayment: lastPayment?.status === 'Vencido',
+      hasOverduePayment: lastPayment?.status === 'Vencida',
     };
   });
 

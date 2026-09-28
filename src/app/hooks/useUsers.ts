@@ -110,7 +110,6 @@ export function useUpdateUser() {
       // Invalidar caché del usuario específico y la lista
       queryClient.invalidateQueries({ queryKey: userKeys.detail(variables.id) });
       queryClient.invalidateQueries({ queryKey: userKeys.all });
-      toast.success('Usuario actualizado exitosamente');
     },
     onError: (error: Error) => {
       console.error('Error actualizando usuario:', error);

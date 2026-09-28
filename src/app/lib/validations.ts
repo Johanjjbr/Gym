@@ -352,9 +352,24 @@ export const attendanceSchema = z.object({
   type: z.enum(['Entrada', 'Salida'], {
     errorMap: () => ({ message: 'Tipo debe ser Entrada o Salida' })
   }),
+
+  source: z.enum(['manual', 'qr', 'fingerprint', 'nfc'], {
+    errorMap: () => ({ message: 'Fuente inválida: manual, qr, fingerprint, nfc' })
+  }).optional().default('manual'),
+
+  device_id: z.string().max(100, 'Device ID demasiado largo').optional(),
+
+  session_number: z.number().int().positive().optional(),
 });
 
 export type AttendanceFormData = z.infer<typeof attendanceSchema>;
+
+// Schema extendido para check-in genérico (futuro QR/huella/NFC)
+export const checkinSchema = attendanceSchema.extend({
+  metadata: z.record(z.any()).optional(),
+});
+
+export type CheckinFormData = z.infer<typeof checkinSchema>;
 
 // =============================================
 // LOGIN

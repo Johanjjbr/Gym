@@ -54,39 +54,112 @@ export function useUserInvoices(userId: string) {
   });
 }
 
+export function formatInvoiceNumber(year: number, sequence: number): string {
+  return `FAC-${year}-${String(sequence).padStart(4, '0')}`;
+}
+
+async function fetchNextInvoiceNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const { data, error } = await supabase
+    .from('invoices')
+    .select('invoice_number')
+    .like('invoice_number', `FAC-${year}-%`)
+    .order('invoice_number', { ascending: false })
+    .limit(1);
+
+  if (error) throw new Error(error.message);
+
+  const latest = data?.[0]?.invoice_number as string | undefined;
+  const lastSeq = latest ? parseInt(latest.split('-')[2], 10) : 0;
+  const next = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
+  return formatInvoiceNumber(year, next);
+}
+
+export interface CreateInvoiceInput {
+  user_id: string;
+  plan_id?: string;
+  concept?: string;
+  amount: number;
+  due_date?: string;
+  paid_at?: string;
+  status?: 'Pagada' | 'Pendiente' | 'Vencida';
+  method?: string;
+  reference?: string;
+  notes?: string;
+}
+
 export function useCreateInvoice() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: {
-      user_id: string;
-      source: 'plan' | 'other';
-      plan_id?: string;
-      concept?: string;
-      amount?: number;
-      due_date?: string;
-      notes?: string;
-    }) => {
+    mutationFn: async (data: CreateInvoiceInput) => {
+      if (!data.user_id) throw new Error('Usuario requerido');
+      if (data.amount == null || Number.isNaN(data.amount)) throw new Error('Monto requerido');
+
+      const invoiceNumber = await fetchNextInvoiceNumber();
+      const dueDate = data.due_date || new Date().toISOString();
+      const status = data.status || 'Pendiente';
+      const paidAt = data.paid_at || (status === 'Pagada' ? dueDate : null);
+
       const { data: result, error } = await supabase
         .from('invoices')
         .insert([{
+          invoice_number: invoiceNumber,
           user_id: data.user_id,
-          source: data.source,
           plan_id: data.plan_id || null,
           concept: data.concept || null,
-          amount: data.amount || null,
-          due_date: data.due_date || null,
+          amount: data.amount,
+          due_date: dueDate,
+          paid_at: paidAt,
+          status,
+          method: data.method || null,
+          reference: data.reference || null,
           notes: data.notes || null,
-          status: 'Pendiente',
         }])
         .select()
         .single();
 
       if (error) throw new Error(error.message);
+
+      // Si la factura se crea como 'Pagada', crear registro en payments para estadísticas
+      if (status === 'Pagada') {
+        const nextPaymentDate = new Date(dueDate);
+        nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+
+        const { error: paymentError } = await supabase
+          .from('payments')
+          .insert([{
+            user_id: data.user_id,
+            amount: data.amount,
+            date: dueDate,
+            next_payment: nextPaymentDate.toISOString(),
+            status: 'Pagado',
+            method: data.method || 'Efectivo',
+          }]);
+
+        if (paymentError) {
+          console.error('Error creating payment record:', paymentError);
+        }
+
+        // Actualizar usuario
+        const { error: userError } = await supabase
+          .from('users')
+          .update({ 
+            next_payment: nextPaymentDate.toISOString(),
+            status: 'Activo'
+          })
+          .eq('id', data.user_id);
+
+        if (userError) {
+          console.error('Error updating user:', userError);
+        }
+      }
+
       return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
       toast.success('Factura generada exitosamente');
     },
     onError: (error: Error) => {
@@ -99,6 +172,16 @@ export function usePayInvoice() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: { method: string; reference?: string; notes?: string } }) => {
+      // Primero obtener la factura para tener los datos necesarios
+      const { data: invoice, error: invoiceError } = await supabase
+        .from('invoices')
+        .select('user_id, amount, due_date')
+        .eq('id', id)
+        .single();
+
+      if (invoiceError) throw new Error(invoiceError.message);
+
+      // Actualizar la factura a 'Pagada'
       const { data: result, error } = await supabase
         .from('invoices')
         .update({
@@ -113,11 +196,46 @@ export function usePayInvoice() {
         .single();
 
       if (error) throw new Error(error.message);
+
+      // Crear registro en tabla payments para que se refleje en estadísticas
+      const nextPaymentDate = new Date(invoice.due_date);
+      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+
+      const { error: paymentError } = await supabase
+        .from('payments')
+        .insert([{
+          user_id: invoice.user_id,
+          amount: invoice.amount,
+          date: new Date().toISOString(),
+          next_payment: nextPaymentDate.toISOString(),
+          status: 'Pagado',
+          method: data.method,
+        }]);
+
+      if (paymentError) {
+        console.error('Error creating payment record:', paymentError);
+        // No lanzar error para no revertir el pago de la factura
+      }
+
+      // Actualizar next_payment del usuario
+      const { error: userError } = await supabase
+        .from('users')
+        .update({ 
+          next_payment: nextPaymentDate.toISOString(),
+          status: 'Activo'
+        })
+        .eq('id', invoice.user_id);
+
+      if (userError) {
+        console.error('Error updating user next_payment:', userError);
+      }
+
       return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
       toast.success('Pago registrado exitosamente');
     },
     onError: (error: Error) => {
@@ -144,6 +262,31 @@ export function useDeleteInvoice() {
     },
     onError: (error: Error) => {
       toast.error('Error al eliminar factura', { description: error.message });
+    },
+  });
+}
+
+export function useProcessRecurringPayments() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (cronSecret?: string) => {
+      const { api } = await import('../lib/api');
+      return api.payments.processRecurring(cronSecret);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      if (data.processed > 0) {
+        toast.success(`Facturación automática: ${data.processed} facturas generadas`);
+      } else {
+        toast.info('No hay pagos pendientes para procesar');
+      }
+      if (data.errors > 0) {
+        toast.warning(`${data.errors} errores durante el procesamiento`);
+      }
+    },
+    onError: (error: Error) => {
+      toast.error('Error al procesar facturación automática', { description: error.message });
     },
   });
 }

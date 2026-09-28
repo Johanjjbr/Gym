@@ -7,7 +7,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Search, Plus, DollarSign, Loader2, AlertCircle, Eye, Calendar,
-  Filter, Printer, X, Users, FileText, CreditCard, CheckCircle, Trash2, Clock,
+  Filter, Printer, X, Users, FileText, CreditCard, CheckCircle, Trash2, Clock, RotateCcw,
 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths } from 'date-fns';
 
-import { useInvoices, useCreateInvoice, usePayInvoice, useDeleteInvoice } from '../hooks/useInvoices';
+import { useInvoices, useCreateInvoice, usePayInvoice, useDeleteInvoice, useProcessRecurringPayments } from '../hooks/useInvoices';
 import { useUsers } from '../hooks/useUsers';
 import { supabase } from '../lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -77,12 +77,13 @@ export function Billing() {
   // Gym info para impresión
   const [gymInfo, setGymInfo] = useState<GymInfo>({ name: 'Gimnasio' });
 
-  // Data
-  const { data: invoicesData, isLoading: loadingInvoices, error: invoicesError } = useInvoices();
+// Data
+  const { data: invoicesData, isLoading: loadingInvoices, error: invoicesError } = useInvoices({ status: filterStatus === 'all' ? undefined : filterStatus });
   const { data: users, isLoading: loadingUsers } = useUsers();
   const createInvoice = useCreateInvoice();
   const payInvoice = usePayInvoice();
   const deleteInvoice = useDeleteInvoice();
+  const processRecurringPayments = useProcessRecurringPayments();
 
   // Cargar info del gimnasio
   useEffect(() => {
@@ -281,7 +282,6 @@ export function Billing() {
       // 1. Crear factura pendiente
       const invoice = await createInvoice.mutateAsync({
         user_id: cobroUserId,
-        source: 'other',
         concept: cobroConcept,
         amount: Number(cobroAmount),
         due_date: cobroDueDate,
@@ -376,6 +376,16 @@ export function Billing() {
           >
             <Users className="w-4 h-4 mr-2" />
             Morosos ({overdueUsers.length})
+          </Button>
+          <Button
+            variant="outline"
+            className="border-[#0ea5e9] text-[#0ea5e9] hover:bg-[#0ea5e9]/10"
+            onClick={() => processRecurringPayments.mutate()}
+            disabled={processRecurringPayments.isPending}
+            data-testid="btn-procesar-recurrentes"
+          >
+            <Clock className="w-4 h-4 mr-2" />
+            {processRecurringPayments.isPending ? 'Procesando...' : 'Facturación Automática'}
           </Button>
           <Button
             className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"

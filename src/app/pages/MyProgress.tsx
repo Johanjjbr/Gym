@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, Activity, Calendar } from 'lucide-react';
+import { useState } from 'react';
+import { TrendingUp, TrendingDown, Activity, Calendar, Plus, Download } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { usePhysicalProgress, useCreatePhysicalProgress } from '../hooks/usePhysicalProgress';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { StatCardSkeleton, ProgressChartSkeleton, ProgressHistorySkeleton } from '../components/ui/skeleton';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { Button } from '../components/ui/button';
+import { PhysicalProgressModal } from '../components/PhysicalProgressModal';
 
 interface ProgressRecord {
   id: string;
@@ -17,35 +20,9 @@ interface ProgressRecord {
 
 export function MyProgress() {
   const { user } = useAuth();
-  const [progress, setProgress] = useState<ProgressRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadProgress();
-  }, [user]);
-
-  const loadProgress = async () => {
-    if (!user?.id) return;
-
-    try {
-      setLoading(true);
-      
-      const { data, error } = await supabase
-        .from('physical_progress')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: true });
-
-      if (error) throw error;
-
-      setProgress(data || []);
-    } catch (error: any) {
-      console.error('Error cargando progreso:', error);
-      toast.error('Error al cargar el progreso físico');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: progress = [], isLoading: loading, error } = usePhysicalProgress(user?.id || '');
+  const createProgress = useCreatePhysicalProgress();
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -57,12 +34,12 @@ export function MyProgress() {
 
   const getLatestRecord = () => {
     if (progress.length === 0) return null;
-    return progress[progress.length - 1];
+    return progress[0];
   };
 
   const getFirstRecord = () => {
     if (progress.length === 0) return null;
-    return progress[0];
+    return progress[progress.length - 1];
   };
 
   const calculateChange = (latest: number | null, first: number | null) => {
@@ -83,22 +60,80 @@ export function MyProgress() {
     musculo: record.muscle_mass || 0,
   }));
 
+  const handleExportCSV = () => {
+    if (progress.length === 0) {
+      toast.warning('No hay datos para exportar');
+      return;
+    }
+
+    const headers = ['Fecha', 'Peso (kg)', 'Grasa Corporal (%)', 'Masa Muscular (kg)', 'Notas'];
+    const rows = progress.map(record => [
+      new Date(record.date).toLocaleDateString('es-ES'),
+      record.weight.toString(),
+      record.body_fat?.toString() || 'N/A',
+      record.muscle_mass?.toString() || 'N/A',
+      record.notes || ''
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(field => `"${field}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `progreso-fisico-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('CSV exportado correctamente');
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl mb-2">Mi Progreso Físico</h1>
-        <p className="text-muted-foreground">
-          Seguimiento de tu evolución y métricas corporales
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl mb-2">Mi Progreso Físico</h1>
+          <p className="text-muted-foreground">
+            Seguimiento de tu evolución y métricas corporales
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {progress.length > 0 && (
+            <Button variant="outline" onClick={handleExportCSV} className="gap-2">
+              <Download className="w-4 h-4" />
+              Exportar CSV
+            </Button>
+          )}
+          <Button onClick={() => setIsModalOpen(true)} className="gap-2 bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold">
+            <Plus className="w-4 h-4" />
+            Registrar Medición
+          </Button>
+        </div>
       </div>
 
-      {loading ? (
-        <Card>
-          <CardContent className="py-12">
-            <p className="text-center text-muted-foreground">Cargando...</p>
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="py-12 text-center text-destructive">
+            <p>Error al cargar el progreso: {error.message}</p>
           </CardContent>
         </Card>
+      )}
+
+      {loading ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-3">
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </div>
+          <ProgressChartSkeleton />
+          <ProgressHistorySkeleton count={3} />
+        </>
       ) : progress.length === 0 ? (
         <Card>
           <CardContent className="py-12">
@@ -272,6 +307,15 @@ export function MyProgress() {
           </Card>
         </>
       )}
+
+      <PhysicalProgressModal
+        open={isModalOpen}
+        onOpenChange={setIsModalOpen}
+        onSuccess={() => {
+          setIsModalOpen(false);
+          toast.success('Medición registrada correctamente');
+        }}
+      />
     </div>
   );
 }

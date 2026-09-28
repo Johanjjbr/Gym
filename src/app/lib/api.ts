@@ -426,6 +426,17 @@ export const payments = {
       body: JSON.stringify(paymentData),
     });
   },
+
+  /**
+   * Procesar pagos recurrentes (generar facturas automáticas para usuarios con next_payment vencido)
+   * Requiere CRON_SECRET en headers Authorization
+   */
+  processRecurring: async (cronSecret?: string) => {
+    return apiRequest('/payments/process-recurring', {
+      method: 'POST',
+      headers: cronSecret ? { 'Authorization': `Bearer ${cronSecret}` } : {},
+    });
+  },
 };
 
 // =============================================
@@ -582,18 +593,45 @@ export const attendance = {
   },
 
   /**
-   * Registrar asistencia
+   * Registrar asistencia (manual - staff)
    */
   create: async (attendanceData: {
     user_id: string;
     date?: string;
     time?: string;
-    type: 'Entrada' | 'Salida';
+    type: 'Entrada' | 'Salita';
   }) => {
     return apiRequest('/attendance', {
       method: 'POST',
       body: JSON.stringify(attendanceData),
     });
+  },
+
+  /**
+   * Registrar check-in genérico (para QR, huella, NFC, manual)
+   * Incluye validación de reglas de negocio server-side
+   */
+  checkin: async (checkinData: {
+    user_id: string;
+    type: 'Entrada' | 'Salida';
+    date?: string;
+    time?: string;
+    source?: 'manual' | 'qr' | 'fingerprint' | 'nfc';
+    device_id?: string;
+    metadata?: Record<string, any>;
+  }) => {
+    return apiRequest('/attendance/checkin', {
+      method: 'POST',
+      body: JSON.stringify(checkinData),
+    });
+  },
+
+  /**
+   * Obtener estado de asistencia de un usuario (dentro/fuera, última entrada, etc.)
+   */
+  getStatus: async (userId: string, date?: string) => {
+    const query = date ? `?date=${date}` : '';
+    return apiRequest(`/attendance/status/${userId}${query}`);
   },
 };
 
@@ -1450,6 +1488,27 @@ export const stats = {
   getDashboard: async () => {
     return apiRequest('/stats');
   },
+
+  /**
+   * Obtener tendencia de ingresos últimos 6 meses
+   */
+  getRevenueTrend: async () => {
+    return apiRequest('/stats/revenue-trend');
+  },
+
+  /**
+   * Obtener tendencia de asistencia últimos 7 días
+   */
+  getAttendanceTrend: async () => {
+    return apiRequest('/stats/attendance-trend');
+  },
+
+  /**
+   * Obtener desglose de estados de usuarios
+   */
+  getUserStatusBreakdown: async () => {
+    return apiRequest('/stats/user-status-breakdown');
+  },
 };
 
 // =============================================
@@ -1469,6 +1528,147 @@ export const utils = {
    */
   healthCheck: async () => {
     return apiRequest('/health');
+  },
+};
+
+// =============================================
+// PLANES
+// =============================================
+
+export const plans = {
+  /**
+   * Obtener todos los planes
+   */
+  getAll: async (params?: { is_active?: boolean; type?: string }) => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.is_active !== undefined) queryParams.set('is_active', String(params.is_active));
+      if (params?.type) queryParams.set('type', params.type);
+      const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+      return await apiRequest(`/plans${query}`);
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para obtener planes');
+      
+      let query = supabase.from('plans').select('*').order('duration_days');
+      if (params?.is_active !== undefined) query = query.eq('is_active', params.is_active);
+      if (params?.type) query = query.eq('type', params.type);
+      
+      const { data, error: supabaseError } = await query;
+      if (supabaseError) throw new Error(supabaseError.message);
+      return data || [];
+    }
+  },
+
+  /**
+   * Obtener un plan por ID
+   */
+  getById: async (id: string) => {
+    try {
+      return await apiRequest(`/plans/${id}`);
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para obtener plan');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (supabaseError) throw new Error(supabaseError.message);
+      return data;
+    }
+  },
+
+  /**
+   * Crear nuevo plan
+   */
+  create: async (planData: {
+    name: string;
+    description?: string;
+    duration_days: number;
+    price: number;
+    type: string;
+    is_active?: boolean;
+  }) => {
+    try {
+      return await apiRequest('/plans', {
+        method: 'POST',
+        body: JSON.stringify(planData),
+      });
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para crear plan');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('plans')
+        .insert([{
+          ...planData,
+          is_active: planData.is_active ?? true,
+        }])
+        .select()
+        .single();
+      
+      if (supabaseError) {
+        if (supabaseError.code === '23505') {
+          throw new Error('Ya existe un plan con ese nombre');
+        }
+        throw new Error(supabaseError.message);
+      }
+      return data;
+    }
+  },
+
+  /**
+   * Actualizar plan
+   */
+  update: async (id: string, planData: {
+    name?: string;
+    description?: string;
+    duration_days?: number;
+    price?: number;
+    type?: string;
+    is_active?: boolean;
+  }) => {
+    try {
+      return await apiRequest(`/plans/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(planData),
+      });
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para actualizar plan');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('plans')
+        .update({
+          ...planData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (supabaseError) throw new Error(supabaseError.message);
+      return data;
+    }
+  },
+
+  /**
+   * Eliminar plan
+   */
+  delete: async (id: string) => {
+    try {
+      return await apiRequest(`/plans/${id}`, {
+        method: 'DELETE',
+      });
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para eliminar plan');
+      
+      const { error: supabaseError } = await supabase
+        .from('plans')
+        .delete()
+        .eq('id', id);
+      
+      if (supabaseError) throw new Error(supabaseError.message);
+    }
   },
 };
 
@@ -1545,6 +1745,230 @@ export const modulePermissions = {
 };
 
 // =============================================
+// GIMNASIOS
+// =============================================
+
+export const gyms = {
+  /**
+   * Obtener todos los gimnasios (incluye sucursales)
+   */
+  getAll: async () => {
+    try {
+      return await apiRequest('/gyms');
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para obtener gimnasios');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('gyms')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (supabaseError) throw new Error(supabaseError.message);
+      return data;
+    }
+  },
+
+  /**
+   * Obtener solo gimnasios principales (parent_gym_id IS NULL)
+   */
+  getMainGyms: async () => {
+    try {
+      return await apiRequest('/gyms/main');
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para obtener gimnasios principales');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('gyms')
+        .select('*')
+        .is('parent_gym_id', null)
+        .order('created_at', { ascending: false });
+      
+      if (supabaseError) throw new Error(supabaseError.message);
+      return data;
+    }
+  },
+
+  /**
+   * Obtener sucursales de un gym principal
+   */
+  getBranches: async (parentGymId: string) => {
+    try {
+      return await apiRequest(`/gyms/${parentGymId}/branches`);
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para obtener sucursales');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('gyms')
+        .select('*')
+        .eq('parent_gym_id', parentGymId)
+        .order('created_at', { ascending: false });
+      
+      if (supabaseError) throw new Error(supabaseError.message);
+      return data;
+    }
+  },
+
+  /**
+   * Obtener un gimnasio por ID
+   */
+  getById: async (id: string) => {
+    try {
+      return await apiRequest(`/gyms/${id}`);
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para obtener gimnasio');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('gyms')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (supabaseError) throw new Error(supabaseError.message);
+      return data;
+    }
+  },
+
+  /**
+   * Crear nuevo gimnasio o sucursal
+   */
+  create: async (gymData: {
+    name: string;
+    code: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    description?: string;
+    logo_url?: string;
+    schedule?: Record<string, { abre: string; cierra: string }>;
+    social_links?: {
+      instagram?: string;
+      whatsapp?: string;
+      twitter?: string;
+      tiktok?: string;
+      youtube?: string;
+    };
+    latitude?: number;
+    longitude?: number;
+    is_active?: boolean;
+    parent_gym_id?: string | null;
+  }) => {
+    try {
+      return await apiRequest('/gyms', {
+        method: 'POST',
+        body: JSON.stringify(gymData),
+      });
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para crear gimnasio');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('gyms')
+        .insert([{
+          ...gymData,
+          is_active: gymData.is_active ?? true,
+          schedule: gymData.schedule ?? {},
+          social_links: gymData.social_links ?? {},
+        }])
+        .select()
+        .single();
+      
+      if (supabaseError) {
+        if (supabaseError.code === '23505') {
+          throw new Error('Ya existe un gimnasio con ese código');
+        }
+        throw new Error(supabaseError.message);
+      }
+      return data;
+    }
+  },
+
+  /**
+   * Actualizar gimnasio
+   */
+  update: async (id: string, gymData: {
+    name?: string;
+    code?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    description?: string;
+    logo_url?: string;
+    schedule?: Record<string, { abre: string; cierra: string }>;
+    social_links?: {
+      instagram?: string;
+      whatsapp?: string;
+      twitter?: string;
+      tiktok?: string;
+      youtube?: string;
+    };
+    latitude?: number;
+    longitude?: number;
+    is_active?: boolean;
+    parent_gym_id?: string | null;
+  }) => {
+    try {
+      return await apiRequest(`/gyms/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(gymData),
+      });
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para actualizar gimnasio');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('gyms')
+        .update({
+          ...gymData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (supabaseError) {
+        if (supabaseError.code === '23505') {
+          throw new Error('Ya existe un gimnasio con ese código');
+        }
+        throw new Error(supabaseError.message);
+      }
+      return data;
+    }
+  },
+
+  /**
+   * Eliminar gimnasio
+   * Bloquea si tiene sucursales
+   */
+  delete: async (id: string) => {
+    try {
+      return await apiRequest(`/gyms/${id}`, {
+        method: 'DELETE',
+      });
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para eliminar gimnasio');
+      
+      // Verificar si tiene sucursales
+      const { data: branches, error: checkError } = await supabase
+        .from('gyms')
+        .select('id')
+        .eq('parent_gym_id', id);
+      
+      if (checkError) throw new Error(checkError.message);
+      
+      if (branches && branches.length > 0) {
+        throw new Error('No se puede eliminar: el gimnasio tiene sucursales asociadas. Elimínelas primero.');
+      }
+      
+      const { error: supabaseError } = await supabase
+        .from('gyms')
+        .delete()
+        .eq('id', id);
+      
+      if (supabaseError) throw new Error(supabaseError.message);
+      return { success: true };
+    }
+  },
+};
+
+// =============================================
 // Export default con todas las funciones
 // =============================================
 
@@ -1562,5 +1986,7 @@ export default {
   utils,
   physicalProgress,
   exercises,
+  plans,
+  gyms,
   modulePermissions,
 };

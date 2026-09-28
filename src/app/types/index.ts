@@ -199,3 +199,78 @@ export interface DashboardStats {
   todayAttendance: number;
   totalStaff: number;
 }
+
+export interface Plan {
+  id: string;
+  name: string;
+  description?: string | null;
+  duration_days: number;
+  price: number;
+  type: 'Mensual' | 'Trimestral' | 'Semestral' | 'Anual' | 'Visita' | 'Promoción';
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanCreateInput {
+  name: string;
+  description?: string;
+  duration_days: number;
+  price: number;
+  type: 'Mensual' | 'Trimestral' | 'Semestral' | 'Anual' | 'Visita' | 'Promoción';
+  is_active?: boolean;
+}
+
+export interface PlanUpdateInput extends Partial<PlanCreateInput> {}
+
+export interface Gym {
+  id: string;
+  name: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  code: string;
+  description?: string;
+  logo_url?: string;
+  schedule: Record<string, { abre: string; cierra: string }>;
+  social_links: {
+    instagram?: string;
+    whatsapp?: string;
+    twitter?: string;
+    tiktok?: string;
+    youtube?: string;
+  };
+  latitude?: number;
+  longitude?: number;
+  is_active: boolean;
+  rating: number;
+  parent_gym_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  branches?: Gym[];
+  is_branch?: boolean;
+}
+
+export interface GymCreateInput {
+  name: string;
+  code: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  description?: string;
+  logo_url?: string;
+  schedule?: Record<string, { abre: string; cierra: string }>;
+  social_links?: {
+    instagram?: string;
+    whatsapp?: string;
+    twitter?: string;
+    tiktok?: string;
+    youtube?: string;
+  };
+  latitude?: number;
+  longitude?: number;
+  is_active?: boolean;
+  parent_gym_id?: string | null;
+}
+
+export interface GymUpdateInput extends Partial<GymCreateInput> {}

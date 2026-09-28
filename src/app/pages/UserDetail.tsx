@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -21,10 +22,14 @@ import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgre
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
+const MONTHS_ES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
 export function UserDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   const [isAssignRoutineDialogOpen, setIsAssignRoutineDialogOpen] = useState(false);
   const [isAssignTrainerDialogOpen, setIsAssignTrainerDialogOpen] = useState(false);
   const [isCreatePaymentDialogOpen, setIsCreatePaymentDialogOpen] = useState(false);
@@ -57,6 +62,7 @@ export function UserDetail() {
   
   // Usar React Query en lugar de mockData
   const { data: user, isLoading, error } = useUser(id || '');
+  const queryClient = useQueryClient();
   
   // Obtener pagos reales del usuario
   const { data: userPayments, isLoading: loadingPayments } = useUserInvoices(id || '');
@@ -123,7 +129,7 @@ export function UserDetail() {
 
   // Datos reales obtenidos de los hooks
   const userProgress = userPhysicalProgress || [];
-  const userInvoices: any[] = []; // Facturas se manejan desde payments
+  const userInvoices: any[] = userPayments || [];
   const payments = userPayments || [];
 
   const getStatusColor = (status: string) => {
@@ -140,22 +146,16 @@ export function UserDetail() {
   const getPaymentStatusColor = (status: string) => {
     switch (status) {
       case 'Pagado':
+      case 'Pagada':
         return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
       case 'Pendiente':
         return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
       case 'Vencido':
+      case 'Vencida':
         return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       default:
         return 'bg-muted text-muted-foreground';
     }
-  };
-
-  const generateInvoice = (payment: any) => {
-    const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(payments?.length || 0 + 1).padStart(3, '0')}`;
-    toast.success('Factura generada exitosamente', {
-      description: `Factura ${invoiceNumber} lista para descargar`,
-    });
-    setIsInvoiceDialogOpen(false);
   };
 
   const assignRoutine = () => {
@@ -204,37 +204,42 @@ export function UserDetail() {
     });
   };
 
-  const createPayment = () => {
+  const createPayment = async () => {
     if (!id || !paymentAmount || !paymentDate || !paymentNextDate || !paymentStatus || !paymentMethod) {
       toast.error('Por favor completa todos los campos del pago');
       return;
     }
 
-    createPaymentMutation.mutate({
-      user_id: id,
-      amount: parseFloat(paymentAmount),
-      date: paymentDate,
-      next_payment: paymentNextDate,
-      status: paymentStatus,
-      method: paymentMethod,
-      reference: paymentReference,
-      notes: paymentNotes,
-    }, {
-      onSuccess: () => {
-        setIsCreatePaymentDialogOpen(false);
-        setPaymentAmount('');
-        setPaymentDate(new Date().toISOString().split('T')[0]);
-        setPaymentNextDate(() => {
-          const nextMonth = new Date();
-          nextMonth.setMonth(nextMonth.getMonth() + 1);
-          return nextMonth.toISOString().split('T')[0];
-        });
-        setPaymentStatus('Pagado');
-        setPaymentMethod('Efectivo');
-        setPaymentReference('');
-        setPaymentNotes('');
-      },
-    });
+    try {
+      await createPaymentMutation.mutateAsync({
+        user_id: id,
+        amount: parseFloat(paymentAmount),
+        due_date: paymentDate,
+        paid_at: paymentStatus === 'Pagado' ? paymentDate : undefined,
+        status: paymentStatus === 'Pagado' ? 'Pagada' : paymentStatus === 'Vencido' ? 'Vencida' : 'Pendiente',
+        method: paymentMethod,
+        reference: paymentReference || undefined,
+        notes: paymentNotes || undefined,
+      });
+
+      await supabase.from('users').update({ next_payment: paymentNextDate }).eq('id', id);
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+
+      setIsCreatePaymentDialogOpen(false);
+      setPaymentAmount('');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
+      setPaymentNextDate(() => {
+        const nextMonth = new Date();
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        return nextMonth.toISOString().split('T')[0];
+      });
+      setPaymentStatus('Pagado');
+      setPaymentMethod('Efectivo');
+      setPaymentReference('');
+      setPaymentNotes('');
+    } catch {
+      // El hook ya muestra el toast de error
+    }
   };
   
   const createProgress = () => {
@@ -303,13 +308,52 @@ export function UserDetail() {
             </div>
           </div>
         </div>
-        <Button
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-          onClick={() => setIsInvoiceDialogOpen(true)}
-        >
-          <Download className="w-4 h-4 mr-2" />
-          Generar Factura
-        </Button>
+        {(() => {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const nextPayment = user?.next_payment ? new Date(user.next_payment) : null;
+          const owesCurrentMonth = nextPayment && nextPayment <= today;
+          const planAmount = 300; // Default, could be fetched from plan
+
+          if (owesCurrentMonth) return null;
+
+          return (
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={async () => {
+                try {
+                  const dueDate = new Date();
+                  dueDate.setDate(1); // Primer día del mes actual
+                  const concept = `Mensualidad ${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
+                  
+                  await createPaymentMutation.mutateAsync({
+                    user_id: id,
+                    amount: planAmount,
+                    due_date: dueDate.toISOString().split('T')[0],
+                    status: 'Pagada',
+                    paid_at: new Date().toISOString(),
+                    method: 'Efectivo',
+                    concept,
+                  });
+
+                  // Actualizar next_payment del usuario
+                  const nextMonth = new Date();
+                  nextMonth.setMonth(nextMonth.getMonth() + 1);
+                  nextMonth.setDate(1);
+                  await supabase.from('users').update({ next_payment: nextMonth.toISOString().split('T')[0] }).eq('id', id);
+                  queryClient.invalidateQueries({ queryKey: ['users'] });
+
+                  toast.success('Factura generada y pago registrado');
+                } catch (error: any) {
+                  toast.error('Error al generar factura', { description: error.message });
+                }
+              }}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Generar Factura
+            </Button>
+          );
+        })()}
       </div>
 
       {/* User Info Cards */}
@@ -554,7 +598,7 @@ export function UserDetail() {
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
                           <p className="text-muted-foreground">Fecha</p>
-                          <p>{new Date(userPayments[0].date).toLocaleDateString('es-ES')}</p>
+                          <p>{new Date(userPayments[0].paid_at || userPayments[0].created_at).toLocaleDateString('es-ES')}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">Método</p>
@@ -873,7 +917,7 @@ export function UserDetail() {
                         <div className="grid grid-cols-3 gap-4 text-sm">
                           <div>
                             <p className="text-muted-foreground">Fecha de Pago</p>
-                            <p>{new Date(payment.date).toLocaleDateString('es-ES')}</p>
+                            <p>{new Date(payment.paid_at || payment.created_at).toLocaleDateString('es-ES')}</p>
                           </div>
                           <div>
                             <p className="text-muted-foreground">Método</p>
@@ -881,7 +925,7 @@ export function UserDetail() {
                           </div>
                           <div>
                             <p className="text-muted-foreground">Próximo Pago</p>
-                            <p>{new Date(payment.next_payment).toLocaleDateString('es-ES')}</p>
+                            <p>{user?.next_payment ? new Date(user.next_payment).toLocaleDateString('es-ES') : '-'}</p>
                           </div>
                         </div>
                       </div>
@@ -914,7 +958,7 @@ export function UserDetail() {
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-4 mb-2">
-                          <p className="text-primary">{invoice.invoiceNumber}</p>
+                          <p className="text-primary">{invoice.invoice_number}</p>
                           <Badge variant="outline" className="bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30">
                             {invoice.status}
                           </Badge>
@@ -923,7 +967,7 @@ export function UserDetail() {
                         <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
                           <div>
                             <p className="text-muted-foreground">Fecha</p>
-                            <p>{new Date(invoice.date).toLocaleDateString('es-ES')}</p>
+                            <p>{new Date(invoice.paid_at || invoice.created_at || invoice.due_date).toLocaleDateString('es-ES')}</p>
                           </div>
                           <div>
                             <p className="text-muted-foreground">Monto</p>
@@ -948,58 +992,6 @@ export function UserDetail() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Generate Invoice Dialog */}
-      <Dialog open={isInvoiceDialogOpen} onOpenChange={setIsInvoiceDialogOpen}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogHeader>
-            <DialogTitle>Generar Factura</DialogTitle>
-            <DialogDescription>
-              Crear una nueva factura para {user.name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Concepto</Label>
-              <Input
-                placeholder="Ej: Mensualidad Premium - Marzo 2026"
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Monto (Bs)</Label>
-              <Input
-                type="number"
-                placeholder="450"
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Notas (Opcional)</Label>
-              <Textarea
-                placeholder="Información adicional..."
-                className="bg-input border-border"
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setIsInvoiceDialogOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                className="bg-primary hover:bg-primary/90"
-                onClick={() => generateInvoice(user)}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Generar y Descargar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Assign Routine Dialog */}
       <Dialog open={isAssignRoutineDialogOpen} onOpenChange={setIsAssignRoutineDialogOpen}>

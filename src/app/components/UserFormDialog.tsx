@@ -90,6 +90,17 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     }
   }, [weight, height, setValue]);
 
+  // Función para formatear fecha a YYYY-MM-DD
+  const formatDateForInput = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '';
+    // Si ya está en formato YYYY-MM-DD, devolverlo
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    // Si es timestamp ISO, extraer solo la fecha
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  };
+
   // Actualizar formulario cuando cambia el usuario
   useEffect(() => {
     if (user && open) {
@@ -98,13 +109,13 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
         name: user.name || '',
         email: user.email || '',
         phone: user.phone || '',
-        birth_date: user.birth_date || '',
+        birth_date: formatDateForInput(user.birth_date),
         gender: user.gender || '',
         address: user.address || '',
         plan: user.plan || '',
         status: user.status || 'Activo',
-        start_date: user.start_date || new Date().toISOString().split('T')[0],
-        next_payment: user.next_payment || '',
+        start_date: formatDateForInput(user.start_date),
+        next_payment: formatDateForInput(user.next_payment),
         weight: user.weight?.toString() || '',
         height: user.height?.toString() || '',
         emergency_contact: user.emergency_contact || '',
@@ -128,6 +139,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
       // No es necesario enviarlo en la creación
       if (isEdit) {
         await updateUser.mutateAsync({ id: user.id, data });
+        toast.success('Usuario actualizado exitosamente');
         reset();
         onOpenChange(false);
       } else {

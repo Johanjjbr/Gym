@@ -1,23 +1,38 @@
-import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Users } from 'lucide-react';
+import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Users, Edit } from 'lucide-react';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUser } from '../hooks/useUsers';
 import { usePhysicalProgress } from '../hooks/usePhysicalProgress';
+import { useUpdateUser } from '../hooks/useUsers';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { 
+  ProfileCardSkeleton, 
+  StatCardSkeleton, 
+  ProgressChartSkeleton,
+  ProgressHistorySkeleton 
+} from '../components/ui/skeleton';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { UserFormDialog } from '../components/UserFormDialog';
+import { toast } from 'sonner';
 
 export function MyProfile() {
   const { user: authUser } = useAuth();
   const { data: user, isLoading: userLoading } = useUser(authUser?.id || '');
   const { data: progressData = [], isLoading: progressLoading } = usePhysicalProgress(authUser?.id || '');
+  const updateUser = useUpdateUser();
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   if (userLoading || !user) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-          <p className="mt-4 text-muted-foreground">Cargando perfil...</p>
-        </div>
+      <div className="space-y-6">
+        <div className="h-10 w-1/4 bg-gray-800 animate-pulse rounded" />
+        <ProfileCardSkeleton />
+        <StatCardSkeleton />
+        <StatCardSkeleton />
+        <StatCardSkeleton />
+        <ProgressChartSkeleton />
+        <ProgressHistorySkeleton count={3} />
       </div>
     );
   }
@@ -37,7 +52,8 @@ export function MyProfile() {
     : 0;
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-3xl mb-2">Mi Perfil</h1>
@@ -48,8 +64,16 @@ export function MyProfile() {
 
       {/* Profile Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Información Personal</CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsEditModalOpen(true)}
+            className="text-muted-foreground hover:text-primary hover:bg-transparent"
+          >
+            <Edit className="w-4 h-4" />
+          </Button>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col lg:flex-row gap-6">
@@ -118,12 +142,14 @@ export function MyProfile() {
                   <span>Estado</span>
                 </div>
                 <div>
-                  <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                    user.status === 'Activo' 
-                      ? 'bg-primary/10 text-primary' 
-                      : user.status === 'Moroso'
-                      ? 'bg-destructive/10 text-destructive'
-                      : 'bg-muted text-muted-foreground'
+<span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                      user.status === 'Activo'
+                        ? 'bg-primary/10 text-primary'
+                        : user.status === 'Inactivo'
+                        ? 'bg-yellow/10 text-yellow-500'
+                        : user.status === 'Suspendido'
+                        ? 'bg-destructive/10 text-destructive'
+                        : 'bg-muted text-muted-foreground'
                   }`}>
                     {user.status}
                   </span>
@@ -282,5 +308,12 @@ export function MyProfile() {
         </div>
       )}
     </div>
+
+      <UserFormDialog
+        open={isEditModalOpen}
+        onOpenChange={setIsEditModalOpen}
+        user={user}
+      />
+    </>
   );
 }

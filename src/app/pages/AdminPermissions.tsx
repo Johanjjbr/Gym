@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import React from 'react';
 import { Search, Plus, Save, RefreshCw, Shield, Loader2, AlertTriangle, Check, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -7,7 +8,7 @@ import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useAuth } from '../contexts/AuthContext';
-import { useAllModulePermissions, useUpsertModulePermission, useDeleteModulePermission } from '../hooks/useModulePermissions';
+import { useAllModulePermissions, useUpsertModulePermission } from '../hooks/useModulePermissions';
 import type { UserRole, ModulePermission, RoleModulePermissionInput } from '../types';
 import { toast } from 'sonner';
 
@@ -39,26 +40,12 @@ export function AdminPermissions() {
   const { user, is_super_admin } = useAuth();
   const isSuperAdmin = is_super_admin === true;
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
-  const [gyms, setGyms] = useState<Array<{ id: string; name: string }>>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<Map<string, RoleModulePermissionInput>>(new Map());
 
   const { data: allPermissions, isLoading, error, refetch } = useAllModulePermissions();
   const upsertMutation = useUpsertModulePermission();
   const deleteMutation = useDeleteModulePermission();
-
-  // Cargar gyms disponibles para super admin
-  useEffect(() => {
-    if (isSuperAdmin) {
-      // En un caso real, esto vendría de un hook useGyms
-      // Por ahora simulamos con un fetch directo
-      fetch('/api/gyms') // Esto necesitaría un endpoint real
-        .then(res => res.json())
-        .then(data => setGyms(data))
-        .catch(() => setGyms([]));
-    }
-  }, [isSuperAdmin]);
 
   // Construir matriz de permisos: role -> module_path -> ModulePermission
   const permissionMatrix = new Map<string, Map<string, ModulePermission>>();
@@ -67,19 +54,16 @@ export function AdminPermissions() {
       if (!permissionMatrix.has(perm.role)) {
         permissionMatrix.set(perm.role, new Map());
       }
-      permissionMatrix.get(perm.role)!.set(perm.module_path, perm);
+      // Solo permisos globales (gym_id = null)
+      if (perm.gym_id === null) {
+        permissionMatrix.get(perm.role)!.set(perm.module_path, perm);
+      }
     }
   }
 
-  const getPermission = (role: UserRole, modulePath: string, gymId?: string | null): ModulePermission | undefined => {
+  const getPermission = (role: UserRole, modulePath: string): ModulePermission | undefined => {
     const roleMap = permissionMatrix.get(role);
     if (!roleMap) return undefined;
-    
-    // Buscar específico por gym primero, luego global
-    if (gymId) {
-      const gymSpecific = roleMap.get(`${modulePath}::${gymId}`);
-      if (gymSpecific) return gymSpecific;
-    }
     return roleMap.get(modulePath);
   };
 
@@ -89,7 +73,7 @@ export function AdminPermissions() {
     actionKey: 'can_view' | 'can_create' | 'can_edit' | 'can_delete', 
     value: boolean
   ) => {
-    const existing = getPermission(role, modulePath, selectedGymId);
+    const existing = getPermission(role, modulePath);
     const newPerm: RoleModulePermissionInput = {
       role,
       module_path: modulePath,
@@ -97,7 +81,7 @@ export function AdminPermissions() {
       can_create: existing?.can_create ?? false,
       can_edit: existing?.can_edit ?? false,
       can_delete: existing?.can_delete ?? false,
-      gym_id: selectedGymId,
+      gym_id: null,
       ...(actionKey === 'can_view' && { can_view: value }),
       ...(actionKey === 'can_create' && { can_create: value }),
       ...(actionKey === 'can_edit' && { can_edit: value }),
@@ -106,7 +90,7 @@ export function AdminPermissions() {
 
     setPendingChanges(prev => {
       const next = new Map(prev);
-      next.set(`${role}::${modulePath}::${selectedGymId || 'global'}`, newPerm);
+      next.set(`${role}::${modulePath}`, newPerm);
       return next;
     });
     setHasUnsavedChanges(true);
@@ -175,7 +159,7 @@ export function AdminPermissions() {
           </h1>
           <p className="text-muted-foreground">
             Configura qué módulos puede ver y gestionar cada rol. 
-            {isSuperAdmin ? 'Como Super Admin, puedes gestionar permisos globales y por gimnasio.' : 'Como Administrador, gestionas permisos de tu gimnasio asignado.'}
+            Permisos globales (aplican a todos los gimnasios).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -193,32 +177,6 @@ export function AdminPermissions() {
           </Button>
         </div>
       </div>
-
-      {/* Selector de Gimnasio (solo Super Admin) */}
-      {isSuperAdmin && (
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4 flex-wrap">
-              <Label className="text-sm font-medium">Gimnasio:</Label>
-              <Select value={selectedGymId || 'global'} onValueChange={v => setSelectedGymId(v === 'global' ? null : v)}>
-                <SelectTrigger className="w-[250px]">
-                  <SelectValue placeholder="Seleccionar gimnasio (Global)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="global">Global (todos los gimnasios)</SelectItem>
-                  {gyms.map(gym => (
-                    <SelectItem key={gym.id} value={gym.id}>{gym.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground ml-auto">
-                {selectedGymId ? `Editando permisos para gimnasio específico` : 'Editando permisos globales (aplican a todos los gimnasios sin override)'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Matriz de Permisos */}
       <Card className="bg-card border-border overflow-hidden">
         <CardHeader>
@@ -249,7 +207,7 @@ export function AdminPermissions() {
                         {module.label}
                       </td>
                       {ROLES.map(role => {
-                        const perm = getPermission(role, module.path, selectedGymId);
+                        const perm = getPermission(role, module.path);
                         const canView = perm?.can_view ?? false;
                         return (
                           <td key={role} className="px-2 py-2 text-center border-r border-border border-b border-border">
@@ -266,7 +224,7 @@ export function AdminPermissions() {
                         Acciones detalladas
                       </td>
                       {ROLES.map(role => {
-                        const perm = getPermission(role, module.path, selectedGymId);
+                        const perm = getPermission(role, module.path);
                         const canView = perm?.can_view ?? false;
                         return (
                           <td key={role} className="px-2 py-1 border-r border-border border-b border-border">
@@ -277,7 +235,7 @@ export function AdminPermissions() {
                                 const showAction = action.key === 'can_view' || canView;
                                 if (!showAction) return null;
                                 
-                                const pendingKey = `${role}::${module.path}::${selectedGymId || 'global'}`;
+                                const pendingKey = `${role}::${module.path}`;
                                 const pending = pendingChanges.get(pendingKey);
                                 const value = pending?.[action.key] ?? isEnabled;
                                 

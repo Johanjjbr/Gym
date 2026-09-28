@@ -1,28 +1,42 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, TrendingUp, Filter } from 'lucide-react';
+import { Calendar, Clock, Filter, UserCheck, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { attendance } from '../lib/api';
 
 interface AttendanceRecord {
   id: string;
+  user_id: string;
   date: string;
   time: string;
   type: 'Entrada' | 'Salida';
+  source?: string;
+  session_number?: number;
+  created_at: string;
+}
+
+interface UserStatus {
+  inside: boolean;
+  last_entry_time: string | null;
+  session_count_today: number;
+  can_enter: boolean;
+  can_exit: boolean;
 }
 
 export function MyAttendance() {
   const { user } = useAuth();
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userStatus, setUserStatus] = useState<UserStatus | null>(null);
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     loadAttendance();
+    loadUserStatus();
   }, [user, filterMonth, filterYear]);
 
   const loadAttendance = async () => {
@@ -54,6 +68,18 @@ export function MyAttendance() {
     }
   };
 
+  const loadUserStatus = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const result = await attendance.getStatus(user.id, today);
+      setUserStatus(result);
+    } catch (error) {
+      console.warn('Error cargando estado de asistencia:', error);
+    }
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('es-ES', { 
@@ -70,31 +96,16 @@ export function MyAttendance() {
 
   const getMonthStats = () => {
     const uniqueDates = new Set(attendance.map(a => a.date));
+    const entryCount = attendance.filter(a => a.type === 'Entrada').length;
+    const exitCount = attendance.filter(a => a.type === 'Salida').length;
+    const completeSessions = Math.min(entryCount, exitCount); // Sesiones completas (pares entrada+salida)
+    
     return {
       totalDays: uniqueDates.size,
-      totalVisits: attendance.length / 2, // Entrada + Salida = 1 visita
-      currentStreak: calculateStreak(),
+      totalVisits: completeSessions,
+      totalEntries: entryCount,
+      totalExits: exitCount,
     };
-  };
-
-  const calculateStreak = () => {
-    // Simplificado - contar días únicos recientes
-    const today = new Date();
-    let streak = 0;
-    const dates = Array.from(new Set(attendance.map(a => a.date))).sort().reverse();
-    
-    for (const dateStr of dates) {
-      const date = new Date(dateStr);
-      const diffDays = Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (diffDays === streak) {
-        streak++;
-      } else {
-        break;
-      }
-    }
-    
-    return streak;
   };
 
   const stats = getMonthStats();
@@ -105,16 +116,32 @@ export function MyAttendance() {
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6" data-testid="my-attendance-page">
+      {/* Header con estado actual */}
       <div>
-        <h1 className="text-3xl mb-2">Mi Asistencia</h1>
-        <p className="text-muted-foreground">
-          Historial completo de tus visitas al gimnasio
-        </p>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-3xl mb-2">Mi Asistencia</h1>
+            <p className="text-muted-foreground">
+              Historial completo de tus visitas al gimnasio
+            </p>
+          </div>
+          {/* Badge "Dentro del gimnasio" */}
+          {userStatus?.inside && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-[#10f94e]/10 border border-[#10f94e]/30 rounded-lg animate-pulse">
+              <div className="w-2 h-2 rounded-full bg-[#10f94e] animate-pulse" />
+              <span className="text-sm font-medium text-[#10f94e]">
+                🟢 Dentro del gimnasio desde {userStatus.last_entry_time || '--:--'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                (Sesión #{userStatus.session_count_today})
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - Sin racha, solo días y visitas completas */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -124,33 +151,33 @@ export function MyAttendance() {
           <CardContent>
             <div className="text-2xl font-bold text-primary">{stats.totalDays}</div>
             <p className="text-xs text-muted-foreground">
-              días entrenados
+              días con asistencia
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Visitas</CardTitle>
+            <CardTitle className="text-sm font-medium">Visitas Completas</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-primary">{stats.totalVisits}</div>
             <p className="text-xs text-muted-foreground">
-              sesiones completadas
+              sesiones (entrada + salida)
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Racha Actual</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Registros Totales</CardTitle>
+            <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">{stats.currentStreak}</div>
+            <div className="text-2xl font-bold text-primary">{attendance.length}</div>
             <p className="text-xs text-muted-foreground">
-              días consecutivos
+              {stats.totalEntries} entradas · {stats.totalExits} salidas
             </p>
           </CardContent>
         </Card>
@@ -208,6 +235,7 @@ export function MyAttendance() {
                 <div
                   key={record.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                  data-testid={`attendance-record-${record.id}`}
                 >
                   <div className="flex items-center gap-4">
                     <div className={`w-2 h-2 rounded-full ${
@@ -218,6 +246,16 @@ export function MyAttendance() {
                       <p className="text-sm text-muted-foreground flex items-center gap-2">
                         <Clock className="w-3 h-3" />
                         {formatTime(record.time)}
+                        {record.session_number && record.session_number > 1 && (
+                          <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                            Sesión #{record.session_number}
+                          </span>
+                        )}
+                        {record.source && record.source !== 'manual' && (
+                          <Badge variant="secondary" className="text-xs">
+                            {record.source}
+                          </Badge>
+                        )}
                       </p>
                     </div>
                   </div>

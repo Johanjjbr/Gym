@@ -5,35 +5,20 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { useAuth } from '../contexts/AuthContext';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Database, ExternalLink } from 'lucide-react';
-import { useDashboardStats } from '../hooks/useStats';
+import { useDashboardStats, useRevenueTrend, useAttendanceTrend, useUserStatusBreakdown } from '../hooks/useStats';
 import { useUsers } from '../hooks/useUsers';
 import { useInvoices } from '../hooks/useInvoices';
-
-// Mock data para los gráficos
-const monthlyRevenueData = [
-  { month: 'Ene', revenue: 12000 },
-  { month: 'Feb', revenue: 15000 },
-  { month: 'Mar', revenue: 18000 },
-  { month: 'Abr', revenue: 16000 },
-  { month: 'May', revenue: 20000 },
-  { month: 'Jun', revenue: 22000 },
-];
-
-const attendanceData = [
-  { day: 'Lun', count: 45 },
-  { day: 'Mar', count: 52 },
-  { day: 'Mie', count: 48 },
-  { day: 'Jue', count: 61 },
-  { day: 'Vie', count: 55 },
-  { day: 'Sab', count: 38 },
-  { day: 'Dom', count: 25 },
-];
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 export function Dashboard() {
   const { user } = useAuth();
   
   // Usar React Query para obtener datos reales
   const { data: stats, isLoading: loadingStats, error: statsError } = useDashboardStats();
+  const { data: revenueTrend } = useRevenueTrend();
+  const { data: attendanceTrend } = useAttendanceTrend();
+  const { data: userStatusBreakdown } = useUserStatusBreakdown();
   const { data: users, isLoading: loadingUsers } = useUsers();
   const { data: invoices, isLoading: loadingInvoices } = useInvoices();
 
@@ -45,12 +30,47 @@ export function Dashboard() {
   const inactiveUsers = users?.filter((u: any) => u.status === 'Inactivo').length || 0;
   const suspendedUsers = users?.filter((u: any) => u.status === 'Suspendido').length || 0;
   
-  const monthlyRevenue = invoices?.filter((i: any) => i.status === 'Pagada').reduce((sum: number, i: any) => sum + (i.amount || 0), 0) || 0;
+  // Usar monthlyRevenue del stats (viene de tabla payments - datos reales)
+  const monthlyRevenue = stats?.monthlyRevenue || 0;
   const totalStaff = stats?.totalStaff || 0;
   const todayAttendance = stats?.todayAttendance || 0;
 
-  // Datos para el gráfico de estado de usuarios
-  const userStatusData = [
+  // Calcular tendencias vs mes anterior
+  const prevMonthRevenue = revenueTrend?.[4]?.revenue || 0; // 5th element (index 4) = mes anterior
+  const currentMonthRevenue = revenueTrend?.[5]?.revenue || 0; // 6th element (index 5) = mes actual
+  const revenueTrendPct = prevMonthRevenue > 0 ? ((currentMonthRevenue - prevMonthRevenue) / prevMonthRevenue) * 100 : 0;
+
+  const prevMonthUsers = users?.filter((u: any) => {
+    const created = new Date(u.created_at);
+    const now = new Date();
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return created >= prevMonth && created < thisMonth;
+  }).length || 0;
+  const currentMonthUsers = users?.filter((u: any) => {
+    const created = new Date(u.created_at);
+    const now = new Date();
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return created >= thisMonth;
+  }).length || 0;
+  const usersTrendPct = prevMonthUsers > 0 ? ((currentMonthUsers - prevMonthUsers) / prevMonthUsers) * 100 : 0;
+
+  // Datos para gráficos usando datos reales
+  const chartRevenueData = revenueTrend?.map((r: any) => ({
+    month: r.month,
+    revenue: r.revenue,
+  })) || [];
+
+  const chartAttendanceData = attendanceTrend?.map((a: any) => ({
+    day: a.day,
+    count: a.count,
+  })) || [];
+
+  const chartUserStatusData = userStatusBreakdown?.map((s: any) => ({
+    name: s.status,
+    value: s.count,
+    color: s.color,
+  })) || [
     { name: 'Activos', value: activeUsers, color: '#10f94e' },
     { name: 'Inactivos', value: inactiveUsers, color: '#6b7280' },
     { name: 'Suspendidos', value: suspendedUsers, color: '#ff3b5c' },
@@ -132,14 +152,14 @@ export function Dashboard() {
           title="Total Usuarios"
           value={totalUsers}
           icon={Users}
-          trend={{ value: 12, isPositive: true }}
+          trend={{ value: Math.abs(Math.round(revenueTrendPct)), isPositive: revenueTrendPct >= 0 }}
           color="blue"
         />
         <StatCard
           title="Usuarios Activos"
           value={activeUsers}
           icon={UserCheck}
-          trend={{ value: 8, isPositive: true }}
+          trend={{ value: Math.abs(Math.round(usersTrendPct)), isPositive: usersTrendPct >= 0 }}
           color="green"
         />
         <StatCard
@@ -153,7 +173,7 @@ export function Dashboard() {
           title="Ingresos del Mes"
           value={`Bs ${monthlyRevenue.toLocaleString()}`}
           icon={DollarSign}
-          trend={{ value: 6, isPositive: true }}
+          trend={{ value: Math.abs(Math.round(revenueTrendPct)), isPositive: revenueTrendPct >= 0 }}
           color="green"
         />
         <StatCard
@@ -179,7 +199,7 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={monthlyRevenueData}>
+              <LineChart data={chartRevenueData.length > 0 ? chartRevenueData : [{month: 'Sin datos', revenue: 0}]}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
                 <XAxis dataKey="month" stroke="#9494a8" />
                 <YAxis stroke="#9494a8" />
@@ -210,7 +230,7 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={attendanceData}>
+              <BarChart data={chartAttendanceData.length > 0 ? chartAttendanceData : [{day: 'Sin datos', count: 0}]}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
                 <XAxis dataKey="day" stroke="#9494a8" />
                 <YAxis stroke="#9494a8" />
@@ -237,7 +257,7 @@ export function Dashboard() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={userStatusData}
+                  data={chartUserStatusData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -246,7 +266,7 @@ export function Dashboard() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {userStatusData.map((entry, index) => (
+                  {chartUserStatusData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>

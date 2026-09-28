@@ -18,12 +18,14 @@ import { MyAttendance } from './pages/MyAttendance';
 import { MyPayments } from './pages/MyPayments';
 import { Login } from './pages/Login';
 import { Activate } from './pages/Activate';
-import { TestSupabase } from './pages/TestSupabase';
 import { DatabaseDiagnostic } from './pages/DatabaseDiagnostic';
 import { RoutineDiagnostic } from './pages/RoutineDiagnostic';
 import { MigrateRoutines } from './pages/MigrateRoutines';
 import { RoutineAssignmentDebug } from './pages/RoutineAssignmentDebug';
 import { AdminPermissions } from './pages/AdminPermissions';
+import { Exercises } from './pages/Exercises';
+import { Plans } from './pages/Plans';
+import { GymSettings } from './pages/GymSettings';
 
 export const router = createBrowserRouter([
   // Ruta pública - Login
@@ -35,11 +37,6 @@ export const router = createBrowserRouter([
   {
     path: '/activar/:token',
     Component: Activate,
-  },
-  // Ruta de prueba - Test Supabase (Temporal para desarrollo)
-  {
-    path: '/test-supabase',
-    Component: TestSupabase,
   },
   // Ruta de diagnóstico de base de datos
   {
@@ -87,14 +84,17 @@ export const router = createBrowserRouter([
       { path: 'usuarios', Component: Users },
       { path: 'usuarios/:id', Component: UserDetail },
       { path: 'facturacion', Component: Billing },
+      { path: 'planes', Component: Plans },
       { path: 'personal', Component: StaffPage },
       { path: 'asistencia', Component: Attendance },
       { path: 'rutinas', Component: Routines },
       { path: 'rutinas/crear', Component: RoutineBuilder },
       { path: 'rutinas/:id/editar', Component: RoutineBuilder },
+      { path: 'ejercicios', Component: Exercises },
       { path: 'mi-entrenamiento', Component: MyWorkout },
       { path: 'reportes', Component: Reports },
       { path: 'admin/permisos', Component: AdminPermissions },
+      { path: 'gimnasios', Component: GymSettings },
     //   { path: 'migrar-rutinas', Component: MigrateRoutines },
     ],
   },

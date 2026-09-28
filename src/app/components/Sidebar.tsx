@@ -9,10 +9,10 @@ import {
   Dumbbell,
   ClipboardList,
   LogOut,
-  Database,
   Building2,
   Package,
   Shield,
+  Settings,
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,7 +24,7 @@ const menuItems = [
   { icon: CreditCard, label: 'Facturación', path: '/facturacion' },
   { icon: Package, label: 'Planes', path: '/planes' },
   { icon: UserCog, label: 'Personal', path: '/personal' },
-  { icon: Building2, label: 'Gimnasios', path: '/gimnasios' },
+  { icon: Settings, label: 'Gimnasios', path: '/gimnasios' },
   { icon: QrCode, label: 'Asistencia', path: '/asistencia' },
   { icon: ClipboardList, label: 'Rutinas', path: '/rutinas' },
   { icon: Dumbbell, label: 'Ejercicios', path: '/ejercicios' },
@@ -101,20 +101,6 @@ export function Sidebar() {
             );
           })}
         </ul>
-        
-        {/* Sección de Desarrollo */}
-        <div className="mt-6 pt-6 border-t border-border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider px-4 mb-2">
-            Desarrollo
-          </p>
-          <Link
-            to="/test-supabase"
-            className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-card hover:text-foreground transition-all duration-200"
-          >
-            <Database className="w-5 h-5" />
-            <span className="text-sm">Test Supabase</span>
-          </Link>
-        </div>
       </nav>
 
       {/* User Profile */}
