@@ -45,7 +45,8 @@ export function Users() {
   const filteredUsers = users?.filter((user: any) => {
     const matchesSearch =
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase());
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.cedula?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === 'Todos' || user.status === statusFilter;
 

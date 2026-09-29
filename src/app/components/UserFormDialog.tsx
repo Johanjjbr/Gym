@@ -23,7 +23,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Calendar } from 'lucide-react';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -93,12 +93,18 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   // Función para formatear fecha a YYYY-MM-DD
   const formatDateForInput = (dateStr: string | null | undefined) => {
     if (!dateStr) return '';
-    // Si ya está en formato YYYY-MM-DD, devolverlo
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-    // Si es timestamp ISO, extraer solo la fecha
+    // Si ya está en formato YYYY-MM-DD, convertir a DD/MM/YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [year, month, day] = dateStr.split('-');
+      return `${day}/${month}/${year}`;
+    }
+    // Si es timestamp ISO, extraer y formatear
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return '';
-    return date.toISOString().split('T')[0];
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
   };
 
   // Actualizar formulario cuando cambia el usuario
@@ -108,6 +114,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
       reset({
         name: user.name || '',
         email: user.email || '',
+        cedula: user.cedula || '',
         phone: user.phone || '',
         birth_date: formatDateForInput(user.birth_date),
         gender: user.gender || '',
@@ -217,6 +224,25 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="cedula" className="text-gray-300">
+                    Cédula <span className="text-[#ff3b5c]">*</span>
+                  </Label>
+                  <Input
+                    id="cedula"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    {...register('cedula')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    placeholder="12345678"
+                  />
+                  {errors.cedula && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.cedula.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="phone" className="text-gray-300">
                     Teléfono
                   </Label>
@@ -236,13 +262,17 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   <Label htmlFor="birth_date" className="text-gray-300">
                     Fecha de Nacimiento
                   </Label>
-                  <Input
-                    id="birth_date"
-                    type="date"
-                    {...register('birth_date')}
-                    disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="birth_date"
+                      type="text"
+                      placeholder="DD/MM/YYYY"
+                      {...register('birth_date')}
+                      disabled={isSubmitting}
+                      className="bg-gray-800 border-gray-700 text-white pr-10"
+                    />
+                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] h-5 w-5 pointer-events-none" />
+                  </div>
                   {errors.birth_date && (
                     <p className="text-xs text-[#ff3b5c]">{errors.birth_date.message}</p>
                   )}
@@ -416,13 +446,17 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                 <Label htmlFor="start_date" className="text-gray-300">
                   Fecha de Inicio
                 </Label>
-                <Input
-                  id="start_date"
-                  type="date"
-                  {...register('start_date')}
-                  disabled={isEdit || isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                />
+                <div className="relative">
+                  <Input
+                    id="start_date"
+                    type="text"
+                    placeholder="DD/MM/YYYY"
+                    {...register('start_date')}
+                    disabled={isEdit || isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white pr-10"
+                  />
+                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] h-5 w-5 pointer-events-none" />
+                </div>
                 {errors.start_date && (
                   <p className="text-xs text-[#ff3b5c]">{errors.start_date.message}</p>
                 )}
@@ -435,13 +469,17 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                 <Label htmlFor="next_payment" className="text-gray-300">
                   Próximo Pago
                 </Label>
-                <Input
-                  id="next_payment"
-                  type="date"
-                  {...register('next_payment')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                />
+                <div className="relative">
+                  <Input
+                    id="next_payment"
+                    type="text"
+                    placeholder="DD/MM/YYYY"
+                    {...register('next_payment')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white pr-10"
+                  />
+                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] h-5 w-5 pointer-events-none" />
+                </div>
                 {errors.next_payment && (
                   <p className="text-xs text-[#ff3b5c]">{errors.next_payment.message}</p>
                 )}

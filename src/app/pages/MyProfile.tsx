@@ -1,4 +1,4 @@
-import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Users, Edit } from 'lucide-react';
+import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Users, Edit, Badge as BadgeIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUser } from '../hooks/useUsers';
@@ -104,6 +104,14 @@ export function MyProfile() {
                   <span>Correo Electrónico</span>
                 </div>
                 <p className="font-medium">{user.email}</p>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <BadgeIcon className="w-4 h-4" />
+                  <span>Cédula</span>
+                </div>
+                <p className="font-medium">{user.cedula || 'No registrada'}</p>
               </div>
 
               <div className="space-y-1">

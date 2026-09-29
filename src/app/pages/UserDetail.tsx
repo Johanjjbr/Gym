@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2, CheckCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
-import { useUserInvoices, useCreateInvoice } from '../hooks/useInvoices';
+import { useUserInvoices, useCreateInvoice, usePayInvoice } from '../hooks/useInvoices';
 import { PaymentCalendar } from '../components/PaymentCalendar';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
@@ -37,21 +37,9 @@ export function UserDetail() {
   const [isGenerateInvoiceDialogOpen, setIsGenerateInvoiceDialogOpen] = useState(false);
   const [selectedRoutineId, setSelectedRoutineId] = useState('');
   const [selectedTrainerId, setSelectedTrainerId] = useState<string | null>(null);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
-  
-  // Estados para el formulario de generar factura
-  const [genInvoiceConcept, setGenInvoiceConcept] = useState('');
-  const [genInvoiceAmount, setGenInvoiceAmount] = useState('');
-  const [genInvoiceDueDate, setGenInvoiceDueDate] = useState(() => {
-    const date = new Date();
-    date.setDate(1);
-    return date.toISOString().split('T')[0];
-  });
-  const [genInvoiceMethod, setGenInvoiceMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil' | ''>('');
-  const [genInvoiceReference, setGenInvoiceReference] = useState('');
-  const [genInvoiceNotes, setGenInvoiceNotes] = useState('');
   
   // Estados para el formulario de pago
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -65,6 +53,13 @@ export function UserDetail() {
   const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
+  const [paymentConcept, setPaymentConcept] = useState('');
+  
+  // Estados para pagar factura pendiente
+  const [payingInvoice, setPayingInvoice] = useState<any>(null);
+  const [payMethod, setPayMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
+  const [payReference, setPayReference] = useState('');
+  const [payNotes, setPayNotes] = useState('');
   
   // Estados para el formulario de progreso físico
   const [progressWeight, setProgressWeight] = useState('');
@@ -91,6 +86,7 @@ export function UserDetail() {
   
   // Hook para crear pagos
   const createPaymentMutation = useCreateInvoice();
+  const payInvoice = usePayInvoice();
   
   // Obtener usuario actual del staff usando el contexto de autenticación
   const { user: currentUser } = useAuth();
@@ -218,7 +214,7 @@ export function UserDetail() {
   };
 
   const createPayment = async () => {
-    if (!id || !paymentAmount || !paymentDate || !paymentNextDate || !paymentStatus || !paymentMethod) {
+    if (!id || !paymentAmount || !paymentDate || !paymentNextDate || !paymentStatus || !paymentMethod || !paymentConcept.trim()) {
       toast.error('Por favor completa todos los campos del pago');
       return;
     }
@@ -231,6 +227,7 @@ export function UserDetail() {
         paid_at: paymentStatus === 'Pagado' ? paymentDate : undefined,
         status: paymentStatus === 'Pagado' ? 'Pagada' : paymentStatus === 'Vencido' ? 'Vencida' : 'Pendiente',
         method: paymentMethod,
+        concept: paymentConcept.trim(),
         reference: paymentReference || undefined,
         notes: paymentNotes || undefined,
       });
@@ -240,6 +237,7 @@ export function UserDetail() {
 
       setIsCreatePaymentDialogOpen(false);
       setPaymentAmount('');
+      setPaymentConcept('');
       setPaymentDate(new Date().toISOString().split('T')[0]);
       setPaymentNextDate(() => {
         const nextMonth = new Date();
@@ -248,11 +246,27 @@ export function UserDetail() {
       });
       setPaymentStatus('Pagado');
       setPaymentMethod('Efectivo');
-      setPaymentReference('');
+setPaymentReference('');
       setPaymentNotes('');
     } catch {
       // El hook ya muestra el toast de error
     }
+  };
+
+  const handlePayInvoice = async () => {
+    if (!payingInvoice) return;
+    payInvoice.mutate({
+      id: payingInvoice.id,
+      data: { method: payMethod, reference: payReference || undefined, notes: payNotes || undefined },
+    }, {
+      onSuccess: () => {
+        setPayingInvoice(null);
+        setPayMethod('Efectivo');
+        setPayReference('');
+        setPayNotes('');
+        queryClient.invalidateQueries({ queryKey: ['users'] });
+      },
+    });
   };
   
   const createProgress = () => {
@@ -278,47 +292,6 @@ export function UserDetail() {
         setProgressNotes('');
       },
     });
-  };
-  
-  const generateInvoice = async () => {
-    if (!id || !genInvoiceConcept.trim() || !genInvoiceAmount) {
-      toast.error('Concepto y monto son obligatorios');
-      return;
-    }
-    if (parseFloat(genInvoiceAmount) <= 0) {
-      toast.error('El monto debe ser mayor a 0');
-      return;
-    }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dueDate = new Date(genInvoiceDueDate);
-    if (dueDate < today) {
-      toast.error('La fecha de vencimiento no puede ser anterior a hoy');
-      return;
-    }
-
-    try {
-      await createPaymentMutation.mutateAsync({
-        user_id: id,
-        amount: parseFloat(genInvoiceAmount),
-        due_date: genInvoiceDueDate,
-        status: 'Pendiente',
-        concept: genInvoiceConcept.trim(),
-        method: genInvoiceMethod || undefined,
-        reference: genInvoiceReference || undefined,
-        notes: genInvoiceNotes || undefined,
-      });
-
-      setIsGenerateInvoiceDialogOpen(false);
-      setGenInvoiceConcept('');
-      setGenInvoiceAmount('');
-      setGenInvoiceMethod('');
-      setGenInvoiceReference('');
-      setGenInvoiceNotes('');
-      toast.success('Factura generada exitosamente');
-    } catch {
-      // El hook ya muestra el toast de error
-    }
   };
   
   const deleteProgress = (progressId: string) => {
@@ -362,39 +335,6 @@ export function UserDetail() {
             </div>
           </div>
         </div>
-        {(() => {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const nextPayment = user?.next_payment ? new Date(user.next_payment) : null;
-          const owesCurrentMonth = nextPayment && nextPayment <= today;
-
-          if (owesCurrentMonth) return null;
-
-          const openGenerateInvoice = () => {
-            const dueDate = new Date();
-            dueDate.setDate(1);
-            const concept = `Mensualidad ${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
-            const planPrice = user?.plans?.price;
-            
-            setGenInvoiceConcept(concept);
-            setGenInvoiceAmount(planPrice ? String(planPrice) : '');
-            setGenInvoiceDueDate(dueDate.toISOString().split('T')[0]);
-            setGenInvoiceMethod('');
-            setGenInvoiceReference('');
-            setGenInvoiceNotes('');
-            setIsGenerateInvoiceDialogOpen(true);
-          };
-
-          return (
-            <Button
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={openGenerateInvoice}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Generar Factura
-            </Button>
-          );
-        })()}
       </div>
 
       {/* User Info Cards */}
@@ -928,7 +868,12 @@ export function UserDetail() {
                   variant="outline"
                   size="sm"
                   className="border-primary text-primary hover:bg-primary/10"
-                  onClick={() => setIsCreatePaymentDialogOpen(true)}
+                  onClick={() => {
+                    const dueDate = new Date(paymentDate);
+                    const concept = `Mensualidad ${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
+                    setPaymentConcept(concept);
+                    setIsCreatePaymentDialogOpen(true);
+                  }}
                 >
                   <Plus className="w-4 h-4 mr-1" />
                   Registrar Pago
@@ -970,6 +915,15 @@ export function UserDetail() {
                           </div>
                         </div>
                       </div>
+                      {payment.status === 'Pendiente' && (
+                        <Button
+                          size="sm"
+                          className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
+                          onClick={() => setPayingInvoice(payment)}
+                        >
+                          Pagar
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1016,10 +970,21 @@ export function UserDetail() {
                           </div>
                         </div>
                       </div>
-                      <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary/10">
-                        <Download className="w-4 h-4 mr-2" />
-                        Descargar
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {invoice.status === 'Pendiente' && (
+                          <Button
+                            size="sm"
+                            className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
+                            onClick={() => setPayingInvoice(invoice)}
+                          >
+                            Pagar
+                          </Button>
+                        )}
+                        <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary/10">
+                          <Download className="w-4 h-4 mr-2" />
+                          Descargar
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1204,17 +1169,27 @@ export function UserDetail() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Monto (Bs)</Label>
+              <Label>Concepto <span className="text-[#ff3b5c]">*</span></Label>
               <Input
-                type="number"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-                placeholder="450"
+                value={paymentConcept}
+                onChange={(e) => setPaymentConcept(e.target.value)}
+                placeholder="Ej: Mensualidad Enero 2026"
                 className="bg-input border-border"
               />
             </div>
             <div>
-              <Label>Fecha de Pago</Label>
+              <Label>Monto (Bs) <span className="text-[#ff3b5c]">*</span></Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder="300"
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label>Fecha de Pago <span className="text-[#ff3b5c]">*</span></Label>
               <Input
                 type="date"
                 value={paymentDate}
@@ -1288,7 +1263,10 @@ export function UserDetail() {
             <div className="flex justify-end gap-2 pt-4">
               <Button
                 variant="outline"
-                onClick={() => setIsCreatePaymentDialogOpen(false)}
+                onClick={() => {
+                  setIsCreatePaymentDialogOpen(false);
+                  setPaymentConcept('');
+                }}
               >
                 Cancelar
               </Button>
@@ -1310,6 +1288,69 @@ export function UserDetail() {
                 )}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pagar Factura Dialog */}
+      <Dialog open={!!payingInvoice} onOpenChange={() => setPayingInvoice(null)}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">Pagar Factura</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              {payingInvoice?.invoice_number} — {user?.name || 'Usuario desconocido'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-gray-300">Monto (Bs)</Label>
+              <div className="text-2xl font-bold text-[#10f94e]">
+                Bs {Number(payingInvoice?.amount || 0).toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <Label className="text-gray-300">Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
+              <select
+                value={payMethod}
+                onChange={(e) => setPayMethod(e.target.value)}
+                className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
+              >
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Tarjeta">Tarjeta</option>
+                <option value="Pago Móvil">Pago Móvil</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-gray-300">Referencia (Opcional)</Label>
+              <Input
+                value={payReference}
+                onChange={(e) => setPayReference(e.target.value)}
+                className="bg-gray-800 border-gray-700 text-white"
+                placeholder="Nro. de referencia"
+              />
+            </div>
+            <div>
+              <Label className="text-gray-300">Notas (Opcional)</Label>
+              <Textarea
+                value={payNotes}
+                onChange={(e) => setPayNotes(e.target.value)}
+                className="bg-gray-800 border-gray-700 text-white"
+                rows={2}
+              />
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setPayingInvoice(null)} className="border-gray-700 hover:bg-gray-800">
+                Cancelar
+              </Button>
+              <Button onClick={handlePayInvoice} disabled={payInvoice.isPending} className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold">
+                {payInvoice.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
+                ) : (
+                  <><CheckCircle className="w-4 h-4 mr-2" />Confirmar Pago</>
+                )}
+              </Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
@@ -1403,119 +1444,7 @@ export function UserDetail() {
             </div>
           </div>
         </DialogContent>
-      </Dialog>
-
-      {/* Generate Invoice Dialog */}
-      <Dialog open={isGenerateInvoiceDialogOpen} onOpenChange={setIsGenerateInvoiceDialogOpen}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogHeader>
-            <DialogTitle>Generar Factura</DialogTitle>
-            <DialogDescription>
-              Crear una nueva factura pendiente para {user.name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Concepto <span className="text-[#ff3b5c]">*</span></Label>
-              <Input
-                value={genInvoiceConcept}
-                onChange={(e) => setGenInvoiceConcept(e.target.value)}
-                placeholder="Ej: Mensualidad Enero 2026"
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Monto (Bs) <span className="text-[#ff3b5c]">*</span></Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={genInvoiceAmount}
-                onChange={(e) => setGenInvoiceAmount(e.target.value)}
-                placeholder="300"
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Fecha de Vencimiento <span className="text-[#ff3b5c]">*</span></Label>
-              <Input
-                type="date"
-                value={genInvoiceDueDate}
-                onChange={(e) => setGenInvoiceDueDate(e.target.value)}
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Método de Pago (Opcional)</Label>
-              <Select
-                value={genInvoiceMethod}
-                onValueChange={setGenInvoiceMethod}
-                className="bg-input border-border"
-              >
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Selecciona un método" />
-                </SelectTrigger>
-                <SelectContent className="bg-input border-border">
-                  <SelectItem value="Efectivo">Efectivo</SelectItem>
-                  <SelectItem value="Transferencia">Transferencia</SelectItem>
-                  <SelectItem value="Tarjeta">Tarjeta</SelectItem>
-                  <SelectItem value="Pago Móvil">Pago Móvil</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Referencia (Opcional)</Label>
-              <Input
-                value={genInvoiceReference}
-                onChange={(e) => setGenInvoiceReference(e.target.value)}
-                placeholder="Nro. de referencia, transferencia, etc."
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Notas (Opcional)</Label>
-              <Textarea
-                value={genInvoiceNotes}
-                onChange={(e) => setGenInvoiceNotes(e.target.value)}
-                placeholder="Información adicional..."
-                className="bg-input border-border"
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsGenerateInvoiceDialogOpen(false);
-                  setGenInvoiceConcept('');
-                  setGenInvoiceAmount('');
-                  setGenInvoiceMethod('');
-                  setGenInvoiceReference('');
-                  setGenInvoiceNotes('');
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                className="bg-primary hover:bg-primary/90"
-                onClick={generateInvoice}
-                disabled={createPaymentMutation.isPending}
-              >
-                {createPaymentMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Generando...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Generar Factura
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+</Dialog>
     </div>
   );
 }

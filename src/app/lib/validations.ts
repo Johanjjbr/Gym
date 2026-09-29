@@ -23,14 +23,28 @@ export const userSchema = z.object({
     .email('Email inválido')
     .max(255, 'Email demasiado largo'),
   
+  cedula: z.string()
+    .min(1, 'La cédula es requerida')
+    .regex(/^\d+$/, 'La cédula debe contener solo números')
+    .max(20, 'Cédula demasiado larga'),
+  
   phone: z.string()
     .min(1, 'El teléfono es requerido')
     .max(20, 'Teléfono demasiado largo'),
   
   birth_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato YYYY-MM-DD')
     .optional()
-    .or(z.literal('')),
+    .or(z.literal(''))
+    .transform((val) => {
+      if (!val || val === '') return undefined;
+      // Accept dd/mm/yyyy or yyyy-mm-dd
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
+        const [day, month, year] = val.split('/');
+        return `${year}-${month}-${day}`;
+      }
+      return val;
+    })
+    .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato DD/MM/YYYY').optional()),
   
   gender: z.string()
     .max(20, 'Género demasiado largo')
@@ -57,13 +71,29 @@ export const userSchema = z.object({
   }),
   
   start_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato YYYY-MM-DD')
-    .optional(),
+    .optional()
+    .transform((val) => {
+      if (!val || val === '') return undefined;
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
+        const [day, month, year] = val.split('/');
+        return `${year}-${month}-${day}`;
+      }
+      return val;
+    })
+    .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato DD/MM/YYYY').optional()),
   
   next_payment: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato YYYY-MM-DD')
     .optional()
-    .or(z.literal('')),
+    .or(z.literal(''))
+    .transform((val) => {
+      if (!val || val === '') return undefined;
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
+        const [day, month, year] = val.split('/');
+        return `${year}-${month}-${day}`;
+      }
+      return val;
+    })
+    .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato DD/MM/YYYY').optional()),
   
   weight: z.string()
     .optional()
