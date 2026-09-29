@@ -31,6 +31,121 @@ interface UserFormDialogProps {
   user?: any; // Usuario existente para editar (opcional)
 }
 
+// Formatear YYYY-MM-DD -> DD/MM/YYYY
+function formatToDisplay(dateStr: string): string {
+  if (!dateStr) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  }
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+// Formatear DD/MM/YYYY -> YYYY-MM-DD (para BD)
+function formatToISO(dateStr: string): string {
+  if (!dateStr) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    const [day, month, year] = dateStr.split('/');
+    return `${year}-${month}-${day}`;
+  }
+  return dateStr;
+}
+
+// Componente de input fecha DD/MM/YYYY con picker nativo
+function DateInput({ 
+  id, 
+  label, 
+  register, 
+  error, 
+  disabled, 
+  required = false,
+  value 
+}: { 
+  id: string; 
+  label: string; 
+  register: any; 
+  error?: any; 
+  disabled?: boolean; 
+  required?: boolean;
+  value?: string;
+}) {
+  const [displayValue, setDisplayValue] = useState(() => formatToDisplay(value || ''));
+  const [showPicker, setShowPicker] = useState(false);
+  const pickerRef = useRef<HTMLInputElement>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/\D/g, '');
+    if (val.length >= 2) val = val.slice(0, 2) + '/' + val.slice(2);
+    if (val.length >= 5) val = val.slice(0, 5) + '/' + val.slice(5, 9);
+    setDisplayValue(val.slice(0, 10));
+    register(id).onChange({ target: { name: id, value: formatToISO(val.slice(0, 10)) } });
+  };
+
+  const handleBlur = () => {
+    if (displayValue && !/^\d{2}\/\d{2}\/\d{4}$/.test(displayValue)) {
+      setDisplayValue('');
+      register(id).onChange({ target: { name: id, value: '' } });
+    }
+  };
+
+  const openPicker = () => {
+    pickerRef.current?.click();
+  };
+
+  const handlePickerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDisplayValue(formatToDisplay(e.target.value));
+    register(id).onChange({ target: { name: id, value: e.target.value } });
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id} className="text-gray-300">
+        {label} {required && <span className="text-[#ff3b5c]">*</span>}
+      </Label>
+      <div className="relative">
+        <Input
+          id={id}
+          type="text"
+          placeholder="DD/MM/YYYY"
+          value={displayValue}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          disabled={disabled}
+          className="bg-gray-800 border-gray-700 text-white pr-10"
+          readOnly={showPicker}
+        />
+        <button
+          type="button"
+          onClick={openPicker}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] hover:text-[#0ed145] p-1"
+          disabled={disabled}
+          aria-label="Abrir calendario"
+        >
+          <Calendar className="h-5 w-5" />
+        </button>
+        <input
+          ref={pickerRef}
+          type="date"
+          className="absolute inset-0 opacity-0 pointer-events-none"
+          value={value || ''}
+          onChange={handlePickerChange}
+          onFocus={() => setShowPicker(true)}
+          onBlur={() => setShowPicker(false)}
+          disabled={disabled}
+        />
+      </div>
+      {error && <p className="text-xs text-[#ff3b5c]">{error.message}</p>}
+    </div>
+  );
+}
+
 export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps) {
   const isEdit = !!user;
   const createUser = useCreateUser();
@@ -93,18 +208,20 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   // Función para formatear fecha a YYYY-MM-DD
   const formatDateForInput = (dateStr: string | null | undefined) => {
     if (!dateStr) return '';
-    // Si ya está en formato YYYY-MM-DD, convertir a DD/MM/YYYY
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      const [year, month, day] = dateStr.split('-');
-      return `${day}/${month}/${year}`;
+    // Si ya está en formato YYYY-MM-DD, devolverlo (necesario para type="date")
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    // Si es DD/MM/YYYY, convertir a YYYY-MM-DD
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+      const [day, month, year] = dateStr.split('/');
+      return `${year}-${month}-${day}`;
     }
     // Si es timestamp ISO, extraer y formatear
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return '';
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   // Actualizar formulario cuando cambia el usuario
@@ -262,17 +379,13 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   <Label htmlFor="birth_date" className="text-gray-300">
                     Fecha de Nacimiento
                   </Label>
-                  <div className="relative">
-                    <Input
-                      id="birth_date"
-                      type="text"
-                      placeholder="DD/MM/YYYY"
-                      {...register('birth_date')}
-                      disabled={isSubmitting}
-                      className="bg-gray-800 border-gray-700 text-white pr-10"
-                    />
-                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] h-5 w-5 pointer-events-none" />
-                  </div>
+                  <Input
+                    id="birth_date"
+                    type="date"
+                    {...register('birth_date')}
+                    disabled={isSubmitting}
+                    className="bg-gray-800 border-gray-700 text-white"
+                  />
                   {errors.birth_date && (
                     <p className="text-xs text-[#ff3b5c]">{errors.birth_date.message}</p>
                   )}
@@ -446,17 +559,13 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                 <Label htmlFor="start_date" className="text-gray-300">
                   Fecha de Inicio
                 </Label>
-                <div className="relative">
-                  <Input
-                    id="start_date"
-                    type="text"
-                    placeholder="DD/MM/YYYY"
-                    {...register('start_date')}
-                    disabled={isEdit || isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white pr-10"
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] h-5 w-5 pointer-events-none" />
-                </div>
+                <Input
+                  id="start_date"
+                  type="date"
+                  {...register('start_date')}
+                  disabled={isEdit || isSubmitting}
+                  className="bg-gray-800 border-gray-700 text-white"
+                />
                 {errors.start_date && (
                   <p className="text-xs text-[#ff3b5c]">{errors.start_date.message}</p>
                 )}
@@ -469,17 +578,13 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                 <Label htmlFor="next_payment" className="text-gray-300">
                   Próximo Pago
                 </Label>
-                <div className="relative">
-                  <Input
-                    id="next_payment"
-                    type="text"
-                    placeholder="DD/MM/YYYY"
-                    {...register('next_payment')}
-                    disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white pr-10"
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] h-5 w-5 pointer-events-none" />
-                </div>
+                <Input
+                  id="next_payment"
+                  type="date"
+                  {...register('next_payment')}
+                  disabled={isSubmitting}
+                  className="bg-gray-800 border-gray-700 text-white"
+                />
                 {errors.next_payment && (
                   <p className="text-xs text-[#ff3b5c]">{errors.next_payment.message}</p>
                 )}
