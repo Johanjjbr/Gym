@@ -117,11 +117,12 @@ export function Billing() {
   const [cobroErrors, setCobroErrors] = useState<Record<string, string>>({});
   const [selectedUserPlan, setSelectedUserPlan] = useState('');
 
-  // Calcular próximo vencimiento (+1 mes)
+  // Calcular due_date = primer día del mes actual (mes que se paga)
   useEffect(() => {
     if (cobroDate) {
-      const next = addMonths(new Date(cobroDate), 1);
-      setCobroDueDate(format(next, 'yyyy-MM-dd'));
+      const due = new Date(cobroDate);
+      due.setDate(1); // Primer día del mes actual = mes que se paga
+      setCobroDueDate(format(due, 'yyyy-MM-dd'));
     }
   }, [cobroDate]);
 
@@ -294,10 +295,17 @@ export function Billing() {
     if (Object.keys(errors).length > 0) return;
 
     try {
+      // Obtener info del usuario para generar concept con plan + mes
+      const user = getUserById(cobroUserId);
+      const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
+      const dueDate = new Date(cobroDueDate);
+      const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
+      const concept = `${planName} - ${monthYear}`;
+
       // 1. Crear factura pendiente
       const invoice = await createInvoice.mutateAsync({
         user_id: cobroUserId,
-        concept: cobroConcept,
+        concept: concept,
         amount: Number(cobroAmount),
         due_date: cobroDueDate,
         notes: cobroNotes || undefined,
@@ -314,6 +322,13 @@ export function Billing() {
           },
         });
       }
+
+      // 3. Actualizar next_payment del usuario = due_date + 1 mes (primer día)
+      const nextPaymentDate = new Date(cobroDueDate);
+      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+      nextPaymentDate.setDate(1);
+      await supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', cobroUserId);
+      queryClient.invalidateQueries({ queryKey: ['users'] });
 
       toast.success('Cobro registrado y factura generada');
 

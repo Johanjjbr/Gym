@@ -220,6 +220,12 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
     }
 
     try {
+      // Generar concept: Plan - Mes Año (basado en due_date = paymentDate)
+      const dueDate = new Date(paymentDate);
+      const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
+      const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
+      const concept = `${planName} - ${monthYear}`;
+
       await createPaymentMutation.mutateAsync({
         user_id: id,
         amount: parseFloat(paymentAmount),
@@ -227,12 +233,16 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
         paid_at: paymentStatus === 'Pagado' ? paymentDate : undefined,
         status: paymentStatus === 'Pagado' ? 'Pagada' : paymentStatus === 'Vencido' ? 'Vencida' : 'Pendiente',
         method: paymentMethod,
-        concept: paymentConcept.trim(),
+        concept: concept,
         reference: paymentReference || undefined,
         notes: paymentNotes || undefined,
       });
 
-      await supabase.from('users').update({ next_payment: paymentNextDate }).eq('id', id);
+      // Actualizar next_payment = due_date + 1 mes (primer día)
+      const nextPaymentDate = new Date(paymentDate);
+      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+      nextPaymentDate.setDate(1);
+      await supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', id);
       queryClient.invalidateQueries({ queryKey: ['users'] });
 
       setIsCreatePaymentDialogOpen(false);
@@ -260,11 +270,17 @@ setPaymentReference('');
       data: { method: payMethod, reference: payReference || undefined, notes: payNotes || undefined },
     }, {
       onSuccess: () => {
+        // Actualizar next_payment = due_date + 1 mes (primer día)
+        const dueDate = new Date(payingInvoice.due_date);
+        const nextPaymentDate = new Date(dueDate);
+        nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+        nextPaymentDate.setDate(1);
+        supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', id);
+        queryClient.invalidateQueries({ queryKey: ['users'] });
         setPayingInvoice(null);
         setPayMethod('Efectivo');
         setPayReference('');
         setPayNotes('');
-        queryClient.invalidateQueries({ queryKey: ['users'] });
       },
     });
   };
@@ -870,7 +886,8 @@ setPaymentReference('');
                   className="border-primary text-primary hover:bg-primary/10"
                   onClick={() => {
                     const dueDate = new Date(paymentDate);
-                    const concept = `Mensualidad ${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
+                    const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
+                    const concept = `${planName} - ${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
                     setPaymentConcept(concept);
                     setIsCreatePaymentDialogOpen(true);
                   }}

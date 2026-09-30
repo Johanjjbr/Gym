@@ -127,26 +127,28 @@ function DateInput({
           onChange={handleChange}
           onBlur={handleBlur}
           disabled={disabled}
-          className="bg-gray-800 border-gray-700 text-white pr-10"
+          className="bg-gray-800 border-gray-700 text-white pr-12"
         />
-        <button
-          type="button"
-          onClick={openPicker}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] hover:text-[#0ed145] p-1 z-10"
-          disabled={disabled}
-          aria-label="Abrir calendario"
-        >
-          <Calendar className="h-5 w-5" />
-        </button>
-        <input
-          ref={pickerRef}
-          type="date"
-          className="absolute inset-0 opacity-0 cursor-pointer"
-          value={value || ''}
-          onChange={handlePickerChange}
-          disabled={disabled}
-          tabIndex={-1}
-        />
+        <div className="absolute right-0 top-0 bottom-0 w-10 flex items-center justify-center">
+          <button
+            type="button"
+            onClick={openPicker}
+            className="w-full h-full text-[#10f94e] hover:text-[#0ed145] p-1"
+            disabled={disabled}
+            aria-label="Abrir calendario"
+          >
+            <Calendar className="h-5 w-5" />
+          </button>
+          <input
+            ref={pickerRef}
+            type="date"
+            className="absolute inset-0 opacity-0 cursor-pointer"
+            value={value || ''}
+            onChange={handlePickerChange}
+            disabled={disabled}
+            tabIndex={-1}
+          />
+        </div>
       </div>
       {error && <p className="text-xs text-[#ff3b5c]">{error.message}</p>}
     </div>
