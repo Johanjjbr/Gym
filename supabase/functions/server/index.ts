@@ -267,6 +267,124 @@ app.post("/payments", async (c) => {
   }
 });
 
+// =============================================
+// FACTURACIÓN RECURRENTE (CRON)
+// =============================================
+
+app.post("/payments/process-recurring", async (c) => {
+  try {
+    const authToken = c.req.header('Authorization')?.split(' ')[1];
+    const cronSecret = Deno.env.get('CRON_SECRET');
+    
+    // Validar que sea llamada desde cron job autorizado
+    if (cronSecret && authToken !== cronSecret) {
+      return c.json({ error: 'No autorizado' }, 401);
+    }
+
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
+    // Buscar usuarios con pago vencido y status Activo
+    const { data: usersToBill, error: usersError } = await supabase
+      .from('users')
+      .select(`
+        id, 
+        name, 
+        member_number, 
+        plan_id, 
+        next_payment,
+        plans!inner (
+          id, 
+          name, 
+          price, 
+          duration_days,
+          type
+        )
+      `)
+      .eq('status', 'Activo')
+      .lte('next_payment', today)
+      .not('plan_id', 'is', null);
+
+    if (usersError) throw usersError;
+
+    if (!usersToBill || usersToBill.length === 0) {
+      return c.json({ message: 'No hay pagos pendientes para procesar', processed: 0 });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const user of usersToBill) {
+      try {
+        const plan = user.plans;
+        if (!plan) {
+          errors.push({ userId: user.id, error: 'Plan no encontrado' });
+          continue;
+        }
+
+        const amount = Number(plan.price);
+        const nextPaymentDate = new Date(user.next_payment);
+        nextPaymentDate.setDate(nextPaymentDate.getDate() + plan.duration_days);
+        const nextPayment = nextPaymentDate.toISOString().split('T')[0];
+
+        // Generar número de factura
+        const invoiceNumber = `INV-${Date.now()}-${user.member_number}`;
+
+        // Crear factura (invoice)
+        const { data: invoice, error: invoiceError } = await supabase
+          .from('invoices')
+          .insert([{
+            user_id: user.id,
+            plan_id: plan.id,
+            invoice_number: invoiceNumber,
+            amount: amount,
+            due_date: user.next_payment,
+            status: 'Pendiente',
+            concept: `Renovación ${plan.name} - ${plan.type}`,
+          }])
+          .select()
+          .single();
+
+        if (invoiceError) throw invoiceError;
+
+        // Actualizar next_payment del usuario
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ next_payment: nextPayment })
+          .eq('id', user.id);
+
+        if (updateError) throw updateError;
+
+        results.push({
+          userId: user.id,
+          userName: user.name,
+          memberNumber: user.member_number,
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoice_number,
+          amount: amount,
+          nextPayment: nextPayment,
+          planName: plan.name,
+        });
+
+      } catch (userError: any) {
+        errors.push({ userId: user.id, error: userError.message });
+      }
+    }
+
+    return c.json({
+      message: `Procesamiento completado: ${results.length} facturas generadas, ${errors.length} errores`,
+      processed: results.length,
+      errors: errors.length,
+      results,
+      errorDetails: errors,
+    });
+
+  } catch (error) {
+    console.error('Error procesando pagos recurrentes:', error);
+    return c.json({ error: 'Error procesando pagos recurrentes' }, 500);
+  }
+});
+
 app.get("/staff", async (c) => {
   try {
     const { data, error } = await supabase.from('staff').select('*').order('created_at', { ascending: false });

@@ -33,6 +33,7 @@ export interface User {
   memberNumber: string;
   status: 'Activo' | 'Inactivo' | 'Moroso';
   plan: string;
+  plan_id?: string | null;
   startDate: string;
   nextPayment: string;
   weight: number;

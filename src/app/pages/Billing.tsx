@@ -17,6 +17,7 @@ import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO
 
 import { useInvoices, useCreateInvoice, usePayInvoice, useDeleteInvoice, useProcessRecurringPayments } from '../hooks/useInvoices';
 import { useUsers } from '../hooks/useUsers';
+import { usePlans } from '../hooks/usePlans';
 import { supabase } from '../lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -80,6 +81,7 @@ export function Billing() {
 // Data
   const { data: invoicesData, isLoading: loadingInvoices, error: invoicesError } = useInvoices({ status: filterStatus === 'all' ? undefined : filterStatus });
   const { data: users, isLoading: loadingUsers } = useUsers();
+  const { data: plans = [] } = usePlans({ is_active: true });
   const createInvoice = useCreateInvoice();
   const payInvoice = usePayInvoice();
   const deleteInvoice = useDeleteInvoice();
@@ -123,23 +125,36 @@ export function Billing() {
     }
   }, [cobroDate]);
 
-  // Auto-sugerir monto según plan
+  // Auto-sugerir monto según plan del usuario (usa plan_id para buscar precio real)
   useEffect(() => {
     if (cobroUserId && users) {
       const user = users.find((u: any) => u.id === cobroUserId);
       if (user) {
-        const plan = user.plan || user.membership_type || 'Mensual';
-        setSelectedUserPlan(plan);
-        const amounts: Record<string, number> = {
-          'Mensual': 300, 'Trimestral': 800, 'Semestral': 1500, 'Anual': 2800,
-        };
-        setCobroAmount(String(amounts[plan] || 300));
+        const planName = user.plan || user.membership_type || 'Mensual';
+        setSelectedUserPlan(planName);
+        
+        // Buscar plan por plan_id para obtener precio real
+        let amount = 300; // fallback
+        if (user.plan_id) {
+          const plan = plans.find(p => p.id === user.plan_id);
+          if (plan) {
+            amount = Number(plan.price);
+          }
+        } else if (planName) {
+          // Fallback: buscar por nombre si no hay plan_id
+          const plan = plans.find(p => p.name === planName);
+          if (plan) {
+            amount = Number(plan.price);
+          }
+        }
+        
+        setCobroAmount(String(amount));
         if (!cobroConcept) {
-          setCobroConcept(`Mensualidad ${plan}`);
+          setCobroConcept(`Mensualidad ${planName}`);
         }
       }
     }
-  }, [cobroUserId, users]);
+  }, [cobroUserId, users, plans]);
 
   // Helpers
   const getUserName = (userId: string) => {

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
+import { statsKeys } from './useStats';
 
 export const invoiceKeys = {
   all: ['invoices'] as const,
@@ -122,8 +123,34 @@ export function useCreateInvoice() {
 
       // Si la factura se crea como 'Pagada', crear registro en payments para estadísticas
       if (status === 'Pagada') {
+        // Obtener duración del plan para calcular next_payment correctamente
+        let durationDays = 30; // fallback default
+        if (data.plan_id) {
+          const { data: plan } = await supabase
+            .from('plans')
+            .select('duration_days')
+            .eq('id', data.plan_id)
+            .single();
+          if (plan) durationDays = plan.duration_days;
+        } else {
+          // Fallback: buscar plan del usuario
+          const { data: user } = await supabase
+            .from('users')
+            .select('plan_id')
+            .eq('id', data.user_id)
+            .single();
+          if (user?.plan_id) {
+            const { data: plan } = await supabase
+              .from('plans')
+              .select('duration_days')
+              .eq('id', user.plan_id)
+              .single();
+            if (plan) durationDays = plan.duration_days;
+          }
+        }
+
         const nextPaymentDate = new Date(dueDate);
-        nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+        nextPaymentDate.setDate(nextPaymentDate.getDate() + durationDays);
 
         const { error: paymentError } = await supabase
           .from('payments')
@@ -159,7 +186,7 @@ export function useCreateInvoice() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: statsKeys.dashboard });
       toast.success('Factura generada exitosamente');
     },
     onError: (error: Error) => {
@@ -175,7 +202,7 @@ export function usePayInvoice() {
       // Primero obtener la factura para tener los datos necesarios
       const { data: invoice, error: invoiceError } = await supabase
         .from('invoices')
-        .select('user_id, amount, due_date')
+        .select('user_id, amount, due_date, plan_id')
         .eq('id', id)
         .single();
 
@@ -197,9 +224,35 @@ export function usePayInvoice() {
 
       if (error) throw new Error(error.message);
 
+      // Obtener duración del plan para calcular next_payment correctamente
+      let durationDays = 30; // fallback default
+      if (invoice.plan_id) {
+        const { data: plan } = await supabase
+          .from('plans')
+          .select('duration_days')
+          .eq('id', invoice.plan_id)
+          .single();
+        if (plan) durationDays = plan.duration_days;
+      } else if (invoice.user_id) {
+        // Fallback: buscar plan del usuario
+        const { data: user } = await supabase
+          .from('users')
+          .select('plan_id')
+          .eq('id', invoice.user_id)
+          .single();
+        if (user?.plan_id) {
+          const { data: plan } = await supabase
+            .from('plans')
+            .select('duration_days')
+            .eq('id', user.plan_id)
+            .single();
+          if (plan) durationDays = plan.duration_days;
+        }
+      }
+
       // Crear registro en tabla payments para que se refleje en estadísticas
       const nextPaymentDate = new Date(invoice.due_date);
-      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+      nextPaymentDate.setDate(nextPaymentDate.getDate() + durationDays);
 
       const { error: paymentError } = await supabase
         .from('payments')
@@ -235,7 +288,7 @@ export function usePayInvoice() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: statsKeys.dashboard });
       toast.success('Pago registrado exitosamente');
     },
     onError: (error: Error) => {

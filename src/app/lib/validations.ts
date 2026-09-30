@@ -61,11 +61,16 @@ export const userSchema = z.object({
     .optional()
     .or(z.literal('')),
   
-  plan: z.string()
+plan: z.string()
     .max(100, 'Plan demasiado largo')
     .optional()
     .or(z.literal('')),
-  
+
+  plan_id: z.string()
+    .uuid('ID de plan inválido')
+    .optional()
+    .or(z.literal('')),
+
   status: z.enum(['Activo', 'Inactivo', 'Moroso', 'Suspendido'], {
     errorMap: () => ({ message: 'Estado debe ser Activo, Inactivo, Moroso o Suspendido' })
   }),

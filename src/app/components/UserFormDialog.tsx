@@ -3,13 +3,15 @@
  * Muestra cómo integrar validación y mutaciones correctamente
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { userSchema, type UserFormData } from '../lib/validations';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
 import { useStaff } from '../hooks/useStaff';
+import { usePlans } from '../hooks/usePlans';
 import { ActivationModal } from './ActivationModal';
+import { formatCurrency } from '../../lib/format';
 import {
   Dialog,
   DialogContent,
@@ -77,7 +79,6 @@ function DateInput({
   value?: string;
 }) {
   const [displayValue, setDisplayValue] = useState(() => formatToDisplay(value || ''));
-  const [showPicker, setShowPicker] = useState(false);
   const pickerRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,7 +97,15 @@ function DateInput({
   };
 
   const openPicker = () => {
-    pickerRef.current?.click();
+    if (pickerRef.current) {
+      // Usar showPicker() API moderna si está disponible
+      if (pickerRef.current.showPicker) {
+        pickerRef.current.showPicker();
+      } else {
+        pickerRef.current.focus();
+        pickerRef.current.click();
+      }
+    }
   };
 
   const handlePickerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,12 +128,11 @@ function DateInput({
           onBlur={handleBlur}
           disabled={disabled}
           className="bg-gray-800 border-gray-700 text-white pr-10"
-          readOnly={showPicker}
         />
         <button
           type="button"
           onClick={openPicker}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] hover:text-[#0ed145] p-1"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#10f94e] hover:text-[#0ed145] p-1 z-10"
           disabled={disabled}
           aria-label="Abrir calendario"
         >
@@ -133,12 +141,11 @@ function DateInput({
         <input
           ref={pickerRef}
           type="date"
-          className="absolute inset-0 opacity-0 pointer-events-none"
+          className="absolute inset-0 opacity-0 cursor-pointer"
           value={value || ''}
           onChange={handlePickerChange}
-          onFocus={() => setShowPicker(true)}
-          onBlur={() => setShowPicker(false)}
           disabled={disabled}
+          tabIndex={-1}
         />
       </div>
       {error && <p className="text-xs text-[#ff3b5c]">{error.message}</p>}
@@ -150,6 +157,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   const isEdit = !!user;
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
+  const { data: plans = [], isLoading: loadingPlans } = usePlans({ is_active: true });
   const [calculatedBMI, setCalculatedBMI] = useState<number | null>(null);
   const [activationData, setActivationData] = useState<{
     token: string;
@@ -205,6 +213,19 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     }
   }, [weight, height, setValue]);
 
+  // Handler para cambio de plan - actualiza plan_id, plan name y next_payment
+  const handlePlanChange = (planId: string) => {
+    const plan = plans.find(p => p.id === planId);
+    if (plan) {
+      setValue('plan_id', plan.id);
+      setValue('plan', plan.name);
+      // Calcular next_payment automático: hoy + duration_days
+      const nextPayment = new Date();
+      nextPayment.setDate(nextPayment.getDate() + plan.duration_days);
+      setValue('next_payment', nextPayment.toISOString().split('T')[0]);
+    }
+  };
+
   // Función para formatear fecha a YYYY-MM-DD
   const formatDateForInput = (dateStr: string | null | undefined) => {
     if (!dateStr) return '';
@@ -237,6 +258,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
         gender: user.gender || '',
         address: user.address || '',
         plan: user.plan || '',
+        plan_id: user.plan_id || '',
         status: user.status || 'Activo',
         start_date: formatDateForInput(user.start_date),
         next_payment: formatDateForInput(user.next_payment),
@@ -375,21 +397,14 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="birth_date" className="text-gray-300">
-                    Fecha de Nacimiento
-                  </Label>
-                  <Input
+                <DateInput
                     id="birth_date"
-                    type="date"
-                    {...register('birth_date')}
+                    label="Fecha de Nacimiento"
+                    register={register}
+                    error={errors.birth_date}
                     disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white"
+                    value={watch('birth_date')}
                   />
-                  {errors.birth_date && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.birth_date.message}</p>
-                  )}
-                </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="gender" className="text-gray-300">
@@ -445,19 +460,34 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   <Label htmlFor="plan" className="text-gray-300">
                     Tipo de Membresía <span className="text-[#ff3b5c]">*</span>
                   </Label>
-                  <select
-                    id="plan"
-                    {...register('plan')}
-                    disabled={isSubmitting}
-                    className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-                  >
-                    <option value="Mensual">Mensual</option>
-                    <option value="Trimestral">Trimestral</option>
-                    <option value="Semestral">Semestral</option>
-                    <option value="Anual">Anual</option>
-                  </select>
+                  {loadingPlans ? (
+                    <Select disabled>
+                      <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                        <SelectValue placeholder="Cargando planes..." />
+                      </SelectTrigger>
+                    </Select>
+                  ) : (
+                    <Select
+                      onValueChange={handlePlanChange}
+                      defaultValue={watch('plan_id')}
+                    >
+                      <SelectTrigger className="bg-gray-800 border-gray-700 text-white" disabled={isSubmitting}>
+                        <SelectValue placeholder="Seleccionar plan..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {plans.map(plan => (
+                          <SelectItem key={plan.id} value={plan.id}>
+                            {plan.name} - {formatCurrency(Number(plan.price))} ({plan.duration_days} días)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {errors.plan && (
                     <p className="text-xs text-[#ff3b5c]">{errors.plan.message}</p>
+                  )}
+                  {errors.plan_id && (
+                    <p className="text-xs text-[#ff3b5c]">{errors.plan_id.message}</p>
                   )}
                 </div>
 
@@ -555,40 +585,26 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="start_date" className="text-gray-300">
-                  Fecha de Inicio
-                </Label>
-                <Input
+              <DateInput
                   id="start_date"
-                  type="date"
-                  {...register('start_date')}
+                  label="Fecha de Inicio"
+                  register={register}
+                  error={errors.start_date}
                   disabled={isEdit || isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
+                  value={watch('start_date')}
                 />
-                {errors.start_date && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.start_date.message}</p>
-                )}
                 {isEdit && (
                   <p className="text-xs text-gray-500">La fecha de inicio no se puede modificar</p>
                 )}
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="next_payment" className="text-gray-300">
-                  Próximo Pago
-                </Label>
-                <Input
+              <DateInput
                   id="next_payment"
-                  type="date"
-                  {...register('next_payment')}
+                  label="Próximo Pago"
+                  register={register}
+                  error={errors.next_payment}
                   disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
+                  value={watch('next_payment')}
                 />
-                {errors.next_payment && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.next_payment.message}</p>
-                )}
-              </div>
 
               <div className="space-y-2">
                 <Label htmlFor="weight" className="text-gray-300">
