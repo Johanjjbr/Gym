@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Search, Plus, DollarSign, Loader2, AlertCircle, Eye, Calendar,
   Filter, Printer, X, Users, FileText, CreditCard, CheckCircle, Trash2, Clock, RotateCcw,
@@ -52,6 +53,7 @@ interface GymInfo {
 
 export function Billing() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Tabs
   const [activeTab, setActiveTab] = useState<TabType>('facturas');
@@ -119,6 +121,8 @@ export function Billing() {
   const [cobroReference, setCobroReference] = useState('');
   const [cobroConcept, setCobroConcept] = useState('');
   const [cobroNotes, setCobroNotes] = useState('');
+  const [cobroUserSearch, setCobroUserSearch] = useState('');
+  const [cobroUserDropdownOpen, setCobroUserDropdownOpen] = useState(false);
   const [cobroErrors, setCobroErrors] = useState<Record<string, string>>({});
   const [selectedUserPlan, setSelectedUserPlan] = useState('');
 
@@ -207,7 +211,8 @@ export function Billing() {
     return invoicesData.filter((inv: any) => {
       const user = users?.find((u: any) => u.id === inv.user_id);
       const matchesSearch = !searchTerm || user?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-        || inv.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase());
+        || inv.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase())
+        || user?.cedula?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = filterStatus === 'all' || inv.status === filterStatus;
 
       let matchesTime = true;
@@ -303,7 +308,12 @@ export function Billing() {
       // Obtener info del usuario para generar concept con plan + mes
       const user = getUserById(cobroUserId);
       const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
-      const dueDate = new Date(cobroDueDate);
+      
+      // due_date = primer día del mes de cobroDate (mes que se está pagando)
+      const dueDate = new Date(cobroDate);
+      dueDate.setDate(1);
+      const dueDateStr = format(dueDate, 'yyyy-MM-dd');
+      
       const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
       const concept = `${planName} - ${monthYear}`;
 
@@ -312,7 +322,7 @@ export function Billing() {
         user_id: cobroUserId,
         concept: concept,
         amount: Number(cobroAmount),
-        due_date: cobroDueDate,
+        due_date: dueDateStr,
         notes: cobroNotes || undefined,
       });
 
@@ -329,7 +339,7 @@ export function Billing() {
       }
 
       // 3. Actualizar next_payment del usuario = due_date + 1 mes (primer día)
-      const nextPaymentDate = new Date(cobroDueDate);
+      const nextPaymentDate = new Date(dueDateStr);
       nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
       nextPaymentDate.setDate(1);
       await supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', cobroUserId);
@@ -710,22 +720,52 @@ export function Billing() {
               data-testid="cobro-form"
             >
               {/* Usuario */}
-              <div className="space-y-2">
-                <Label htmlFor="cobro-user">Usuario <span className="text-[#ff3b5c]">*</span></Label>
-                <select
-                  id="cobro-user"
+              <div className="space-y-2 relative">
+                <Label htmlFor="cobro-user-search">Usuario <span className="text-[#ff3b5c]">*</span></Label>
+                <div className="relative">
+                  <input
+                    id="cobro-user-search"
+                    type="text"
+                    value={cobroUserSearch}
+                    onChange={(e) => setCobroUserSearch(e.target.value)}
+                    placeholder="Buscar por nombre o DNI..."
+                    className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
+                    data-testid="search-user"
+                    onFocus={() => setCobroUserDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setCobroUserDropdownOpen(false), 150)}
+                  />
+                  {cobroUserDropdownOpen && (
+                    <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-auto">
+                      {users
+                        ?.filter((user: any) =>
+                          user.name.toLowerCase().includes(cobroUserSearch.toLowerCase()) ||
+                          user.cedula?.toLowerCase().includes(cobroUserSearch.toLowerCase())
+                        )
+                        .map((user: any) => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onClick={() => {
+                              setCobroUserId(user.id);
+                              setCobroUserSearch(user.name);
+                              setCobroUserDropdownOpen(false);
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-accent text-sm"
+                          >
+                            <div className="font-medium">{user.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              DNI: {user.cedula || 'N/A'} - {user.plan || user.membership_type || 'Sin plan'}
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="hidden"
                   value={cobroUserId}
                   onChange={(e) => setCobroUserId(e.target.value)}
-                  className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
-                  data-testid="select-user"
-                >
-                  <option value="">Seleccionar usuario</option>
-                  {users?.map((user: any) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name} - {user.plan || user.membership_type || 'Sin plan'}
-                    </option>
-                  ))}
-                </select>
+                />
                 {cobroErrors.user_id && <p className="text-xs text-[#ff3b5c]">{cobroErrors.user_id}</p>}
               </div>
 

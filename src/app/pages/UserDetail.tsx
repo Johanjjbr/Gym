@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2, CheckCircle, Shield, MapPin, HeartPulse, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -220,8 +220,10 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
     }
 
     try {
-      // Generar concept: Plan - Mes Año (basado en due_date = paymentDate)
+      // Generar concept: Plan - Mes Año (basado en due_date = primer día del mes de paymentDate)
       const dueDate = new Date(paymentDate);
+      dueDate.setDate(1); // Primer día del mes = mes que se paga
+      const dueDateStr = format(dueDate, 'yyyy-MM-dd');
       const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
       const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
       const concept = `${planName} - ${monthYear}`;
@@ -229,7 +231,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
       await createPaymentMutation.mutateAsync({
         user_id: id,
         amount: parseFloat(paymentAmount),
-        due_date: paymentDate,
+        due_date: dueDateStr,
         paid_at: paymentStatus === 'Pagado' ? paymentDate : undefined,
         status: paymentStatus === 'Pagado' ? 'Pagada' : paymentStatus === 'Vencido' ? 'Vencida' : 'Pendiente',
         method: paymentMethod,
@@ -239,7 +241,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
       });
 
       // Actualizar next_payment = due_date + 1 mes (primer día)
-      const nextPaymentDate = new Date(paymentDate);
+      const nextPaymentDate = new Date(dueDateStr);
       nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
       nextPaymentDate.setDate(1);
       await supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', id);
@@ -258,8 +260,9 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
       setPaymentMethod('Efectivo');
 setPaymentReference('');
       setPaymentNotes('');
-    } catch {
-      // El hook ya muestra el toast de error
+    } catch (error: any) {
+      console.error('Error creating payment:', error);
+      toast.error('Error al registrar pago', { description: error.message });
     }
   };
 
@@ -441,24 +444,66 @@ setPaymentReference('');
                   Información Personal
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+<CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
+                  {/* Identificación */}
+                  {user.cedula && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Cédula</p>
+                      <p className="font-mono text-sm">{user.cedula}</p>
+                    </div>
+                  )}
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">Tel��fono</p>
+                    <p className="text-sm text-muted-foreground mb-1">Miembro #</p>
+                    <p className="text-primary">{user.member_number || user.id || 'N/A'}</p>
+                  </div>
+
+                  {/* Información Personal */}
+                  {user.birth_date && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Fecha de Nacimiento</p>
+                      <p>
+                        {new Date(user.birth_date).toLocaleDateString('es-ES', { 
+                          day: 'numeric', 
+                          month: 'long', 
+                          year: 'numeric' 
+                        })}
+                      </p>
+                    </div>
+                  )}
+                  {user.gender && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Género</p>
+                      <p>{user.gender}</p>
+                    </div>
+                  )}
+
+                  {/* Contacto */}
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Teléfono</p>
                     <p>{user.phone || 'No definido'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Email</p>
                     <p className="text-sm">{user.email || 'No definido'}</p>
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Peso</p>
-                    <p>{user.weight ? `${user.weight} kg` : 'No registrado'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Estatura</p>
-                    <p>{user.height ? `${user.height} cm` : 'No registrado'}</p>
-                  </div>
+                  {user.address && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Dirección</p>
+                      <p>{user.address}</p>
+                    </div>
+                  )}
+                  {user.emergency_contact && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Contacto de Emergencia</p>
+                      <p className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-primary" />
+                        <span>{user.emergency_contact}</span>
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Membresía */}
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
                     <p>
@@ -467,10 +512,36 @@ setPaymentReference('');
                         : 'No definido'}
                     </p>
                   </div>
+
+                  {/* Físico */}
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">Miembro #</p>
-                    <p className="text-primary">{user.member_number || user.id || 'N/A'}</p>
+                    <p className="text-sm text-muted-foreground mb-1">Peso</p>
+                    <p>{user.weight ? `${user.weight} kg` : 'No registrado'}</p>
                   </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Estatura</p>
+                    <p>{user.height ? `${user.height} cm` : 'No registrado'}</p>
+                  </div>
+
+                  {/* Notas */}
+                  {user.notes && (
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-muted-foreground mb-1">Notas</p>
+                      <p className="flex items-start gap-2">
+                        <FileText className="w-4 h-4 text-primary mt-0.5" />
+                        <span>{user.notes}</span>
+                      </p>
+                    </div>
+                  )}
+                  {user.medical_notes && (
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-muted-foreground mb-1">Notas Médicas</p>
+                      <p className="flex items-start gap-2">
+                        <Building2 className="w-4 h-4 text-primary mt-0.5" />
+                        <span>{user.medical_notes}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
