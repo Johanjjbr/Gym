@@ -16,6 +16,11 @@ import { toast } from 'sonner';
 import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths } from 'date-fns';
 
 import { useInvoices, useCreateInvoice, usePayInvoice, useDeleteInvoice, useProcessRecurringPayments } from '../hooks/useInvoices';
+
+const MONTHS_ES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
 import { useUsers } from '../hooks/useUsers';
 import { usePlans } from '../hooks/usePlans';
 import { supabase } from '../lib/supabase';
@@ -766,14 +771,24 @@ export function Billing() {
                   <Label htmlFor="cobro-due" className="flex items-center gap-2">
                     Próximo Vencimiento <Calendar className="h-3 w-3 text-[#10f94e]" />
                   </Label>
-                  <Input
-                    id="cobro-due"
-                    type="date"
-                    value={cobroDueDate}
-                    readOnly
-                    className="opacity-70"
-                    data-testid="input-due-date"
-                  />
+                  <div className="flex items-center gap-3">
+                    <Input
+                      id="cobro-due"
+                      type="date"
+                      value={cobroDueDate}
+                      readOnly
+                      className="opacity-70 flex-1"
+                      data-testid="input-due-date"
+                    />
+                    {cobroDueDate && (
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                        {(() => {
+                          const d = new Date(cobroDueDate + 'T00:00:00');
+                          return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                        })()}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

@@ -334,19 +334,59 @@ export const users = {
    * Actualizar usuario
    */
   update: async (id: string, userData: any) => {
-    return apiRequest(`/users/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(userData),
-    });
+    try {
+      // Intentar usar la API primero
+      return await apiRequest(`/users/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(userData),
+      });
+    } catch (error: any) {
+      // Si falla (404, 401, etc), usar Supabase directamente
+      console.log('⚠️ API no disponible, usando Supabase directamente para actualizar usuario');
+      
+      const { data, error: supabaseError } = await supabase
+        .from('users')
+        .update({
+          ...userData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (supabaseError) {
+        console.error('❌ Error de Supabase actualizando usuario:', supabaseError);
+        throw new Error(supabaseError.message || 'Error al actualizar usuario');
+      }
+      
+      console.log('✅ Usuario actualizado via Supabase:', data);
+      return data;
+    }
   },
 
   /**
    * Eliminar usuario
    */
   delete: async (id: string) => {
-    return apiRequest(`/users/${id}`, {
-      method: 'DELETE',
-    });
+    try {
+      return await apiRequest(`/users/${id}`, {
+        method: 'DELETE',
+      });
+    } catch (error: any) {
+      console.log('⚠️ API no disponible, usando Supabase directamente para eliminar usuario');
+      
+      const { error: supabaseError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', id);
+      
+      if (supabaseError) {
+        console.error('❌ Error de Supabase eliminando usuario:', supabaseError);
+        throw new Error(supabaseError.message || 'Error al eliminar usuario');
+      }
+      
+      return { success: true };
+    }
   },
 
   /**

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Search, Plus, DollarSign, Calendar, Loader2, Edit, Trash2, BadgeCheck, AlertCircle } from 'lucide-react';
+import { Controller } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -54,8 +55,18 @@ export function Plans() {
   const updatePlanMutation = useUpdatePlan();
   const deletePlanMutation = useDeletePlan();
 
-  const { register: registerCreate, handleSubmit: handleSubmitCreate, reset: resetCreate, watch: watchCreate, formState: { errors: errorsCreate } } = useForm<PlanFormData>();
-  const { register: registerEdit, handleSubmit: handleSubmitEdit, reset: resetEdit, watch: watchEdit, formState: { errors: errorsEdit } } = useForm<PlanFormData>();
+  const { register: registerCreate, control: controlCreate, handleSubmit: handleSubmitCreate, reset: resetCreate, watch: watchCreate, formState: { errors: errorsCreate } } = useForm<PlanFormData>({
+    defaultValues: {
+      duration_days: 30,
+      is_active: true,
+    },
+  });
+  const { register: registerEdit, control: controlEdit, handleSubmit: handleSubmitEdit, reset: resetEdit, watch: watchEdit, formState: { errors: errorsEdit } } = useForm<PlanFormData>({
+    defaultValues: {
+      duration_days: 30,
+      is_active: true,
+    },
+  });
 
   const filteredPlans = plans.filter(plan =>
     plan.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -272,29 +283,41 @@ export function Plans() {
             </div>
             <div>
               <Label htmlFor="create-type">Tipo *</Label>
-              <Select onValueChange={(value) => registerCreate('type').onChange({ target: { value } })} defaultValue={watchCreate('type')}>
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Seleccionar tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PLAN_TYPES.map(t => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                name="type"
+                control={controlCreate}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="Seleccionar tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PLAN_TYPES.map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div>
               <Label htmlFor="create-duration">Duración (días) *</Label>
-              <Select onValueChange={(value) => registerCreate('duration_days').onChange({ target: { value: Number(value) } })} defaultValue={watchCreate('duration_days')}>
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Seleccionar duración" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DURATION_OPTIONS.map(d => (
-                    <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                name="duration_days"
+                control={controlCreate}
+                render={({ field }) => (
+                  <Select onValueChange={(value) => field.onChange(Number(value))} defaultValue={field.value?.toString()}>
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="Seleccionar duración" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DURATION_OPTIONS.map(d => (
+                        <SelectItem key={d.value} value={d.value.toString()}>{d.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div>
               <Label htmlFor="create-price">Precio *</Label>
@@ -368,29 +391,41 @@ export function Plans() {
             </div>
             <div>
               <Label htmlFor="edit-type">Tipo *</Label>
-              <Select onValueChange={(value) => registerEdit('type').onChange({ target: { value } })} defaultValue={watchEdit('type')}>
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Seleccionar tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PLAN_TYPES.map(t => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                name="type"
+                control={controlEdit}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="Seleccionar tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PLAN_TYPES.map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div>
               <Label htmlFor="edit-duration">Duración (días) *</Label>
-              <Select onValueChange={(value) => registerEdit('duration_days').onChange({ target: { value: Number(value) } })} defaultValue={watchEdit('duration_days')}>
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Seleccionar duración" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DURATION_OPTIONS.map(d => (
-                    <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+<Controller
+                name="duration_days"
+                control={controlEdit}
+                render={({ field }) => (
+                  <Select onValueChange={(value) => field.onChange(Number(value))} defaultValue={field.value?.toString()}>
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="Seleccionar duración" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DURATION_OPTIONS.map(d => (
+                        <SelectItem key={d.value} value={d.value.toString()}>{d.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div>
               <Label htmlFor="edit-price">Precio *</Label>

@@ -1,4 +1,4 @@
-import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Users, Edit, Badge as BadgeIcon } from 'lucide-react';
+import { User, Mail, Phone, Calendar, CreditCard, TrendingUp, Activity, Hash, Users, Edit, Badge as BadgeIcon, MapPin, Shield, FileText, HeartPulse, Building2 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUser } from '../hooks/useUsers';
@@ -193,6 +193,77 @@ export function MyProfile() {
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Entrenador Asignado</p>
                 <p className="text-lg font-medium">{user.trainer_name}</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Additional Info Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Información Adicional</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {user.birth_date && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Calendar className="w-4 h-4" />
+                  <span>Fecha de Nacimiento</span>
+                </div>
+                <p className="font-medium">
+                  {new Date(user.birth_date).toLocaleDateString('es-ES', { 
+                    day: 'numeric', 
+                    month: 'long', 
+                    year: 'numeric' 
+                  })}
+                </p>
+              </div>
+            )}
+            {user.gender && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <HeartPulse className="w-4 h-4" />
+                  <span>Género</span>
+                </div>
+                <p className="font-medium">{user.gender}</p>
+              </div>
+            )}
+            {user.address && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <MapPin className="w-4 h-4" />
+                  <span>Dirección</span>
+                </div>
+                <p className="font-medium">{user.address}</p>
+              </div>
+            )}
+            {user.emergency_contact && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Shield className="w-4 h-4" />
+                  <span>Contacto de Emergencia</span>
+                </div>
+                <p className="font-medium">{user.emergency_contact}</p>
+              </div>
+            )}
+            {user.notes && (
+              <div className="space-y-1 md:col-span-2">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <FileText className="w-4 h-4" />
+                  <span>Notas</span>
+                </div>
+                <p className="font-medium">{user.notes}</p>
+              </div>
+            )}
+            {user.medical_notes && (
+              <div className="space-y-1 md:col-span-2">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Building2 className="w-4 h-4" />
+                  <span>Notas Médicas</span>
+                </div>
+                <p className="font-medium">{user.medical_notes}</p>
               </div>
             )}
           </div>
