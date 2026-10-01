@@ -13,8 +13,9 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
+import { format, parseISO, startOfMonth } from 'date-fns';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
-import { useUserInvoices, useCreateInvoice, usePayInvoice } from '../hooks/useInvoices';
+import { useUserInvoices, useCreateInvoice, usePayInvoice, usePayAdvanceMonths } from '../hooks/useInvoices';
 import { PaymentCalendar } from '../components/PaymentCalendar';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
@@ -66,7 +67,6 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   const [advanceMonths, setAdvanceMonths] = useState(1);
   const [advanceMethod, setAdvanceMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
   const [advanceReference, setAdvanceReference] = useState('');
-  const [advanceLoading, setAdvanceLoading] = useState(false);
   
   // Estados para el formulario de progreso físico
   const [progressWeight, setProgressWeight] = useState('');
@@ -94,6 +94,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   // Hook para crear pagos
   const createPaymentMutation = useCreateInvoice();
   const payInvoice = usePayInvoice();
+  const payAdvance = usePayAdvanceMonths();
   
   // Obtener usuario actual del staff usando el contexto de autenticación
   const { user: currentUser } = useAuth();
@@ -228,8 +229,9 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
 
     try {
       // Generar concept: Plan - Mes Año (basado en due_date = primer día del mes de paymentDate)
-      const dueDate = new Date(paymentDate);
-      dueDate.setDate(1); // Primer día del mes = mes que se paga
+      // parseISO: yyyy-MM-dd en hora LOCAL (new Date(str) usa UTC y un pago del día 1
+      // caería en el mes anterior en UTC-3 / UTC-4)
+      const dueDate = startOfMonth(parseISO(paymentDate));
       const dueDateStr = format(dueDate, 'yyyy-MM-dd');
       const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
       const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
@@ -237,6 +239,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
 
       await createPaymentMutation.mutateAsync({
         user_id: id,
+        plan_id: user?.plan_id || undefined,
         amount: parseFloat(paymentAmount),
         due_date: dueDateStr,
         paid_at: paymentStatus === 'Pagado' ? paymentDate : undefined,
@@ -247,12 +250,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
         notes: paymentNotes || undefined,
       });
 
-      // Actualizar next_payment = due_date + 1 mes (primer día)
-      const nextPaymentDate = new Date(dueDateStr);
-      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
-      nextPaymentDate.setDate(1);
-      await supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', id);
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+      // next_payment / paid_until los recalcula la base de datos (trigger sobre invoices)
 
       setIsCreatePaymentDialogOpen(false);
       setPaymentAmount('');
@@ -280,13 +278,6 @@ setPaymentReference('');
       data: { method: payMethod, reference: payReference || undefined, notes: payNotes || undefined },
     }, {
       onSuccess: () => {
-        // Actualizar next_payment = due_date + 1 mes (primer día)
-        const dueDate = new Date(payingInvoice.due_date);
-        const nextPaymentDate = new Date(dueDate);
-        nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
-        nextPaymentDate.setDate(1);
-        supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', id);
-        queryClient.invalidateQueries({ queryKey: ['users'] });
         setPayingInvoice(null);
         setPayMethod('Efectivo');
         setPayReference('');
@@ -295,35 +286,24 @@ setPaymentReference('');
     });
   };
   
-  const handleAdvancePayment = async () => {
-    if (!advanceMonths || advanceMonths < 1 || advanceMonths > 12) {
+  const handleAdvancePayment = () => {
+    if (!id || !advanceMonths || advanceMonths < 1 || advanceMonths > 12) {
       toast.error('Meses debe estar entre 1 y 12');
       return;
     }
-    
-    setAdvanceLoading(true);
-    try {
-      const { error } = await supabase.rpc('pay_advance_months', {
-        p_user_id: id,
-        p_months: advanceMonths,
-        p_method: advanceMethod,
-        p_reference: advanceReference || `Pago adelantado ${advanceMonths} meses`,
-      });
-      
-      if (error) throw error;
-      
-      toast.success(`${advanceMonths} mes(es) pagado(s) por adelantado`);
-      setAdvancePaymentOpen(false);
-      setAdvanceMonths(1);
-      setAdvanceMethod('Efectivo');
-      setAdvanceReference('');
-    } catch (err: any) {
-      toast.error('Error en pago adelantado', { description: err.message });
-    } finally {
-      setAdvanceLoading(false);
-    }
+    payAdvance.mutate(
+      { user_id: id, months: advanceMonths, method: advanceMethod, reference: advanceReference || undefined },
+      {
+        onSuccess: () => {
+          setAdvancePaymentOpen(false);
+          setAdvanceMonths(1);
+          setAdvanceMethod('Efectivo');
+          setAdvanceReference('');
+        },
+      },
+    );
   };
-  
+
   const createProgress = () => {
     if (!id || !progressWeight) {
       toast.error('El peso es obligatorio');
@@ -992,7 +972,7 @@ setPaymentReference('');
                   size="sm"
                   className="border-primary text-primary hover:bg-primary/10"
                   onClick={() => {
-                    const dueDate = new Date(paymentDate);
+                    const dueDate = parseISO(paymentDate);
                     const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
                     const concept = `${planName} - ${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
                     setPaymentConcept(concept);
@@ -1635,9 +1615,9 @@ setPaymentReference('');
               <Button
                 className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold"
                 onClick={handleAdvancePayment}
-                disabled={advanceLoading}
+                disabled={payAdvance.isPending}
               >
-                {advanceLoading ? (
+                {payAdvance.isPending ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
                 ) : (
                   <><Plus className="w-4 h-4 mr-2" />Confirmar Pago Adelantado</>

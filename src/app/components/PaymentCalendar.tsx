@@ -19,30 +19,76 @@ const MONTHS_ES = [
   'Diciembre',
 ];
 
+export type MonthStatus = 'Pagado' | 'Pendiente' | 'Vencido' | 'Sin factura' | 'Futuro';
+
+/**
+ * Año y mes (0-11) de un due_date SIN pasar por Date: 'YYYY-MM-DD' se interpretaría
+ * en UTC y en UTC-3 / UTC-4 un vencimiento del día 1 caería en el mes anterior.
+ */
+function parseYearMonth(value: unknown): { year: number; month: number } | null {
+  if (typeof value !== 'string') return null;
+  const m = /^(\d{4})-(\d{2})-\d{2}/.exec(value);
+  if (!m) return null;
+  const month = Number(m[2]) - 1;
+  if (month < 0 || month > 11) return null;
+  return { year: Number(m[1]), month };
+}
+
 export function getPaidMonthKeys(invoices: any[]): Set<string> {
   const paidMonths = new Set<string>();
   if (!Array.isArray(invoices)) return paidMonths;
   for (const inv of invoices) {
     if (!inv || inv.status !== 'Pagada') continue;
-    const dateStr = inv.due_date;
-    if (!dateStr) continue;
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime())) continue;
-    paidMonths.add(`${date.getFullYear()}-${date.getMonth()}`);
+    const ym = parseYearMonth(inv.due_date);
+    if (!ym) continue;
+    paidMonths.add(`${ym.year}-${ym.month}`);
   }
   return paidMonths;
 }
 
+/**
+ * Estado de cada mes de un año a partir de las facturas.
+ * Prioridad si hay varias facturas en el mismo mes: Vencida > Pendiente > Pagada
+ * (la deuda no queda oculta por otra factura pagada).
+ */
+export function getMonthStatuses(
+  invoices: any[],
+  year: number,
+  now: Date = new Date(),
+): MonthStatus[] {
+  const byMonth: Array<Set<string>> = Array.from({ length: 12 }, () => new Set<string>());
+  if (Array.isArray(invoices)) {
+    for (const inv of invoices) {
+      const ym = parseYearMonth(inv?.due_date);
+      if (ym && ym.year === year && inv?.status) byMonth[ym.month].add(inv.status);
+    }
+  }
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  return byMonth.map((statuses, month) => {
+    if (statuses.has('Vencida')) return 'Vencido';
+    if (statuses.has('Pendiente')) return 'Pendiente';
+    if (statuses.has('Pagada')) return 'Pagado';
+    const isFuture = year > currentYear || (year === currentYear && month > currentMonth);
+    return isFuture ? 'Futuro' : 'Sin factura';
+  });
+}
+
+const STATUS_STYLES: Record<MonthStatus, string> = {
+  Pagado: 'bg-primary/20 text-primary border-primary/30',
+  Pendiente: 'bg-yellow-500/15 text-yellow-500 border-yellow-500/30',
+  Vencido: 'bg-red-500/15 text-red-500 border-red-500/30',
+  'Sin factura': 'bg-muted text-muted-foreground border-border',
+  Futuro: 'bg-muted text-muted-foreground border-border opacity-70',
+};
+
 export function PaymentCalendar({ invoices }: { invoices: any[] }) {
   const [year, setYear] = useState(new Date().getFullYear());
-  const paidMonths = getPaidMonthKeys(invoices);
+  const statuses = getMonthStatuses(invoices, year);
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
-
-  const paidCount = MONTHS_ES.reduce(
-    (count, _, month) => count + (paidMonths.has(`${year}-${month}`) ? 1 : 0),
-    0,
-  );
+  const paidCount = statuses.filter((s) => s === 'Pagado').length;
 
   return (
     <Card className="bg-card border-border">
@@ -78,35 +124,22 @@ export function PaymentCalendar({ invoices }: { invoices: any[] }) {
       <CardContent className="space-y-4">
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
           {MONTHS_ES.map((monthName, monthIndex) => {
-            const isPaid = paidMonths.has(`${year}-${monthIndex}`);
+            const status = statuses[monthIndex];
             const isCurrent = year === currentYear && monthIndex === currentMonth;
-            const isFuture = year > currentYear || (year === currentYear && monthIndex > currentMonth);
-            const statusLabel = isPaid ? 'Pagado' : isFuture ? 'Futuro' : 'Pendiente';
 
             return (
               <div
                 key={monthName}
                 className={cn(
                   'rounded-lg border p-3 text-center transition-colors',
-                  isPaid
-                    ? 'bg-primary/20 text-primary border-primary/30'
-                    : 'bg-muted text-muted-foreground border-border',
-                  isCurrent && !isPaid && 'border-primary/50 ring-1 ring-primary/30',
+                  STATUS_STYLES[status],
+                  isCurrent && status !== 'Pagado' && 'ring-1 ring-primary/40',
                 )}
               >
                 <p className="text-sm font-semibold">{monthName}</p>
                 <p className="text-xs mt-1 flex items-center justify-center gap-1">
-                  {isPaid ? (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      {statusLabel}
-                    </>
-                  ) : (
-                    <>
-                      <Circle className="w-3 h-3" />
-                      {statusLabel}
-                    </>
-                  )}
+                  {status === 'Pagado' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3 h-3" />}
+                  {status}
                 </p>
               </div>
             );
@@ -114,15 +147,13 @@ export function PaymentCalendar({ invoices }: { invoices: any[] }) {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-sm bg-primary/20 border border-primary/30" />
-              Pagado
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-sm bg-muted border border-border" />
-              No pagado
-            </span>
+          <div className="flex flex-wrap items-center gap-4">
+            {(['Pagado', 'Pendiente', 'Vencido', 'Sin factura'] as MonthStatus[]).map((st) => (
+              <span key={st} className="flex items-center gap-2">
+                <span className={cn('w-3 h-3 rounded-sm border', STATUS_STYLES[st])} />
+                {st}
+              </span>
+            ))}
           </div>
           <p>
             <span className="text-primary font-semibold">{paidCount}</span> de {MONTHS_ES.length} meses pagados

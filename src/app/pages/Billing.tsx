@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths } from 'date-fns';
 
-import { useInvoices, useCreateInvoice, usePayInvoice, useDeleteInvoice, useProcessRecurringPayments } from '../hooks/useInvoices';
+import { useInvoices, useCreateInvoice, usePayInvoice, usePayAdvanceMonths, useDeleteInvoice, useProcessRecurringPayments } from '../hooks/useInvoices';
 
 const MONTHS_ES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -91,6 +91,7 @@ export function Billing() {
   const { data: plans = [] } = usePlans({ is_active: true });
   const createInvoice = useCreateInvoice();
   const payInvoice = usePayInvoice();
+  const payAdvance = usePayAdvanceMonths();
   const deleteInvoice = useDeleteInvoice();
   const processRecurringPayments = useProcessRecurringPayments();
 
@@ -115,7 +116,7 @@ export function Billing() {
   // Form registro de cobro
   const [cobroUserId, setCobroUserId] = useState('');
   const [cobroAmount, setCobroAmount] = useState('');
-  const [cobroDate, setCobroDate] = useState(new Date().toISOString().split('T')[0]);
+  const [cobroDate, setCobroDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [cobroDueDate, setCobroDueDate] = useState('');
   const [cobroMethod, setCobroMethod] = useState('Efectivo');
   const [cobroReference, setCobroReference] = useState('');
@@ -132,44 +133,32 @@ const [cobroUserSearch, setCobroUserSearch] = useState('');
   const [advanceMonths, setAdvanceMonths] = useState(1);
   const [advanceMethod, setAdvanceMethod] = useState('Efectivo');
   const [advanceReference, setAdvanceReference] = useState('');
-  const [advanceLoading, setAdvanceLoading] = useState(false);
-  
-  const handleAdvancePayment = async () => {
+
+  const handleAdvancePayment = () => {
     if (!advanceUserId || !advanceMonths) {
       toast.error('Selecciona usuario y meses');
       return;
     }
-    
-    setAdvanceLoading(true);
-    try {
-      const { error } = await supabase.rpc('pay_advance_months', {
-        p_user_id: advanceUserId,
-        p_months: advanceMonths,
-        p_method: advanceMethod,
-        p_reference: advanceReference || `Pago adelantado ${advanceMonths} meses`,
-      });
-      
-      if (error) throw error;
-      
-      toast.success(`${advanceMonths} mes(es) pagado(s) por adelantado`);
-      setAdvancePaymentOpen(false);
-      setAdvanceUserId('');
-      setAdvanceMonths(1);
-      setAdvanceMethod('Efectivo');
-      setAdvanceReference('');
-    } catch (err: any) {
-      toast.error('Error en pago adelantado', { description: err.message });
-    } finally {
-      setAdvanceLoading(false);
-    }
+    payAdvance.mutate(
+      { user_id: advanceUserId, months: advanceMonths, method: advanceMethod, reference: advanceReference || undefined },
+      {
+        onSuccess: () => {
+          setAdvancePaymentOpen(false);
+          setAdvanceUserId('');
+          setAdvanceMonths(1);
+          setAdvanceMethod('Efectivo');
+          setAdvanceReference('');
+        },
+      },
+    );
   };
-  
+
   // Calcular due_date = primer día del mes actual (mes que se paga)
   useEffect(() => {
     if (cobroDate) {
-      const due = new Date(cobroDate);
-      due.setDate(1); // Primer día del mes actual = mes que se paga
-      setCobroDueDate(format(due, 'yyyy-MM-dd'));
+      // parseISO interpreta yyyy-MM-dd en hora local (new Date(str) lo haría en UTC y
+      // un cobro del día 1 caería en el mes anterior en UTC-3 / UTC-4)
+      setCobroDueDate(format(startOfMonth(parseISO(cobroDate)), 'yyyy-MM-dd'));
     }
   }, [cobroDate]);
 
@@ -347,41 +336,28 @@ const [cobroUserSearch, setCobroUserSearch] = useState('');
       const user = getUserById(cobroUserId);
       const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
       
-      // due_date = primer día del mes de cobroDate (mes que se está pagando)
-      const dueDate = new Date(cobroDate);
-      dueDate.setDate(1);
+      // due_date = primer día del mes de cobroDate (mes que se está pagando), en hora local
+      const dueDate = startOfMonth(parseISO(cobroDate));
       const dueDateStr = format(dueDate, 'yyyy-MM-dd');
-      
+
       const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
       const concept = `${planName} - ${monthYear}`;
+      const today = format(new Date(), 'yyyy-MM-dd');
 
-      // 1. Crear factura pendiente
-      const invoice = await createInvoice.mutateAsync({
+      // Una sola operación: salda la factura impaga de ese mes si existe, o la crea y la paga.
+      // next_payment / paid_until los recalcula la base de datos.
+      await createInvoice.mutateAsync({
         user_id: cobroUserId,
-        concept: concept,
+        plan_id: user?.plan_id || undefined,
+        concept,
         amount: Number(cobroAmount),
         due_date: dueDateStr,
+        status: 'Pagada',
+        method: cobroMethod,
+        reference: cobroReference || undefined,
         notes: cobroNotes || undefined,
+        paid_at: cobroDate !== today ? cobroDate : undefined,
       });
-
-      // 2. Marcar como pagada
-      const invoiceId = invoice?.id || invoice?.[0]?.id;
-      if (invoiceId) {
-        await payInvoice.mutateAsync({
-          id: invoiceId,
-          data: {
-            method: cobroMethod,
-            reference: cobroReference || undefined,
-          },
-        });
-      }
-
-      // 3. Actualizar next_payment del usuario = due_date + 1 mes (primer día)
-      const nextPaymentDate = new Date(dueDateStr);
-      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
-      nextPaymentDate.setDate(1);
-      await supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', cobroUserId);
-      queryClient.invalidateQueries({ queryKey: ['users'] });
 
       toast.success('Cobro registrado y factura generada');
 
@@ -1274,9 +1250,9 @@ const [cobroUserSearch, setCobroUserSearch] = useState('');
               <Button
                 className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold"
                 onClick={handleAdvancePayment}
-                disabled={advanceLoading}
+                disabled={payAdvance.isPending}
               >
-                {advanceLoading ? (
+                {payAdvance.isPending ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
                 ) : (
                   <><Plus className="w-4 h-4 mr-2" />Confirmar Pago Adelantado</>
