@@ -1,0 +1,1951 @@
+From c764e09662e00288b05f213bbe21587f7d3cfb7b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 21:57:05 +0000
+Subject: [PATCH] =?UTF-8?q?fix(billing):=20facturaci=C3=B3n=20transacciona?=
+ =?UTF-8?q?l,=20calendario=20por=20mes=20calendario=20y=20cron=20=C3=BAnic?=
+ =?UTF-8?q?o?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Base de datos (supabase/migrations/34-billing-fixes.sql):
+- Periodos mensuales anclados al día 1 (antes +30 días: dos facturas "de octubre").
+- next_payment / paid_until derivados de invoices por trigger (antes escritos por el cliente).
+- pay_invoice() transaccional: factura + payments + fechas; rechaza doble pago.
+- pay_advance_months() crea las facturas que faltan (antes pagaba solo las existentes).
+- check_overdue_users(): la Pendiente pasa a Vencida (antes se insertaba una copia).
+- Un solo cron (billing-daily 04:30 UTC) y un solo trigger de alta/cambio de plan (antes 3).
+- payments acepta 'Pago Móvil'; invoices.payment_id; borrar factura pagada borra su pago.
+- invoice_number por secuencia (la secuencia estaba por detrás de FAC-2026-0051).
+- Usuarios gratuitos no se facturan ni se suspenden.
+
+Frontend:
+- useInvoices: pagos vía RPC; registrar cobro salda la factura impaga del mes en vez de duplicar.
+- Fechas yyyy-MM-dd parseadas en local (un cobro del día 1 caía en el mes anterior en UTC-3/-4).
+- UserDetail: faltaba el import de format() (Registrar Pago lanzaba ReferenceError).
+- PaymentCalendar: estados Pagado/Pendiente/Vencido/Sin factura/Futuro, sin pasar por Date.
+- Pago adelantado refresca las listas.
+
+Tests: 19 nuevos en vitest (50 en total) y 49 comprobaciones SQL en supabase/tests.
+---
+ src/app/components/PaymentCalendar.test.ts |  69 ++-
+ src/app/components/PaymentCalendar.tsx     | 107 +++--
+ src/app/hooks/invoiceHelpers.test.ts       | 132 ++++++
+ src/app/hooks/useInvoices.ts               | 325 ++++++--------
+ src/app/pages/Billing.tsx                  |  96 ++--
+ src/app/pages/UserDetail.tsx               |  70 ++-
+ supabase/migrations/34-billing-fixes.sql   | 491 +++++++++++++++++++++
+ supabase/tests/00-mirror-schema.sql        |   8 +
+ supabase/tests/01-legacy-prod-state.sql    |  61 +++
+ supabase/tests/README.md                   |  15 +
+ supabase/tests/billing-privileges.sql      |  39 ++
+ supabase/tests/billing-scenarios.sql       | 145 ++++++
+ 12 files changed, 1226 insertions(+), 332 deletions(-)
+ create mode 100644 src/app/hooks/invoiceHelpers.test.ts
+ create mode 100644 supabase/migrations/34-billing-fixes.sql
+ create mode 100644 supabase/tests/00-mirror-schema.sql
+ create mode 100644 supabase/tests/01-legacy-prod-state.sql
+ create mode 100644 supabase/tests/README.md
+ create mode 100644 supabase/tests/billing-privileges.sql
+ create mode 100644 supabase/tests/billing-scenarios.sql
+
+diff --git a/src/app/components/PaymentCalendar.test.ts b/src/app/components/PaymentCalendar.test.ts
+index 4756102..e0651d5 100644
+--- a/src/app/components/PaymentCalendar.test.ts
++++ b/src/app/components/PaymentCalendar.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, it, expect } from 'vitest'
+-import { getPaidMonthKeys } from './PaymentCalendar'
++import { getPaidMonthKeys, getMonthStatuses } from './PaymentCalendar'
+ 
+ describe('getPaidMonthKeys', () => {
+   it('returns empty set for non-array input', () => {
+@@ -40,3 +40,70 @@ describe('getPaidMonthKeys', () => {
+     expect(result.size).toBe(0)
+   })
+ })
++
++describe('getPaidMonthKeys - zona horaria', () => {
++  it('un vencimiento del día 1 (solo fecha) cuenta en SU mes, no en el anterior', () => {
++    // new Date('2026-10-01') es 30-sep en UTC-3/UTC-4; aquí no debe pasar por Date
++    const result = getPaidMonthKeys([{ status: 'Pagada', due_date: '2026-10-01' }])
++    expect(result).toEqual(new Set(['2026-9']))
++  })
++
++  it('acepta timestamp sin zona (como lo devuelve Postgres)', () => {
++    const result = getPaidMonthKeys([{ status: 'Pagada', due_date: '2026-11-01T00:00:00' }])
++    expect(result).toEqual(new Set(['2026-10']))
++  })
++})
++
++describe('getMonthStatuses', () => {
++  const now = new Date(2026, 9, 15) // 15-oct-2026
++
++  it('marca Pagado / Pendiente / Vencido / Sin factura / Futuro', () => {
++    const st = getMonthStatuses(
++      [
++        { status: 'Pagada', due_date: '2026-08-01T00:00:00' },
++        { status: 'Vencida', due_date: '2026-09-01T00:00:00' },
++        { status: 'Pendiente', due_date: '2026-10-01T00:00:00' },
++        { status: 'Pagada', due_date: '2026-11-01T00:00:00' }, // adelantado
++      ],
++      2026,
++      now,
++    )
++    expect(st[0]).toBe('Sin factura') // enero: pasado sin factura
++    expect(st[7]).toBe('Pagado')
++    expect(st[8]).toBe('Vencido')
++    expect(st[9]).toBe('Pendiente')
++    expect(st[10]).toBe('Pagado') // mes futuro ya pagado por adelantado
++    expect(st[11]).toBe('Futuro')
++  })
++
++  it('la deuda no queda oculta: Vencida > Pendiente > Pagada en el mismo mes', () => {
++    const st = getMonthStatuses(
++      [
++        { status: 'Pagada', due_date: '2026-03-01T00:00:00' },
++        { status: 'Vencida', due_date: '2026-03-15T00:00:00' },
++      ],
++      2026,
++      now,
++    )
++    expect(st[2]).toBe('Vencido')
++  })
++
++  it('pago adelantado de 3 meses con vencimientos día 1 pinta 3 meses distintos', () => {
++    const st = getMonthStatuses(
++      ['2026-10-01', '2026-11-01', '2026-12-01'].map((d) => ({ status: 'Pagada', due_date: d + 'T00:00:00' })),
++      2026,
++      now,
++    )
++    expect(st.filter((s) => s === 'Pagado')).toHaveLength(3)
++  })
++
++  it('solo considera el año pedido', () => {
++    const st = getMonthStatuses([{ status: 'Pagada', due_date: '2025-10-01T00:00:00' }], 2026, now)
++    expect(st.filter((s) => s === 'Pagado')).toHaveLength(0)
++  })
++
++  it('tolera entradas inválidas', () => {
++    expect(() => getMonthStatuses(null as any, 2026, now)).not.toThrow()
++    expect(getMonthStatuses([{ status: 'Pagada', due_date: 'x' }], 2026, now)).toHaveLength(12)
++  })
++})
+diff --git a/src/app/components/PaymentCalendar.tsx b/src/app/components/PaymentCalendar.tsx
+index cd258ed..169bd4c 100644
+--- a/src/app/components/PaymentCalendar.tsx
++++ b/src/app/components/PaymentCalendar.tsx
+@@ -19,30 +19,76 @@ const MONTHS_ES = [
+   'Diciembre',
+ ];
+ 
++export type MonthStatus = 'Pagado' | 'Pendiente' | 'Vencido' | 'Sin factura' | 'Futuro';
++
++/**
++ * Año y mes (0-11) de un due_date SIN pasar por Date: 'YYYY-MM-DD' se interpretaría
++ * en UTC y en UTC-3 / UTC-4 un vencimiento del día 1 caería en el mes anterior.
++ */
++function parseYearMonth(value: unknown): { year: number; month: number } | null {
++  if (typeof value !== 'string') return null;
++  const m = /^(\d{4})-(\d{2})-\d{2}/.exec(value);
++  if (!m) return null;
++  const month = Number(m[2]) - 1;
++  if (month < 0 || month > 11) return null;
++  return { year: Number(m[1]), month };
++}
++
+ export function getPaidMonthKeys(invoices: any[]): Set<string> {
+   const paidMonths = new Set<string>();
+   if (!Array.isArray(invoices)) return paidMonths;
+   for (const inv of invoices) {
+     if (!inv || inv.status !== 'Pagada') continue;
+-    const dateStr = inv.due_date;
+-    if (!dateStr) continue;
+-    const date = new Date(dateStr);
+-    if (Number.isNaN(date.getTime())) continue;
+-    paidMonths.add(`${date.getFullYear()}-${date.getMonth()}`);
++    const ym = parseYearMonth(inv.due_date);
++    if (!ym) continue;
++    paidMonths.add(`${ym.year}-${ym.month}`);
+   }
+   return paidMonths;
+ }
+ 
++/**
++ * Estado de cada mes de un año a partir de las facturas.
++ * Prioridad si hay varias facturas en el mismo mes: Vencida > Pendiente > Pagada
++ * (la deuda no queda oculta por otra factura pagada).
++ */
++export function getMonthStatuses(
++  invoices: any[],
++  year: number,
++  now: Date = new Date(),
++): MonthStatus[] {
++  const byMonth: Array<Set<string>> = Array.from({ length: 12 }, () => new Set<string>());
++  if (Array.isArray(invoices)) {
++    for (const inv of invoices) {
++      const ym = parseYearMonth(inv?.due_date);
++      if (ym && ym.year === year && inv?.status) byMonth[ym.month].add(inv.status);
++    }
++  }
++  const currentYear = now.getFullYear();
++  const currentMonth = now.getMonth();
++
++  return byMonth.map((statuses, month) => {
++    if (statuses.has('Vencida')) return 'Vencido';
++    if (statuses.has('Pendiente')) return 'Pendiente';
++    if (statuses.has('Pagada')) return 'Pagado';
++    const isFuture = year > currentYear || (year === currentYear && month > currentMonth);
++    return isFuture ? 'Futuro' : 'Sin factura';
++  });
++}
++
++const STATUS_STYLES: Record<MonthStatus, string> = {
++  Pagado: 'bg-primary/20 text-primary border-primary/30',
++  Pendiente: 'bg-yellow-500/15 text-yellow-500 border-yellow-500/30',
++  Vencido: 'bg-red-500/15 text-red-500 border-red-500/30',
++  'Sin factura': 'bg-muted text-muted-foreground border-border',
++  Futuro: 'bg-muted text-muted-foreground border-border opacity-70',
++};
++
+ export function PaymentCalendar({ invoices }: { invoices: any[] }) {
+   const [year, setYear] = useState(new Date().getFullYear());
+-  const paidMonths = getPaidMonthKeys(invoices);
++  const statuses = getMonthStatuses(invoices, year);
+   const currentMonth = new Date().getMonth();
+   const currentYear = new Date().getFullYear();
+-
+-  const paidCount = MONTHS_ES.reduce(
+-    (count, _, month) => count + (paidMonths.has(`${year}-${month}`) ? 1 : 0),
+-    0,
+-  );
++  const paidCount = statuses.filter((s) => s === 'Pagado').length;
+ 
+   return (
+     <Card className="bg-card border-border">
+@@ -78,35 +124,22 @@ export function PaymentCalendar({ invoices }: { invoices: any[] }) {
+       <CardContent className="space-y-4">
+         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+           {MONTHS_ES.map((monthName, monthIndex) => {
+-            const isPaid = paidMonths.has(`${year}-${monthIndex}`);
++            const status = statuses[monthIndex];
+             const isCurrent = year === currentYear && monthIndex === currentMonth;
+-            const isFuture = year > currentYear || (year === currentYear && monthIndex > currentMonth);
+-            const statusLabel = isPaid ? 'Pagado' : isFuture ? 'Futuro' : 'Pendiente';
+ 
+             return (
+               <div
+                 key={monthName}
+                 className={cn(
+                   'rounded-lg border p-3 text-center transition-colors',
+-                  isPaid
+-                    ? 'bg-primary/20 text-primary border-primary/30'
+-                    : 'bg-muted text-muted-foreground border-border',
+-                  isCurrent && !isPaid && 'border-primary/50 ring-1 ring-primary/30',
++                  STATUS_STYLES[status],
++                  isCurrent && status !== 'Pagado' && 'ring-1 ring-primary/40',
+                 )}
+               >
+                 <p className="text-sm font-semibold">{monthName}</p>
+                 <p className="text-xs mt-1 flex items-center justify-center gap-1">
+-                  {isPaid ? (
+-                    <>
+-                      <CheckCircle2 className="w-3.5 h-3.5" />
+-                      {statusLabel}
+-                    </>
+-                  ) : (
+-                    <>
+-                      <Circle className="w-3 h-3" />
+-                      {statusLabel}
+-                    </>
+-                  )}
++                  {status === 'Pagado' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3 h-3" />}
++                  {status}
+                 </p>
+               </div>
+             );
+@@ -114,15 +147,13 @@ export function PaymentCalendar({ invoices }: { invoices: any[] }) {
+         </div>
+ 
+         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+-          <div className="flex items-center gap-4">
+-            <span className="flex items-center gap-2">
+-              <span className="w-3 h-3 rounded-sm bg-primary/20 border border-primary/30" />
+-              Pagado
+-            </span>
+-            <span className="flex items-center gap-2">
+-              <span className="w-3 h-3 rounded-sm bg-muted border border-border" />
+-              No pagado
+-            </span>
++          <div className="flex flex-wrap items-center gap-4">
++            {(['Pagado', 'Pendiente', 'Vencido', 'Sin factura'] as MonthStatus[]).map((st) => (
++              <span key={st} className="flex items-center gap-2">
++                <span className={cn('w-3 h-3 rounded-sm border', STATUS_STYLES[st])} />
++                {st}
++              </span>
++            ))}
+           </div>
+           <p>
+             <span className="text-primary font-semibold">{paidCount}</span> de {MONTHS_ES.length} meses pagados
+diff --git a/src/app/hooks/invoiceHelpers.test.ts b/src/app/hooks/invoiceHelpers.test.ts
+new file mode 100644
+index 0000000..cafd571
+--- /dev/null
++++ b/src/app/hooks/invoiceHelpers.test.ts
+@@ -0,0 +1,132 @@
++import { describe, it, expect, vi, beforeEach } from 'vitest'
++import { renderHook, waitFor } from '@testing-library/react'
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
++import React from 'react'
++
++const rpc = vi.fn()
++const calls: Array<{ table: string; op: string; args?: any }> = []
++
++// Query builder encadenable que registra operaciones y resuelve con `result`
++let selectResult: any = { data: [], error: null }
++function builder(table: string) {
++  const b: any = {
++    select: () => b,
++    insert: (rows: any) => { calls.push({ table, op: 'insert', args: rows }); return b },
++    update: (v: any) => { calls.push({ table, op: 'update', args: v }); return b },
++    delete: () => { calls.push({ table, op: 'delete' }); return b },
++    eq: () => b, gte: () => b, lt: () => b, in: () => b, order: () => b, limit: () => b,
++    single: () => Promise.resolve({ data: { id: 'new-inv' }, error: null }),
++    then: (resolve: any) => Promise.resolve(resolve(selectResult)),
++  }
++  return b
++}
++
++vi.mock('../lib/supabase', () => ({
++  supabase: { from: (t: string) => builder(t), rpc: (...a: any[]) => rpc(...a) },
++}))
++vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }))
++
++import { monthBounds, toDateOnly, useCreateInvoice, usePayInvoice, usePayAdvanceMonths, useProcessRecurringPayments } from './useInvoices'
++
++const wrapper = ({ children }: { children: React.ReactNode }) =>
++  React.createElement(
++    QueryClientProvider,
++    { client: new QueryClient({ defaultOptions: { mutations: { retry: false } } }) },
++    children,
++  )
++
++beforeEach(() => { rpc.mockReset(); calls.length = 0; selectResult = { data: [], error: null } })
++
++describe('monthBounds', () => {
++  it('devuelve [inicio, fin) del mes', () => {
++    expect(monthBounds('2026-10-17')).toEqual({ start: '2026-10-01', end: '2026-11-01' })
++    expect(monthBounds('2026-02-01T00:00:00')).toEqual({ start: '2026-02-01', end: '2026-03-01' })
++  })
++  it('diciembre pasa al año siguiente', () => {
++    expect(monthBounds('2026-12-31')).toEqual({ start: '2026-12-01', end: '2027-01-01' })
++  })
++})
++
++describe('toDateOnly', () => {
++  it('usa la fecha local, no UTC', () => {
++    expect(toDateOnly(new Date(2026, 11, 31, 23, 30))).toBe('2026-12-31')
++  })
++})
++
++describe('usePayInvoice', () => {
++  it('delega TODO en la RPC pay_invoice (sin escribir payments/users desde el cliente)', async () => {
++    rpc.mockResolvedValue({ data: { id: 'i1', status: 'Pagada' }, error: null })
++    const { result } = renderHook(() => usePayInvoice(), { wrapper })
++    await result.current.mutateAsync({ id: 'i1', data: { method: 'Pago Móvil', reference: 'R1' } })
++    expect(rpc).toHaveBeenCalledWith('pay_invoice', expect.objectContaining({ p_invoice_id: 'i1', p_method: 'Pago Móvil', p_reference: 'R1' }))
++    expect(calls.filter((c) => c.table === 'payments' || c.table === 'users')).toHaveLength(0)
++  })
++
++  it('propaga el error de la base (p. ej. factura ya pagada)', async () => {
++    rpc.mockResolvedValue({ data: null, error: { message: 'La factura FAC-1 ya está pagada' } })
++    const { result } = renderHook(() => usePayInvoice(), { wrapper })
++    await expect(result.current.mutateAsync({ id: 'i1', data: { method: 'Efectivo' } })).rejects.toThrow('ya está pagada')
++  })
++})
++
++describe('useCreateInvoice', () => {
++  it('no envía invoice_number (lo asigna la base de datos)', async () => {
++    const { result } = renderHook(() => useCreateInvoice(), { wrapper })
++    await result.current.mutateAsync({ user_id: 'u1', amount: 20, due_date: '2026-10-01' })
++    const ins = calls.find((c) => c.table === 'invoices' && c.op === 'insert')!
++    expect(ins.args[0]).not.toHaveProperty('invoice_number')
++    expect(ins.args[0].due_date).toBe('2026-10-01')
++    expect(rpc).not.toHaveBeenCalled()
++  })
++
++  it('status Pagada y NO hay factura impaga del mes: crea Pendiente y la paga por RPC', async () => {
++    rpc.mockResolvedValue({ data: { id: 'new-inv' }, error: null })
++    const { result } = renderHook(() => useCreateInvoice(), { wrapper })
++    await result.current.mutateAsync({ user_id: 'u1', amount: 20, due_date: '2026-10-01', status: 'Pagada', method: 'Efectivo' })
++    expect(calls.find((c) => c.op === 'insert')!.args[0].status).toBe('Pendiente')
++    expect(rpc).toHaveBeenCalledWith('pay_invoice', expect.objectContaining({ p_invoice_id: 'new-inv' }))
++  })
++
++  it('status Pagada y YA existe una impaga del mes: la salda, no crea otra', async () => {
++    selectResult = { data: [{ id: 'exist-1', amount: 20 }], error: null }
++    rpc.mockResolvedValue({ data: { id: 'exist-1' }, error: null })
++    const { result } = renderHook(() => useCreateInvoice(), { wrapper })
++    await result.current.mutateAsync({ user_id: 'u1', amount: 20, due_date: '2026-10-01', status: 'Pagada' })
++    expect(calls.filter((c) => c.op === 'insert')).toHaveLength(0)
++    expect(rpc).toHaveBeenCalledWith('pay_invoice', expect.objectContaining({ p_invoice_id: 'exist-1' }))
++  })
++
++  it('si el monto cobrado difiere, se actualiza la factura existente antes de pagar', async () => {
++    selectResult = { data: [{ id: 'exist-1', amount: 20 }], error: null }
++    rpc.mockResolvedValue({ data: {}, error: null })
++    const { result } = renderHook(() => useCreateInvoice(), { wrapper })
++    await result.current.mutateAsync({ user_id: 'u1', amount: 15, due_date: '2026-10-01', status: 'Pagada' })
++    expect(calls.find((c) => c.op === 'update')!.args).toEqual({ amount: 15 })
++  })
++
++  it('si el cobro falla, borra la factura recién creada (no deja basura)', async () => {
++    rpc.mockResolvedValue({ data: null, error: { message: 'check_violation' } })
++    const { result } = renderHook(() => useCreateInvoice(), { wrapper })
++    await expect(
++      result.current.mutateAsync({ user_id: 'u1', amount: 20, due_date: '2026-10-01', status: 'Pagada', method: 'Bitcoin' }),
++    ).rejects.toThrow('check_violation')
++    expect(calls.some((c) => c.table === 'invoices' && c.op === 'delete')).toBe(true)
++  })
++})
++
++describe('usePayAdvanceMonths / useProcessRecurringPayments', () => {
++  it('pago adelantado llama a pay_advance_months con los parámetros correctos', async () => {
++    rpc.mockResolvedValue({ data: { paid: 3, created: 2, paid_until: '2026-12-01' }, error: null })
++    const { result } = renderHook(() => usePayAdvanceMonths(), { wrapper })
++    const r = await result.current.mutateAsync({ user_id: 'u1', months: 3, method: 'Transferencia' })
++    expect(rpc).toHaveBeenCalledWith('pay_advance_months', { p_user_id: 'u1', p_months: 3, p_method: 'Transferencia', p_reference: null })
++    expect(r.paid).toBe(3)
++  })
++
++  it('facturación manual usa run_daily_billing (el mismo proceso que el cron)', async () => {
++    rpc.mockResolvedValue({ data: { overdue_invoices: 1, suspended_users: 1, generated_invoices: 2 }, error: null })
++    const { result } = renderHook(() => useProcessRecurringPayments(), { wrapper })
++    await waitFor(async () => { await result.current.mutateAsync() })
++    expect(rpc).toHaveBeenCalledWith('run_daily_billing')
++  })
++})
+diff --git a/src/app/hooks/useInvoices.ts b/src/app/hooks/useInvoices.ts
+index dc034da..eab07ef 100644
+--- a/src/app/hooks/useInvoices.ts
++++ b/src/app/hooks/useInvoices.ts
+@@ -59,21 +59,16 @@ export function formatInvoiceNumber(year: number, sequence: number): string {
+   return `FAC-${year}-${String(sequence).padStart(4, '0')}`;
+ }
+ 
+-async function fetchNextInvoiceNumber(): Promise<string> {
+-  const year = new Date().getFullYear();
+-  const { data, error } = await supabase
+-    .from('invoices')
+-    .select('invoice_number')
+-    .like('invoice_number', `FAC-${year}-%`)
+-    .order('invoice_number', { ascending: false })
+-    .limit(1);
+-
+-  if (error) throw new Error(error.message);
++/** yyyy-MM-dd en hora LOCAL (toISOString() usa UTC y puede cambiar el día/mes). */
++export function toDateOnly(d: Date): string {
++  const pad = (n: number) => String(n).padStart(2, '0');
++  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
++}
+ 
+-  const latest = data?.[0]?.invoice_number as string | undefined;
+-  const lastSeq = latest ? parseInt(latest.split('-')[2], 10) : 0;
+-  const next = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
+-  return formatInvoiceNumber(year, next);
++function invalidateBilling(queryClient: ReturnType<typeof useQueryClient>) {
++  queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
++  queryClient.invalidateQueries({ queryKey: ['users'] });
++  queryClient.invalidateQueries({ queryKey: statsKeys.dashboard });
+ }
+ 
+ export interface CreateInvoiceInput {
+@@ -89,6 +84,24 @@ export interface CreateInvoiceInput {
+   notes?: string;
+ }
+ 
++/** Límites [inicio, fin) del mes de una fecha yyyy-MM-dd (sin pasar por Date/UTC). */
++export function monthBounds(dateStr: string): { start: string; end: string } {
++  const [y, m] = dateStr.slice(0, 10).split('-').map(Number);
++  const pad = (n: number) => String(n).padStart(2, '0');
++  const ny = m === 12 ? y + 1 : y;
++  const nm = m === 12 ? 1 : m + 1;
++  return { start: `${y}-${pad(m)}-01`, end: `${ny}-${pad(nm)}-01` };
++}
++
++/**
++ * Crea una factura. El número lo asigna la base de datos (secuencia), no el cliente.
++ *
++ * Si se pide como 'Pagada':
++ *  - si el usuario ya tiene una factura impaga de ese mes, se SALDA esa (no se duplica);
++ *  - si no, se crea Pendiente y se paga.
++ * El pago usa la función transaccional pay_invoice(); next_payment / paid_until
++ * los recalcula la base de datos.
++ */
+ export function useCreateInvoice() {
+   const queryClient = useQueryClient();
+   return useMutation({
+@@ -96,97 +109,70 @@ export function useCreateInvoice() {
+       if (!data.user_id) throw new Error('Usuario requerido');
+       if (data.amount == null || Number.isNaN(data.amount)) throw new Error('Monto requerido');
+ 
+-      const invoiceNumber = await fetchNextInvoiceNumber();
+-      const dueDate = data.due_date || new Date().toISOString();
+-      const status = data.status || 'Pendiente';
+-      const paidAt = data.paid_at || (status === 'Pagada' ? dueDate : null);
++      const wantsPaid = data.status === 'Pagada';
++      const dueDate = data.due_date || toDateOnly(new Date());
++      const payArgs = (invoiceId: string) => ({
++        p_invoice_id: invoiceId,
++        p_method: data.method || 'Efectivo',
++        p_reference: data.reference ?? null,
++        p_notes: data.notes ?? null,
++        p_paid_at: data.paid_at ?? null,
++      });
++
++      // ¿Ya existe una factura impaga de ese mes? -> se salda en lugar de crear otra
++      if (wantsPaid) {
++        const { start, end } = monthBounds(dueDate);
++        const { data: existing, error: findError } = await supabase
++          .from('invoices')
++          .select('id, amount')
++          .eq('user_id', data.user_id)
++          .gte('due_date', start)
++          .lt('due_date', end)
++          .in('status', ['Pendiente', 'Vencida'])
++          .order('due_date', { ascending: true })
++          .limit(1);
++        if (findError) throw new Error(findError.message);
++
++        const found = existing?.[0];
++        if (found) {
++          if (Number(found.amount) !== Number(data.amount)) {
++            const { error: amountError } = await supabase
++              .from('invoices').update({ amount: data.amount }).eq('id', found.id);
++            if (amountError) throw new Error(amountError.message);
++          }
++          const { data: paid, error: payError } = await supabase.rpc('pay_invoice', payArgs(found.id));
++          if (payError) throw new Error(payError.message);
++          return paid;
++        }
++      }
+ 
+-      const { data: result, error } = await supabase
++      const { data: created, error } = await supabase
+         .from('invoices')
+         .insert([{
+-          invoice_number: invoiceNumber,
+           user_id: data.user_id,
+           plan_id: data.plan_id || null,
+           concept: data.concept || null,
+           amount: data.amount,
+           due_date: dueDate,
+-          paid_at: paidAt,
+-          status,
+-          method: data.method || null,
+-          reference: data.reference || null,
++          status: wantsPaid ? 'Pendiente' : (data.status || 'Pendiente'),
+           notes: data.notes || null,
+         }])
+         .select()
+         .single();
+ 
+       if (error) throw new Error(error.message);
++      if (!wantsPaid) return created;
+ 
+-      // Si la factura se crea como 'Pagada', crear registro en payments para estadísticas
+-      if (status === 'Pagada') {
+-        // Obtener duración del plan para calcular next_payment correctamente
+-        let durationDays = 30; // fallback default
+-        if (data.plan_id) {
+-          const { data: plan } = await supabase
+-            .from('plans')
+-            .select('duration_days')
+-            .eq('id', data.plan_id)
+-            .single();
+-          if (plan) durationDays = plan.duration_days;
+-        } else {
+-          // Fallback: buscar plan del usuario
+-          const { data: user } = await supabase
+-            .from('users')
+-            .select('plan_id')
+-            .eq('id', data.user_id)
+-            .single();
+-          if (user?.plan_id) {
+-            const { data: plan } = await supabase
+-              .from('plans')
+-              .select('duration_days')
+-              .eq('id', user.plan_id)
+-              .single();
+-            if (plan) durationDays = plan.duration_days;
+-          }
+-        }
+-
+-        const nextPaymentDate = new Date(dueDate);
+-        nextPaymentDate.setDate(nextPaymentDate.getDate() + durationDays);
+-
+-        const { error: paymentError } = await supabase
+-          .from('payments')
+-          .insert([{
+-            user_id: data.user_id,
+-            amount: data.amount,
+-            date: dueDate,
+-            next_payment: nextPaymentDate.toISOString(),
+-            status: 'Pagado',
+-            method: data.method || 'Efectivo',
+-          }]);
+-
+-        if (paymentError) {
+-          console.error('Error creating payment record:', paymentError);
+-        }
+-
+-        // Actualizar usuario
+-        const { error: userError } = await supabase
+-          .from('users')
+-          .update({ 
+-            next_payment: nextPaymentDate.toISOString(),
+-            status: 'Activo'
+-          })
+-          .eq('id', data.user_id);
+-
+-        if (userError) {
+-          console.error('Error updating user:', userError);
+-        }
++      const { data: paid, error: payError } = await supabase.rpc('pay_invoice', payArgs(created.id));
++      if (payError) {
++        // No dejar una factura a medias si el cobro falló
++        await supabase.from('invoices').delete().eq('id', created.id);
++        throw new Error(payError.message);
+       }
+-
+-      return result;
++      return paid;
+     },
+     onSuccess: () => {
+-      queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
+-      queryClient.invalidateQueries({ queryKey: ['users'] });
+-      queryClient.invalidateQueries({ queryKey: statsKeys.dashboard });
++      invalidateBilling(queryClient);
+       toast.success('Factura generada exitosamente');
+     },
+     onError: (error: Error) => {
+@@ -195,101 +181,26 @@ export function useCreateInvoice() {
+   });
+ }
+ 
++/** Paga una factura vía RPC transaccional (factura + pago + fechas del usuario). */
+ export function usePayInvoice() {
+   const queryClient = useQueryClient();
+   return useMutation({
+-    mutationFn: async ({ id, data }: { id: string; data: { method: string; reference?: string; notes?: string } }) => {
+-      // Primero obtener la factura para tener los datos necesarios
+-      const { data: invoice, error: invoiceError } = await supabase
+-        .from('invoices')
+-        .select('user_id, amount, due_date, plan_id')
+-        .eq('id', id)
+-        .single();
+-
+-      if (invoiceError) throw new Error(invoiceError.message);
+-
+-      // Actualizar la factura a 'Pagada'
+-      const { data: result, error } = await supabase
+-        .from('invoices')
+-        .update({
+-          status: 'Pagada',
+-          method: data.method,
+-          reference: data.reference || null,
+-          notes: data.notes || null,
+-          paid_at: new Date().toISOString(),
+-        })
+-        .eq('id', id)
+-        .select()
+-        .single();
+-
++    mutationFn: async ({ id, data }: {
++      id: string;
++      data: { method: string; reference?: string; notes?: string; paid_at?: string };
++    }) => {
++      const { data: result, error } = await supabase.rpc('pay_invoice', {
++        p_invoice_id: id,
++        p_method: data.method,
++        p_reference: data.reference ?? null,
++        p_notes: data.notes ?? null,
++        p_paid_at: data.paid_at ?? null,
++      });
+       if (error) throw new Error(error.message);
+-
+-      // Obtener duración del plan para calcular next_payment correctamente
+-      let durationDays = 30; // fallback default
+-      if (invoice.plan_id) {
+-        const { data: plan } = await supabase
+-          .from('plans')
+-          .select('duration_days')
+-          .eq('id', invoice.plan_id)
+-          .single();
+-        if (plan) durationDays = plan.duration_days;
+-      } else if (invoice.user_id) {
+-        // Fallback: buscar plan del usuario
+-        const { data: user } = await supabase
+-          .from('users')
+-          .select('plan_id')
+-          .eq('id', invoice.user_id)
+-          .single();
+-        if (user?.plan_id) {
+-          const { data: plan } = await supabase
+-            .from('plans')
+-            .select('duration_days')
+-            .eq('id', user.plan_id)
+-            .single();
+-          if (plan) durationDays = plan.duration_days;
+-        }
+-      }
+-
+-      // Crear registro en tabla payments para que se refleje en estadísticas
+-      const nextPaymentDate = new Date(invoice.due_date);
+-      nextPaymentDate.setDate(nextPaymentDate.getDate() + durationDays);
+-
+-      const { error: paymentError } = await supabase
+-        .from('payments')
+-        .insert([{
+-          user_id: invoice.user_id,
+-          amount: invoice.amount,
+-          date: new Date().toISOString(),
+-          next_payment: nextPaymentDate.toISOString(),
+-          status: 'Pagado',
+-          method: data.method,
+-        }]);
+-
+-      if (paymentError) {
+-        console.error('Error creating payment record:', paymentError);
+-        // No lanzar error para no revertir el pago de la factura
+-      }
+-
+-      // Actualizar paid_until y next_payment del usuario
+-      const { error: userError } = await supabase
+-        .from('users')
+-        .update({ 
+-          paid_until: invoice.due_date,
+-          next_payment: nextPaymentDate.toISOString(),
+-          status: 'Activo'
+-        })
+-        .eq('id', invoice.user_id);
+-
+-      if (userError) {
+-        console.error('Error updating user next_payment:', userError);
+-      }
+-
+       return result;
+     },
+     onSuccess: () => {
+-      queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
+-      queryClient.invalidateQueries({ queryKey: ['users'] });
+-      queryClient.invalidateQueries({ queryKey: statsKeys.dashboard });
++      invalidateBilling(queryClient);
+       toast.success('Pago registrado exitosamente');
+     },
+     onError: (error: Error) => {
+@@ -298,6 +209,37 @@ export function usePayInvoice() {
+   });
+ }
+ 
++export interface AdvancePaymentResult {
++  paid: number;
++  created: number;
++  paid_until: string | null;
++}
++
++/** Pago adelantado de N periodos: paga las pendientes y crea las que falten. */
++export function usePayAdvanceMonths() {
++  const queryClient = useQueryClient();
++  return useMutation({
++    mutationFn: async (input: { user_id: string; months: number; method: string; reference?: string }) => {
++      const { data, error } = await supabase.rpc('pay_advance_months', {
++        p_user_id: input.user_id,
++        p_months: input.months,
++        p_method: input.method,
++        p_reference: input.reference ?? null,
++      });
++      if (error) throw new Error(error.message);
++      return data as AdvancePaymentResult;
++    },
++    onSuccess: (result) => {
++      invalidateBilling(queryClient);
++      toast.success(`${result.paid} mes(es) pagado(s) por adelantado`);
++    },
++    onError: (error: Error) => {
++      toast.error('Error en pago adelantado', { description: error.message });
++    },
++  });
++}
++
++/** Borrar una factura pagada elimina también su pago y recalcula las fechas (trigger en la base). */
+ export function useDeleteInvoice() {
+   const queryClient = useQueryClient();
+   return useMutation({
+@@ -310,8 +252,7 @@ export function useDeleteInvoice() {
+       return id;
+     },
+     onSuccess: () => {
+-      queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
+-      queryClient.invalidateQueries({ queryKey: ['users'] });
++      invalidateBilling(queryClient);
+       toast.success('Factura eliminada exitosamente');
+     },
+     onError: (error: Error) => {
+@@ -320,27 +261,35 @@ export function useDeleteInvoice() {
+   });
+ }
+ 
++export interface DailyBillingResult {
++  overdue_invoices: number;
++  suspended_users: number;
++  generated_invoices: number;
++}
++
++/** Ejecuta manualmente el mismo proceso que corre pg_cron cada noche. */
+ export function useProcessRecurringPayments() {
+   const queryClient = useQueryClient();
+   return useMutation({
+-    mutationFn: async (cronSecret?: string) => {
+-      const { api } = await import('../lib/api');
+-      return api.payments.processRecurring(cronSecret);
++    mutationFn: async () => {
++      const { data, error } = await supabase.rpc('run_daily_billing');
++      if (error) throw new Error(error.message);
++      return data as DailyBillingResult;
+     },
+     onSuccess: (data) => {
+-      queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
+-      queryClient.invalidateQueries({ queryKey: ['users'] });
+-      if (data.processed > 0) {
+-        toast.success(`Facturación automática: ${data.processed} facturas generadas`);
++      invalidateBilling(queryClient);
++      const parts: string[] = [];
++      if (data.generated_invoices > 0) parts.push(`${data.generated_invoices} factura(s) generada(s)`);
++      if (data.overdue_invoices > 0) parts.push(`${data.overdue_invoices} marcada(s) como vencida(s)`);
++      if (data.suspended_users > 0) parts.push(`${data.suspended_users} usuario(s) suspendido(s)`);
++      if (parts.length > 0) {
++        toast.success(`Facturación automática: ${parts.join(', ')}`);
+       } else {
+         toast.info('No hay pagos pendientes para procesar');
+       }
+-      if (data.errors > 0) {
+-        toast.warning(`${data.errors} errores durante el procesamiento`);
+-      }
+     },
+     onError: (error: Error) => {
+       toast.error('Error al procesar facturación automática', { description: error.message });
+     },
+   });
+-}
+\ No newline at end of file
++}
+diff --git a/src/app/pages/Billing.tsx b/src/app/pages/Billing.tsx
+index 6e22555..c888ab2 100644
+--- a/src/app/pages/Billing.tsx
++++ b/src/app/pages/Billing.tsx
+@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router';
+ import { toast } from 'sonner';
+ import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths } from 'date-fns';
+ 
+-import { useInvoices, useCreateInvoice, usePayInvoice, useDeleteInvoice, useProcessRecurringPayments } from '../hooks/useInvoices';
++import { useInvoices, useCreateInvoice, usePayInvoice, usePayAdvanceMonths, useDeleteInvoice, useProcessRecurringPayments } from '../hooks/useInvoices';
+ 
+ const MONTHS_ES = [
+   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+@@ -91,6 +91,7 @@ export function Billing() {
+   const { data: plans = [] } = usePlans({ is_active: true });
+   const createInvoice = useCreateInvoice();
+   const payInvoice = usePayInvoice();
++  const payAdvance = usePayAdvanceMonths();
+   const deleteInvoice = useDeleteInvoice();
+   const processRecurringPayments = useProcessRecurringPayments();
+ 
+@@ -115,7 +116,7 @@ export function Billing() {
+   // Form registro de cobro
+   const [cobroUserId, setCobroUserId] = useState('');
+   const [cobroAmount, setCobroAmount] = useState('');
+-  const [cobroDate, setCobroDate] = useState(new Date().toISOString().split('T')[0]);
++  const [cobroDate, setCobroDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+   const [cobroDueDate, setCobroDueDate] = useState('');
+   const [cobroMethod, setCobroMethod] = useState('Efectivo');
+   const [cobroReference, setCobroReference] = useState('');
+@@ -132,44 +133,32 @@ const [cobroUserSearch, setCobroUserSearch] = useState('');
+   const [advanceMonths, setAdvanceMonths] = useState(1);
+   const [advanceMethod, setAdvanceMethod] = useState('Efectivo');
+   const [advanceReference, setAdvanceReference] = useState('');
+-  const [advanceLoading, setAdvanceLoading] = useState(false);
+-  
+-  const handleAdvancePayment = async () => {
++
++  const handleAdvancePayment = () => {
+     if (!advanceUserId || !advanceMonths) {
+       toast.error('Selecciona usuario y meses');
+       return;
+     }
+-    
+-    setAdvanceLoading(true);
+-    try {
+-      const { error } = await supabase.rpc('pay_advance_months', {
+-        p_user_id: advanceUserId,
+-        p_months: advanceMonths,
+-        p_method: advanceMethod,
+-        p_reference: advanceReference || `Pago adelantado ${advanceMonths} meses`,
+-      });
+-      
+-      if (error) throw error;
+-      
+-      toast.success(`${advanceMonths} mes(es) pagado(s) por adelantado`);
+-      setAdvancePaymentOpen(false);
+-      setAdvanceUserId('');
+-      setAdvanceMonths(1);
+-      setAdvanceMethod('Efectivo');
+-      setAdvanceReference('');
+-    } catch (err: any) {
+-      toast.error('Error en pago adelantado', { description: err.message });
+-    } finally {
+-      setAdvanceLoading(false);
+-    }
++    payAdvance.mutate(
++      { user_id: advanceUserId, months: advanceMonths, method: advanceMethod, reference: advanceReference || undefined },
++      {
++        onSuccess: () => {
++          setAdvancePaymentOpen(false);
++          setAdvanceUserId('');
++          setAdvanceMonths(1);
++          setAdvanceMethod('Efectivo');
++          setAdvanceReference('');
++        },
++      },
++    );
+   };
+-  
++
+   // Calcular due_date = primer día del mes actual (mes que se paga)
+   useEffect(() => {
+     if (cobroDate) {
+-      const due = new Date(cobroDate);
+-      due.setDate(1); // Primer día del mes actual = mes que se paga
+-      setCobroDueDate(format(due, 'yyyy-MM-dd'));
++      // parseISO interpreta yyyy-MM-dd en hora local (new Date(str) lo haría en UTC y
++      // un cobro del día 1 caería en el mes anterior en UTC-3 / UTC-4)
++      setCobroDueDate(format(startOfMonth(parseISO(cobroDate)), 'yyyy-MM-dd'));
+     }
+   }, [cobroDate]);
+ 
+@@ -347,42 +336,29 @@ const [cobroUserSearch, setCobroUserSearch] = useState('');
+       const user = getUserById(cobroUserId);
+       const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
+       
+-      // due_date = primer día del mes de cobroDate (mes que se está pagando)
+-      const dueDate = new Date(cobroDate);
+-      dueDate.setDate(1);
++      // due_date = primer día del mes de cobroDate (mes que se está pagando), en hora local
++      const dueDate = startOfMonth(parseISO(cobroDate));
+       const dueDateStr = format(dueDate, 'yyyy-MM-dd');
+-      
++
+       const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
+       const concept = `${planName} - ${monthYear}`;
++      const today = format(new Date(), 'yyyy-MM-dd');
+ 
+-      // 1. Crear factura pendiente
+-      const invoice = await createInvoice.mutateAsync({
++      // Una sola operación: salda la factura impaga de ese mes si existe, o la crea y la paga.
++      // next_payment / paid_until los recalcula la base de datos.
++      await createInvoice.mutateAsync({
+         user_id: cobroUserId,
+-        concept: concept,
++        plan_id: user?.plan_id || undefined,
++        concept,
+         amount: Number(cobroAmount),
+         due_date: dueDateStr,
++        status: 'Pagada',
++        method: cobroMethod,
++        reference: cobroReference || undefined,
+         notes: cobroNotes || undefined,
++        paid_at: cobroDate !== today ? cobroDate : undefined,
+       });
+ 
+-      // 2. Marcar como pagada
+-      const invoiceId = invoice?.id || invoice?.[0]?.id;
+-      if (invoiceId) {
+-        await payInvoice.mutateAsync({
+-          id: invoiceId,
+-          data: {
+-            method: cobroMethod,
+-            reference: cobroReference || undefined,
+-          },
+-        });
+-      }
+-
+-      // 3. Actualizar next_payment del usuario = due_date + 1 mes (primer día)
+-      const nextPaymentDate = new Date(dueDateStr);
+-      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+-      nextPaymentDate.setDate(1);
+-      await supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', cobroUserId);
+-      queryClient.invalidateQueries({ queryKey: ['users'] });
+-
+       toast.success('Cobro registrado y factura generada');
+ 
+       // Reset form
+@@ -1274,9 +1250,9 @@ const [cobroUserSearch, setCobroUserSearch] = useState('');
+               <Button
+                 className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold"
+                 onClick={handleAdvancePayment}
+-                disabled={advanceLoading}
++                disabled={payAdvance.isPending}
+               >
+-                {advanceLoading ? (
++                {payAdvance.isPending ? (
+                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
+                 ) : (
+                   <><Plus className="w-4 h-4 mr-2" />Confirmar Pago Adelantado</>
+diff --git a/src/app/pages/UserDetail.tsx b/src/app/pages/UserDetail.tsx
+index 89a0393..e8be09a 100644
+--- a/src/app/pages/UserDetail.tsx
++++ b/src/app/pages/UserDetail.tsx
+@@ -13,8 +13,9 @@ import { Textarea } from '../components/ui/textarea';
+ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+ import { toast } from 'sonner';
++import { format, parseISO, startOfMonth } from 'date-fns';
+ import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
+-import { useUserInvoices, useCreateInvoice, usePayInvoice } from '../hooks/useInvoices';
++import { useUserInvoices, useCreateInvoice, usePayInvoice, usePayAdvanceMonths } from '../hooks/useInvoices';
+ import { PaymentCalendar } from '../components/PaymentCalendar';
+ import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
+ import { useUserAttendance } from '../hooks/useAttendance';
+@@ -66,7 +67,6 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
+   const [advanceMonths, setAdvanceMonths] = useState(1);
+   const [advanceMethod, setAdvanceMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
+   const [advanceReference, setAdvanceReference] = useState('');
+-  const [advanceLoading, setAdvanceLoading] = useState(false);
+   
+   // Estados para el formulario de progreso físico
+   const [progressWeight, setProgressWeight] = useState('');
+@@ -94,6 +94,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
+   // Hook para crear pagos
+   const createPaymentMutation = useCreateInvoice();
+   const payInvoice = usePayInvoice();
++  const payAdvance = usePayAdvanceMonths();
+   
+   // Obtener usuario actual del staff usando el contexto de autenticación
+   const { user: currentUser } = useAuth();
+@@ -228,8 +229,9 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
+ 
+     try {
+       // Generar concept: Plan - Mes Año (basado en due_date = primer día del mes de paymentDate)
+-      const dueDate = new Date(paymentDate);
+-      dueDate.setDate(1); // Primer día del mes = mes que se paga
++      // parseISO: yyyy-MM-dd en hora LOCAL (new Date(str) usa UTC y un pago del día 1
++      // caería en el mes anterior en UTC-3 / UTC-4)
++      const dueDate = startOfMonth(parseISO(paymentDate));
+       const dueDateStr = format(dueDate, 'yyyy-MM-dd');
+       const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
+       const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
+@@ -237,6 +239,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
+ 
+       await createPaymentMutation.mutateAsync({
+         user_id: id,
++        plan_id: user?.plan_id || undefined,
+         amount: parseFloat(paymentAmount),
+         due_date: dueDateStr,
+         paid_at: paymentStatus === 'Pagado' ? paymentDate : undefined,
+@@ -247,12 +250,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
+         notes: paymentNotes || undefined,
+       });
+ 
+-      // Actualizar next_payment = due_date + 1 mes (primer día)
+-      const nextPaymentDate = new Date(dueDateStr);
+-      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+-      nextPaymentDate.setDate(1);
+-      await supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', id);
+-      queryClient.invalidateQueries({ queryKey: ['users'] });
++      // next_payment / paid_until los recalcula la base de datos (trigger sobre invoices)
+ 
+       setIsCreatePaymentDialogOpen(false);
+       setPaymentAmount('');
+@@ -280,13 +278,6 @@ setPaymentReference('');
+       data: { method: payMethod, reference: payReference || undefined, notes: payNotes || undefined },
+     }, {
+       onSuccess: () => {
+-        // Actualizar next_payment = due_date + 1 mes (primer día)
+-        const dueDate = new Date(payingInvoice.due_date);
+-        const nextPaymentDate = new Date(dueDate);
+-        nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+-        nextPaymentDate.setDate(1);
+-        supabase.from('users').update({ next_payment: nextPaymentDate.toISOString().split('T')[0] }).eq('id', id);
+-        queryClient.invalidateQueries({ queryKey: ['users'] });
+         setPayingInvoice(null);
+         setPayMethod('Efectivo');
+         setPayReference('');
+@@ -295,35 +286,24 @@ setPaymentReference('');
+     });
+   };
+   
+-  const handleAdvancePayment = async () => {
+-    if (!advanceMonths || advanceMonths < 1 || advanceMonths > 12) {
++  const handleAdvancePayment = () => {
++    if (!id || !advanceMonths || advanceMonths < 1 || advanceMonths > 12) {
+       toast.error('Meses debe estar entre 1 y 12');
+       return;
+     }
+-    
+-    setAdvanceLoading(true);
+-    try {
+-      const { error } = await supabase.rpc('pay_advance_months', {
+-        p_user_id: id,
+-        p_months: advanceMonths,
+-        p_method: advanceMethod,
+-        p_reference: advanceReference || `Pago adelantado ${advanceMonths} meses`,
+-      });
+-      
+-      if (error) throw error;
+-      
+-      toast.success(`${advanceMonths} mes(es) pagado(s) por adelantado`);
+-      setAdvancePaymentOpen(false);
+-      setAdvanceMonths(1);
+-      setAdvanceMethod('Efectivo');
+-      setAdvanceReference('');
+-    } catch (err: any) {
+-      toast.error('Error en pago adelantado', { description: err.message });
+-    } finally {
+-      setAdvanceLoading(false);
+-    }
++    payAdvance.mutate(
++      { user_id: id, months: advanceMonths, method: advanceMethod, reference: advanceReference || undefined },
++      {
++        onSuccess: () => {
++          setAdvancePaymentOpen(false);
++          setAdvanceMonths(1);
++          setAdvanceMethod('Efectivo');
++          setAdvanceReference('');
++        },
++      },
++    );
+   };
+-  
++
+   const createProgress = () => {
+     if (!id || !progressWeight) {
+       toast.error('El peso es obligatorio');
+@@ -992,7 +972,7 @@ setPaymentReference('');
+                   size="sm"
+                   className="border-primary text-primary hover:bg-primary/10"
+                   onClick={() => {
+-                    const dueDate = new Date(paymentDate);
++                    const dueDate = parseISO(paymentDate);
+                     const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
+                     const concept = `${planName} - ${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
+                     setPaymentConcept(concept);
+@@ -1635,9 +1615,9 @@ setPaymentReference('');
+               <Button
+                 className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold"
+                 onClick={handleAdvancePayment}
+-                disabled={advanceLoading}
++                disabled={payAdvance.isPending}
+               >
+-                {advanceLoading ? (
++                {payAdvance.isPending ? (
+                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
+                 ) : (
+                   <><Plus className="w-4 h-4 mr-2" />Confirmar Pago Adelantado</>
+diff --git a/supabase/migrations/34-billing-fixes.sql b/supabase/migrations/34-billing-fixes.sql
+new file mode 100644
+index 0000000..8f99dcb
+--- /dev/null
++++ b/supabase/migrations/34-billing-fixes.sql
+@@ -0,0 +1,491 @@
++-- =====================================================================
++-- 34 - CORRECCIONES DEL SISTEMA DE FACTURACIÓN
++-- ---------------------------------------------------------------------
++-- Principios:
++--   * `invoices` es la única fuente de verdad.
++--   * `users.next_payment` y `users.paid_until` los DERIVA la base de datos
++--     (trigger sobre invoices); el cliente ya no los escribe.
++--   * Los periodos mensuales se anclan al día 1 de cada mes (nada de
++--     "+30 días" que se desfasa: 1-oct, 31-oct, 30-nov...).
++--   * Un solo motor de facturación automática (pg_cron -> run_daily_billing).
++--   * El pago de una factura es una operación transaccional (pay_invoice).
++--
++-- Zona horaria: el "hoy" del gimnasio se calcula con billing_today().
++-- Por defecto America/Caracas. Para cambiarla:
++--   ALTER DATABASE postgres SET app.billing_timezone = 'America/Argentina/Buenos_Aires';
++-- =====================================================================
++
++-- ---------------------------------------------------------------------
++-- 0. Retirar el motor antiguo (se redefine más abajo)
++-- ---------------------------------------------------------------------
++DO $$ BEGIN PERFORM cron.unschedule('check-overdue-users');     EXCEPTION WHEN OTHERS THEN NULL; END $$;
++DO $$ BEGIN PERFORM cron.unschedule('generate-daily-invoices'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
++
++DROP TRIGGER IF EXISTS trg_auto_create_plan_invoice   ON users;
++DROP TRIGGER IF EXISTS trigger_user_plan_change        ON users;
++DROP TRIGGER IF EXISTS trigger_user_plan_change_insert ON users;
++
++DROP FUNCTION IF EXISTS auto_create_plan_invoice();
++DROP FUNCTION IF EXISTS trigger_create_initial_invoice();
++DROP FUNCTION IF EXISTS create_initial_invoice(uuid, uuid);
++DROP FUNCTION IF EXISTS generate_daily_invoices();
++DROP FUNCTION IF EXISTS check_overdue_users();
++DROP FUNCTION IF EXISTS pay_advance_months(uuid, integer, text, text);
++
++-- ---------------------------------------------------------------------
++-- 1. Cambios de esquema
++-- ---------------------------------------------------------------------
++-- 1.1 payments aceptaba menos métodos que invoices ('Pago Móvil' fallaba en silencio)
++ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_method_check;
++ALTER TABLE payments ADD CONSTRAINT payments_method_check
++  CHECK (method IN ('Efectivo', 'Transferencia', 'Tarjeta', 'Pago Móvil'));
++
++-- 1.2 Enlace factura -> pago (para no dejar pagos huérfanos al borrar facturas)
++ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_id uuid REFERENCES payments(id) ON DELETE SET NULL;
++
++-- 1.3 El número de factura lo asigna SIEMPRE la base de datos (secuencia)
++ALTER TABLE invoices ALTER COLUMN invoice_number SET DEFAULT generate_invoice_number();
++
++-- 1.4 La secuencia estaba por detrás de facturas ya emitidas (p. ej. FAC-2026-0051):
++--     el siguiente nextval() chocaba con el UNIQUE y rompía el cron.
++SELECT setval(
++  'invoice_number_seq',
++  GREATEST(
++    (SELECT last_value FROM invoice_number_seq),
++    COALESCE((SELECT MAX((substring(invoice_number FROM '^FAC-\d{4}-(\d+)$'))::int)
++              FROM invoices WHERE invoice_number ~ '^FAC-\d{4}-\d+$'), 0)
++  )
++);
++
++-- ---------------------------------------------------------------------
++-- 2. Helpers de fecha
++-- ---------------------------------------------------------------------
++CREATE OR REPLACE FUNCTION billing_now() RETURNS timestamp
++LANGUAGE sql STABLE AS $$
++  SELECT now() AT TIME ZONE COALESCE(NULLIF(current_setting('app.billing_timezone', true), ''), 'America/Caracas')
++$$;
++
++CREATE OR REPLACE FUNCTION billing_today() RETURNS date
++LANGUAGE sql STABLE AS $$ SELECT billing_now()::date $$;
++
++CREATE OR REPLACE FUNCTION month_es(p_date date) RETURNS text
++LANGUAGE sql IMMUTABLE AS $$
++  SELECT (ARRAY['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto',
++                'Septiembre','Octubre','Noviembre','Diciembre'])[extract(month FROM p_date)::int]
++         || ' ' || extract(year FROM p_date)::int
++$$;
++
++-- Siguiente vencimiento después de p_last. Planes de 28-31 días = 1 mes calendario,
++-- 90 = 3 meses, 180 = 6 meses, 365 = 1 año; cualquier otro = días exactos.
++CREATE OR REPLACE FUNCTION plan_next_due(p_last date, p_days int) RETURNS date
++LANGUAGE sql IMMUTABLE AS $$
++  SELECT CASE
++    WHEN p_days BETWEEN 28 AND 31
++      THEN (date_trunc('month', p_last::timestamp) + interval '1 month')::date
++    WHEN p_days BETWEEN 60 AND 360 AND p_days % 30 = 0
++      THEN (date_trunc('month', p_last::timestamp) + (p_days / 30) * interval '1 month')::date
++    WHEN p_days IN (365, 366)
++      THEN (date_trunc('month', p_last::timestamp) + interval '1 year')::date
++    ELSE p_last + GREATEST(p_days, 1)
++  END
++$$;
++
++-- ---------------------------------------------------------------------
++-- 3. Derivar next_payment / paid_until desde las facturas
++--    next_payment = vencimiento de la factura impaga más antigua; si no hay,
++--                   el siguiente periodo a facturar.
++--    paid_until   = vencimiento del último periodo pagado.
++-- ---------------------------------------------------------------------
++CREATE OR REPLACE FUNCTION refresh_user_billing(p_user_id uuid) RETURNS void
++LANGUAGE plpgsql AS $$
++DECLARE
++  v_first_unpaid timestamp;
++  v_last_paid    timestamp;
++  v_last_any     timestamp;
++  v_days         int;
++  v_next         timestamp;
++BEGIN
++  SELECT MIN(due_date) FILTER (WHERE status IN ('Pendiente', 'Vencida')),
++         MAX(due_date) FILTER (WHERE status = 'Pagada'),
++         MAX(due_date)
++    INTO v_first_unpaid, v_last_paid, v_last_any
++  FROM invoices
++  WHERE user_id = p_user_id;
++
++  IF v_last_any IS NULL THEN
++    -- Sin facturas: no hay periodo pagado
++    UPDATE users SET paid_until = NULL WHERE id = p_user_id AND paid_until IS NOT NULL;
++    RETURN;
++  END IF;
++
++  SELECT pl.duration_days INTO v_days
++  FROM users u JOIN plans pl ON pl.id = u.plan_id
++  WHERE u.id = p_user_id;
++
++  v_next := COALESCE(v_first_unpaid, plan_next_due(v_last_any::date, COALESCE(v_days, 30))::timestamp);
++
++  UPDATE users
++  SET next_payment = v_next,
++      paid_until   = v_last_paid::date
++  WHERE id = p_user_id
++    AND (next_payment IS DISTINCT FROM v_next OR paid_until IS DISTINCT FROM v_last_paid::date);
++END;
++$$;
++
++-- ---------------------------------------------------------------------
++-- 4. Generar las facturas que faltan de un usuario (hasta el periodo actual)
++--    p_restart = true  -> empieza en el mes actual (alta, cambio de plan,
++--                         reactivación): no cobra periodos pasados.
++-- ---------------------------------------------------------------------
++CREATE OR REPLACE FUNCTION ensure_user_invoices(p_user_id uuid, p_restart boolean DEFAULT false)
++RETURNS int
++LANGUAGE plpgsql AS $$
++DECLARE
++  u           RECORD;
++  p           RECORD;
++  v_today     date := billing_today();
++  v_due       date;
++  v_last      date;
++  v_created   int := 0;
++  v_iter      int := 0;
++  v_recurring boolean;
++BEGIN
++  SELECT id, plan_id, status, COALESCE(is_free_user, false) AS is_free
++    INTO u FROM users WHERE id = p_user_id;
++
++  IF NOT FOUND OR u.plan_id IS NULL OR u.is_free OR u.status <> 'Activo' THEN
++    RETURN 0;
++  END IF;
++
++  SELECT * INTO p FROM plans WHERE id = u.plan_id;
++  IF NOT FOUND OR p.price IS NULL OR p.price <= 0 THEN
++    RETURN 0;
++  END IF;
++
++  v_recurring := p.type IS DISTINCT FROM 'Visita';
++
++  IF NOT v_recurring THEN
++    -- Plan de visita: una única factura
++    IF EXISTS (SELECT 1 FROM invoices WHERE user_id = p_user_id AND plan_id = p.id) THEN
++      RETURN 0;
++    END IF;
++    v_due := v_today;
++  ELSIF p_restart THEN
++    v_due := date_trunc('month', v_today::timestamp)::date;
++  ELSE
++    SELECT MAX(due_date)::date INTO v_last
++    FROM invoices WHERE user_id = p_user_id AND plan_id = p.id;
++    v_due := CASE WHEN v_last IS NULL
++                  THEN date_trunc('month', v_today::timestamp)::date
++                  ELSE plan_next_due(v_last, p.duration_days) END;
++  END IF;
++
++  WHILE v_due <= v_today AND v_iter < 24 LOOP
++    -- Una membresía = una factura por vencimiento (sin importar el plan)
++    IF NOT EXISTS (
++      SELECT 1 FROM invoices
++      WHERE user_id = p_user_id AND due_date::date = v_due
++    ) THEN
++      INSERT INTO invoices (user_id, plan_id, concept, amount, due_date, status)
++      VALUES (p_user_id, p.id, p.name || ' - ' || month_es(v_due), p.price, v_due::timestamp, 'Pendiente');
++      v_created := v_created + 1;
++    END IF;
++
++    EXIT WHEN NOT v_recurring;
++    v_due  := plan_next_due(v_due, p.duration_days);
++    v_iter := v_iter + 1;
++  END LOOP;
++
++  RETURN v_created;
++END;
++$$;
++
++-- ---------------------------------------------------------------------
++-- 5. Job diario: 1) marcar vencidas / suspender  2) generar facturas
++-- ---------------------------------------------------------------------
++CREATE OR REPLACE FUNCTION check_overdue_users() RETURNS jsonb
++LANGUAGE plpgsql AS $$
++DECLARE
++  v_today   date := billing_today();
++  v_overdue int;
++  v_susp    int;
++BEGIN
++  -- La factura Pendiente pasa a Vencida (antes se insertaba una copia y quedaban dos)
++  UPDATE invoices i
++  SET status = 'Vencida'
++  WHERE i.status = 'Pendiente'
++    AND i.due_date::date < v_today
++    AND i.user_id IN (SELECT id FROM users WHERE COALESCE(is_free_user, false) = false);
++  GET DIAGNOSTICS v_overdue = ROW_COUNT;
++
++  UPDATE users u
++  SET status = 'Suspendido'
++  WHERE u.status = 'Activo'
++    AND COALESCE(u.is_free_user, false) = false
++    AND EXISTS (SELECT 1 FROM invoices i WHERE i.user_id = u.id AND i.status = 'Vencida');
++  GET DIAGNOSTICS v_susp = ROW_COUNT;
++
++  RETURN jsonb_build_object('overdue_invoices', v_overdue, 'suspended_users', v_susp);
++END;
++$$;
++
++CREATE OR REPLACE FUNCTION generate_daily_invoices() RETURNS int
++LANGUAGE plpgsql AS $$
++DECLARE
++  u       RECORD;
++  v_total int := 0;
++BEGIN
++  FOR u IN
++    SELECT id FROM users
++    WHERE status = 'Activo' AND plan_id IS NOT NULL AND COALESCE(is_free_user, false) = false
++  LOOP
++    v_total := v_total + ensure_user_invoices(u.id);
++  END LOOP;
++  RETURN v_total;
++END;
++$$;
++
++CREATE OR REPLACE FUNCTION run_daily_billing() RETURNS jsonb
++LANGUAGE plpgsql AS $$
++DECLARE
++  v_overdue   jsonb;
++  v_generated int;
++BEGIN
++  v_overdue   := check_overdue_users();      -- primero vencidas/suspensión
++  v_generated := generate_daily_invoices();  -- luego facturas nuevas (solo usuarios Activos)
++  RETURN v_overdue || jsonb_build_object('generated_invoices', v_generated);
++END;
++$$;
++
++-- ---------------------------------------------------------------------
++-- 6. Pago de una factura (transaccional)
++-- ---------------------------------------------------------------------
++CREATE OR REPLACE FUNCTION pay_invoice(
++  p_invoice_id uuid,
++  p_method     text,
++  p_reference  text      DEFAULT NULL,
++  p_notes      text      DEFAULT NULL,
++  p_paid_at    timestamp DEFAULT NULL
++) RETURNS invoices
++LANGUAGE plpgsql AS $$
++DECLARE
++  inv      invoices%ROWTYPE;
++  v_days   int;
++  v_pay_id uuid;
++  v_paid   timestamp := COALESCE(p_paid_at, billing_now());
++BEGIN
++  IF p_method IS NULL OR btrim(p_method) = '' THEN
++    RAISE EXCEPTION 'Método de pago requerido';
++  END IF;
++
++  SELECT * INTO inv FROM invoices WHERE id = p_invoice_id FOR UPDATE;
++  IF NOT FOUND THEN
++    RAISE EXCEPTION 'Factura no encontrada';
++  END IF;
++  IF inv.status = 'Pagada' THEN
++    RAISE EXCEPTION 'La factura % ya está pagada', inv.invoice_number;
++  END IF;
++
++  SELECT pl.duration_days INTO v_days
++  FROM plans pl
++  WHERE pl.id = COALESCE(inv.plan_id, (SELECT plan_id FROM users WHERE id = inv.user_id));
++
++  INSERT INTO payments (user_id, amount, date, next_payment, status, method)
++  VALUES (inv.user_id, inv.amount, v_paid,
++          plan_next_due(inv.due_date::date, COALESCE(v_days, 30))::timestamp,
++          'Pagado', p_method)
++  RETURNING id INTO v_pay_id;
++
++  UPDATE invoices
++  SET status     = 'Pagada',
++      method     = p_method,
++      reference  = NULLIF(p_reference, ''),
++      notes      = COALESCE(NULLIF(p_notes, ''), notes),
++      paid_at    = v_paid,
++      payment_id = v_pay_id
++  WHERE id = p_invoice_id
++  RETURNING * INTO inv;
++  -- (el trigger trg_invoices_sync recalcula next_payment / paid_until)
++
++  -- Si estaba suspendido y ya no debe nada vencido, se reactiva y se factura el mes actual
++  IF EXISTS (SELECT 1 FROM users WHERE id = inv.user_id AND status = 'Suspendido')
++     AND NOT EXISTS (SELECT 1 FROM invoices WHERE user_id = inv.user_id AND status = 'Vencida') THEN
++    UPDATE users SET status = 'Activo' WHERE id = inv.user_id;
++    PERFORM ensure_user_invoices(inv.user_id, true);
++  END IF;
++
++  RETURN inv;
++END;
++$$;
++
++-- Pago adelantado de N periodos: paga las facturas existentes (la más antigua primero)
++-- y CREA las que falten hasta completar N.
++CREATE OR REPLACE FUNCTION pay_advance_months(
++  p_user_id   uuid,
++  p_months    int,
++  p_method    text,
++  p_reference text DEFAULT NULL
++) RETURNS jsonb
++LANGUAGE plpgsql AS $$
++DECLARE
++  p         RECORD;
++  v_id      uuid;
++  v_last    date;
++  v_due     date;
++  v_paid    int := 0;
++  v_created int := 0;
++  v_ref     text := COALESCE(NULLIF(p_reference, ''), 'Pago adelantado');
++BEGIN
++  IF p_months IS NULL OR p_months < 1 OR p_months > 12 THEN
++    RAISE EXCEPTION 'Meses debe estar entre 1 y 12';
++  END IF;
++
++  SELECT pl.* INTO p
++  FROM users u JOIN plans pl ON pl.id = u.plan_id
++  WHERE u.id = p_user_id;
++  IF NOT FOUND THEN
++    RAISE EXCEPTION 'El usuario no tiene un plan asignado';
++  END IF;
++  IF p.price IS NULL OR p.price <= 0 THEN
++    RAISE EXCEPTION 'El plan del usuario no tiene precio';
++  END IF;
++
++  FOR i IN 1..p_months LOOP
++    SELECT id INTO v_id
++    FROM invoices
++    WHERE user_id = p_user_id AND status IN ('Vencida', 'Pendiente')
++    ORDER BY due_date ASC
++    LIMIT 1
++    FOR UPDATE;
++
++    IF v_id IS NULL THEN
++      SELECT MAX(due_date)::date INTO v_last FROM invoices WHERE user_id = p_user_id;
++      v_due := CASE WHEN v_last IS NULL
++                    THEN date_trunc('month', billing_today()::timestamp)::date
++                    ELSE plan_next_due(v_last, p.duration_days) END;
++
++      INSERT INTO invoices (user_id, plan_id, concept, amount, due_date, status)
++      VALUES (p_user_id, p.id, p.name || ' - ' || month_es(v_due), p.price, v_due::timestamp, 'Pendiente')
++      RETURNING id INTO v_id;
++      v_created := v_created + 1;
++    END IF;
++
++    PERFORM pay_invoice(v_id, p_method, v_ref || ' (' || i || '/' || p_months || ')', NULL, NULL);
++    v_paid := v_paid + 1;
++  END LOOP;
++
++  RETURN jsonb_build_object(
++    'paid', v_paid,
++    'created', v_created,
++    'paid_until', (SELECT paid_until FROM users WHERE id = p_user_id)
++  );
++END;
++$$;
++
++-- ---------------------------------------------------------------------
++-- 7. Triggers
++--    (SECURITY DEFINER: se ejecutan también cuando un socio se auto-registra,
++--     y las políticas RLS no le permiten insertar facturas.)
++-- ---------------------------------------------------------------------
++-- 7.1 invoices -> mantiene users.next_payment / paid_until y limpia pagos huérfanos
++CREATE OR REPLACE FUNCTION trg_invoices_sync() RETURNS trigger
++LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
++BEGIN
++  IF TG_OP = 'DELETE' THEN
++    IF OLD.payment_id IS NOT NULL THEN
++      DELETE FROM payments WHERE id = OLD.payment_id;
++    END IF;
++    PERFORM refresh_user_billing(OLD.user_id);
++    RETURN OLD;
++  END IF;
++
++  PERFORM refresh_user_billing(NEW.user_id);
++  IF TG_OP = 'UPDATE' AND OLD.user_id IS DISTINCT FROM NEW.user_id THEN
++    PERFORM refresh_user_billing(OLD.user_id);
++  END IF;
++  RETURN NEW;
++END;
++$$;
++
++DROP TRIGGER IF EXISTS trg_invoices_sync ON invoices;
++CREATE TRIGGER trg_invoices_sync
++AFTER INSERT OR UPDATE OF status, due_date, user_id OR DELETE ON invoices
++FOR EACH ROW EXECUTE FUNCTION trg_invoices_sync();
++
++-- 7.2 users: alta con plan o cambio de plan (reemplaza 3 triggers que duplicaban facturas)
++CREATE OR REPLACE FUNCTION trg_users_billing_assign() RETURNS trigger
++LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
++BEGIN
++  IF NEW.plan_id IS NULL THEN
++    RETURN NEW;
++  END IF;
++  IF TG_OP = 'UPDATE' AND OLD.plan_id IS NOT DISTINCT FROM NEW.plan_id THEN
++    RETURN NEW;
++  END IF;
++
++  IF TG_OP = 'UPDATE' AND OLD.plan_id IS NOT NULL THEN
++    -- El plan anterior ya no se cobra: se descartan sus facturas pendientes del mes en curso en adelante
++    DELETE FROM invoices
++    WHERE user_id = NEW.id AND plan_id = OLD.plan_id AND status = 'Pendiente'
++      AND due_date::date >= date_trunc('month', billing_today()::timestamp)::date;
++  END IF;
++
++  PERFORM ensure_user_invoices(NEW.id, true);
++  RETURN NEW;
++END;
++$$;
++
++DROP TRIGGER IF EXISTS trg_users_billing_assign ON users;
++CREATE TRIGGER trg_users_billing_assign
++AFTER INSERT OR UPDATE OF plan_id ON users
++FOR EACH ROW EXECUTE FUNCTION trg_users_billing_assign();
++
++-- 7.3 Reactivación (Inactivo -> Activo): se resetea la facturación (decisión original)
++--     Se conservan las facturas Vencidas (deuda real).
++CREATE OR REPLACE FUNCTION reset_user_billing(p_user_id uuid) RETURNS void
++LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
++BEGIN
++  DELETE FROM invoices WHERE user_id = p_user_id AND status = 'Pendiente';
++  PERFORM ensure_user_invoices(p_user_id, true);
++END;
++$$;
++-- El trigger trigger_user_reactivate_billing ya existe. Su función se ejecuta con los permisos de
++-- quien edita al socio (staff = rol authenticated), que NO puede llamar a reset_user_billing()
++-- (ver sección 9): por eso pasa a SECURITY DEFINER.
++CREATE OR REPLACE FUNCTION trigger_reset_billing_on_reactivate() RETURNS trigger
++LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
++BEGIN
++  IF OLD.status = 'Inactivo' AND NEW.status = 'Activo' THEN
++    PERFORM reset_user_billing(NEW.id);
++  END IF;
++  RETURN NEW;
++END;
++$$;
++
++-- ---------------------------------------------------------------------
++-- 8. Cron: un único job, a las 04:30 UTC (00:30 Caracas / 01:30 Buenos Aires)
++-- ---------------------------------------------------------------------
++SELECT cron.schedule('billing-daily', '30 4 * * *', 'SELECT run_daily_billing();');
++
++-- ---------------------------------------------------------------------
++-- 9. Permisos
++-- ---------------------------------------------------------------------
++REVOKE ALL ON FUNCTION trg_invoices_sync(), trg_users_billing_assign(), trigger_reset_billing_on_reactivate(), reset_user_billing(uuid)
++  FROM PUBLIC, anon, authenticated;
++
++REVOKE ALL ON FUNCTION
++  refresh_user_billing(uuid), ensure_user_invoices(uuid, boolean), check_overdue_users(),
++  generate_daily_invoices(), run_daily_billing(),
++  pay_invoice(uuid, text, text, text, timestamp), pay_advance_months(uuid, int, text, text)
++  FROM PUBLIC, anon;
++
++GRANT EXECUTE ON FUNCTION
++  refresh_user_billing(uuid), ensure_user_invoices(uuid, boolean), check_overdue_users(),
++  generate_daily_invoices(), run_daily_billing(),
++  pay_invoice(uuid, text, text, text, timestamp), pay_advance_months(uuid, int, text, text)
++  TO authenticated, service_role;
++
++-- ---------------------------------------------------------------------
++-- 10. Reparar datos existentes (recalcula next_payment / paid_until desde las facturas)
++-- ---------------------------------------------------------------------
++SELECT refresh_user_billing(id) FROM users;
+diff --git a/supabase/tests/00-mirror-schema.sql b/supabase/tests/00-mirror-schema.sql
+new file mode 100644
+index 0000000..6146bc4
+--- /dev/null
++++ b/supabase/tests/00-mirror-schema.sql
+@@ -0,0 +1,8 @@
++create extension if not exists "uuid-ossp";
++create table plans (id uuid primary key default uuid_generate_v4(), name text not null, description text, duration_days int not null, price numeric not null, is_active boolean default true, created_at timestamp default now(), updated_at timestamp default now(), type text check (type in ('Mensual','Trimestral','Semestral','Anual','Visita','Promoción')));
++create table users (id uuid primary key default uuid_generate_v4(), member_number text not null, name text not null, email text not null, status text not null default 'Activo' check (status in ('Activo','Inactivo','Suspendido')), plan text, start_date timestamp not null default now(), next_payment timestamp, plan_id uuid references plans(id), is_free_user boolean default false, paid_until date, updated_at timestamp default now());
++create table payments (id uuid primary key default uuid_generate_v4(), user_id uuid references users(id) on delete cascade, amount numeric not null, date timestamp not null default now(), next_payment timestamp not null, status text not null default 'Pendiente' check (status in ('Pagado','Pendiente','Vencido')), method text not null check (method in ('Efectivo','Transferencia','Tarjeta')), created_at timestamp default now());
++create table invoices (id uuid primary key default uuid_generate_v4(), user_id uuid references users(id) on delete cascade, plan_id uuid references plans(id) on delete set null, invoice_number text not null unique, amount numeric not null, due_date timestamp not null, paid_at timestamp, status text not null default 'Pendiente' check (status in ('Pendiente','Pagada','Vencida')), method text check (method in ('Efectivo','Transferencia','Tarjeta','Pago Móvil')), reference text, notes text, created_at timestamp default now(), concept text);
++create unique index idx_invoices_unique_user_plan_due on invoices(user_id, plan_id, due_date) where status in ('Pendiente','Pagada');
++create sequence invoice_number_seq;
++create function generate_invoice_number() returns text language plpgsql security definer as $$ begin return 'FAC-'||to_char(now(),'YYYY')||'-'||lpad(nextval('invoice_number_seq')::text,4,'0'); end $$;
+diff --git a/supabase/tests/01-legacy-prod-state.sql b/supabase/tests/01-legacy-prod-state.sql
+new file mode 100644
+index 0000000..e32b28f
+--- /dev/null
++++ b/supabase/tests/01-legacy-prod-state.sql
+@@ -0,0 +1,61 @@
++-- Roles de Supabase y stub de pg_cron
++do $$ begin
++  create role anon nologin; create role authenticated nologin; create role service_role nologin;
++exception when duplicate_object then null; end $$;
++create schema if not exists cron;
++create table cron.job (jobid serial primary key, jobname text unique, schedule text, command text);
++create function cron.schedule(p_name text, p_sched text, p_cmd text) returns bigint language sql as
++ $$ insert into cron.job(jobname,schedule,command) values (p_name,p_sched,p_cmd) on conflict (jobname) do update set schedule=excluded.schedule, command=excluded.command returning jobid::bigint $$;
++create function cron.unschedule(p_name text) returns boolean language plpgsql as
++ $$ begin delete from cron.job where jobname=p_name; if not found then raise exception 'could not find valid entry for job %', p_name; end if; return true; end $$;
++select cron.schedule('check-overdue-users','0 0 * * *','SELECT check_overdue_users();');
++select cron.schedule('generate-daily-invoices','5 0 * * *','SELECT generate_daily_invoices();');
++
++-- === Funciones/ triggers desplegados HOY en producción ===
++CREATE OR REPLACE FUNCTION public.create_initial_invoice(p_user_id uuid, p_plan_id uuid) RETURNS void LANGUAGE plpgsql AS $f$
++DECLARE p RECORD; next_num INT; due_date DATE;
++BEGIN
++  SELECT * INTO p FROM plans WHERE id = p_plan_id;
++  IF p IS NULL OR p.price IS NULL OR p.price <= 0 THEN RETURN; END IF;
++  due_date := date_trunc('month', CURRENT_DATE)::date;
++  SELECT COALESCE(MAX((substring(invoice_number FROM 'FAC-\d{4}-(\d+)'))::int), 0) + 1 INTO next_num FROM invoices WHERE invoice_number LIKE 'FAC-' || to_char(CURRENT_DATE, 'YYYY') || '-%';
++  INSERT INTO invoices (user_id, plan_id, invoice_number, concept, amount, due_date, status)
++  VALUES (p_user_id, p_plan_id, 'FAC-' || to_char(CURRENT_DATE, 'YYYY') || '-' || lpad(next_num::text, 4, '0'), p.name || ' - ' || to_char(due_date, 'Month YYYY'), p.price, due_date, 'Pendiente') ON CONFLICT DO NOTHING;
++  UPDATE users SET next_payment = (date_trunc('month', CURRENT_DATE)::date + interval '1 month'), paid_until = NULL WHERE id = p_user_id;
++END; $f$;
++CREATE OR REPLACE FUNCTION public.generate_daily_invoices() RETURNS void LANGUAGE plpgsql AS $f$ BEGIN NULL; END; $f$;
++CREATE OR REPLACE FUNCTION public.check_overdue_users() RETURNS void LANGUAGE plpgsql AS $f$ BEGIN NULL; END; $f$;
++CREATE OR REPLACE FUNCTION public.pay_advance_months(p_user_id uuid, p_months integer, p_method text, p_reference text) RETURNS void LANGUAGE plpgsql AS $f$ BEGIN NULL; END; $f$;
++CREATE OR REPLACE FUNCTION public.auto_create_plan_invoice() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $f$
++DECLARE v_plan plans%ROWTYPE; v_existing_id UUID;
++BEGIN
++  IF NEW.plan_id IS NULL THEN RETURN NEW; END IF;
++  IF TG_OP = 'UPDATE' AND OLD.plan_id IS NOT DISTINCT FROM NEW.plan_id THEN RETURN NEW; END IF;
++  SELECT * INTO v_plan FROM plans WHERE id = NEW.plan_id; IF NOT FOUND THEN RETURN NEW; END IF;
++  SELECT id INTO v_existing_id FROM invoices WHERE user_id = NEW.id AND plan_id = NEW.plan_id AND status = 'Pendiente' LIMIT 1;
++  IF v_existing_id IS NOT NULL THEN RETURN NEW; END IF;
++  INSERT INTO invoices (user_id, plan_id, invoice_number, amount, due_date, status, concept) VALUES (NEW.id, NEW.plan_id, generate_invoice_number(), v_plan.price, COALESCE(NEW.next_payment, NOW()), 'Pendiente', v_plan.name);
++  RETURN NEW;
++END; $f$;
++CREATE OR REPLACE FUNCTION public.trigger_create_initial_invoice() RETURNS trigger LANGUAGE plpgsql AS $f$
++BEGIN IF NEW.plan_id IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.plan_id IS NULL OR OLD.plan_id != NEW.plan_id) THEN PERFORM create_initial_invoice(NEW.id, NEW.plan_id); END IF; RETURN NEW; END; $f$;
++CREATE OR REPLACE FUNCTION public.reset_user_billing(p_user_id uuid) RETURNS void LANGUAGE plpgsql AS $f$ BEGIN NULL; END; $f$;
++CREATE OR REPLACE FUNCTION public.trigger_reset_billing_on_reactivate() RETURNS trigger LANGUAGE plpgsql AS $f$
++BEGIN IF OLD.status = 'Inactivo' AND NEW.status = 'Activo' THEN PERFORM reset_user_billing(NEW.id); END IF; RETURN NEW; END; $f$;
++CREATE OR REPLACE FUNCTION public.trigger_stop_billing_on_plan_deactivate() RETURNS trigger LANGUAGE plpgsql AS $f$
++BEGIN IF OLD.is_active = true AND NEW.is_active = false THEN DELETE FROM invoices WHERE plan_id = NEW.id AND status = 'Pendiente'; END IF; RETURN NEW; END; $f$;
++CREATE TRIGGER trg_auto_create_plan_invoice AFTER INSERT OR UPDATE ON users FOR EACH ROW EXECUTE FUNCTION auto_create_plan_invoice();
++CREATE TRIGGER trigger_user_plan_change AFTER UPDATE OF plan_id ON users FOR EACH ROW EXECUTE FUNCTION trigger_create_initial_invoice();
++CREATE TRIGGER trigger_user_plan_change_insert AFTER INSERT ON users FOR EACH ROW EXECUTE FUNCTION trigger_create_initial_invoice();
++CREATE TRIGGER trigger_user_reactivate_billing AFTER UPDATE OF status ON users FOR EACH ROW EXECUTE FUNCTION trigger_reset_billing_on_reactivate();
++CREATE TRIGGER trigger_plan_deactivate_billing AFTER UPDATE OF is_active ON plans FOR EACH ROW EXECUTE FUNCTION trigger_stop_billing_on_plan_deactivate();
++
++-- === Estado actual del usuario de prueba (copiado de producción) ===
++insert into plans (id,name,duration_days,price,type,description) values ('ed323c13-a3e7-47c1-99dd-42d011986d6d','Premium Plus',30,20,'Mensual','PLAN UNICO MENSUAL');
++alter table users disable trigger user;  -- no disparar triggers al sembrar
++insert into users (id,member_number,name,email,status,plan_id,is_free_user,next_payment,paid_until,start_date) values ('21d4d918-76a2-44ea-a1fd-d19b81d0bb52','GYM-001','Johan Brito','j@x.com','Activo','ed323c13-a3e7-47c1-99dd-42d011986d6d',true,'2026-10-01','2026-11-01','2026-07-18');
++insert into invoices (invoice_number,user_id,plan_id,amount,due_date,status,concept) values
++ ('FAC-2026-0050','21d4d918-76a2-44ea-a1fd-d19b81d0bb52','ed323c13-a3e7-47c1-99dd-42d011986d6d',20,'2026-10-01','Pendiente','Premium Plus - October   2026'),
++ ('FAC-2026-0051','21d4d918-76a2-44ea-a1fd-d19b81d0bb52','ed323c13-a3e7-47c1-99dd-42d011986d6d',20,'2026-10-31','Pendiente','Premium Plus - October   2026');
++alter table users enable trigger user;
++select setval('invoice_number_seq', 50);
+diff --git a/supabase/tests/README.md b/supabase/tests/README.md
+new file mode 100644
+index 0000000..5c8af3a
+--- /dev/null
++++ b/supabase/tests/README.md
+@@ -0,0 +1,15 @@
++# Pruebas de la migración de facturación (34)
++
++Se ejecutan en un PostgreSQL **local** (no en Supabase), con un reloj simulado:
++
++```bash
++createdb gymtest
++psql -v ON_ERROR_STOP=1 -d gymtest -f supabase/tests/00-mirror-schema.sql      # tablas (sin RLS)
++psql -v ON_ERROR_STOP=1 -d gymtest -f supabase/tests/01-legacy-prod-state.sql  # funciones/triggers y datos desplegados antes de la migración + stub de pg_cron
++psql -v ON_ERROR_STOP=1 -d gymtest -f supabase/migrations/34-billing-fixes.sql
++psql -d gymtest -f supabase/tests/billing-scenarios.sql                        # 49 comprobaciones; imprime PASS/FAIL
++psql -d gymtest -f supabase/tests/billing-privileges.sql                       # 9 comprobaciones con los roles authenticated / anon (ejecutar después)
++```
++
++`billing-scenarios.sql` sobrescribe `billing_now()` solo en la base de pruebas para recorrer meses.
++No es re-ejecutable sobre la misma base: recrearla con `dropdb/createdb`.
+diff --git a/supabase/tests/billing-privileges.sql b/supabase/tests/billing-privileges.sql
+new file mode 100644
+index 0000000..6731b9f
+--- /dev/null
++++ b/supabase/tests/billing-privileges.sql
+@@ -0,0 +1,39 @@
++-- Permisos con los roles reales de Supabase (ejecutar DESPUÉS de billing-scenarios.sql).
++-- Reproduce lo que hace el frontend: staff = rol authenticated; el rol anon no debe poder nada.
++grant usage on schema public to authenticated, anon;
++grant all on all tables in schema public to authenticated;
++grant all on all sequences in schema public to authenticated;
++grant execute on function generate_invoice_number() to authenticated, anon;
++
++create or replace function ok(cond boolean, msg text) returns void language plpgsql as $$
++begin if cond then raise notice 'PASS  %', msg; else raise exception 'FAIL  %', msg; end if; end $$;
++
++select setclock('2026-10-01');
++insert into users (id,member_number,name,email,status,plan_id) values
++ ('cccccccc-0000-0000-0000-000000000001','P-1','Priv Uno','p1@x','Inactivo','aaaaaaaa-0000-0000-0000-000000000001');
++
++set role authenticated;
++-- reactivar un socio (dispara trigger_reset_billing_on_reactivate -> reset_user_billing)
++update users set status='Activo' where name='Priv Uno';
++select ok((select count(*) from invoices where user_id='cccccccc-0000-0000-0000-000000000001' and status='Pendiente')=1, 'PRIV staff puede reactivar un socio (antes: permission denied)');
++-- insertar factura sin invoice_number (default de la base)
++insert into invoices (user_id, plan_id, amount, due_date, concept) values ('cccccccc-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000001',20,'2026-09-01','manual');
++select ok((select invoice_number from invoices where concept='manual') like 'FAC-%', 'PRIV staff inserta factura y la base asigna el número');
++select pay_invoice((select id from invoices where concept='manual'),'Pago Móvil');
++select ok((select status from invoices where concept='manual')='Pagada', 'PRIV staff paga factura');
++select ok((pay_advance_months('cccccccc-0000-0000-0000-000000000001',2,'Efectivo')->>'paid')::int=2, 'PRIV staff hace pago adelantado');
++select ok((run_daily_billing()->>'generated_invoices') is not null, 'PRIV staff ejecuta facturación manual');
++delete from invoices where concept='manual';
++select ok(not exists (select 1 from invoices where concept='manual'), 'PRIV staff borra factura');
++reset role;
++
++set role anon;
++do $$ begin
++  begin perform run_daily_billing(); raise exception 'anon pudo ejecutar run_daily_billing';
++  exception when insufficient_privilege then raise notice 'PASS  PRIV anon NO puede ejecutar run_daily_billing'; end;
++  begin perform pay_invoice(gen_random_uuid(),'Efectivo'); raise exception 'anon pudo ejecutar pay_invoice';
++  exception when insufficient_privilege then raise notice 'PASS  PRIV anon NO puede ejecutar pay_invoice'; end;
++  begin perform pay_advance_months(gen_random_uuid(),1,'Efectivo'); raise exception 'anon pudo ejecutar pay_advance_months';
++  exception when insufficient_privilege then raise notice 'PASS  PRIV anon NO puede ejecutar pay_advance_months'; end;
++end $$;
++reset role;
+diff --git a/supabase/tests/billing-scenarios.sql b/supabase/tests/billing-scenarios.sql
+new file mode 100644
+index 0000000..d2c0f54
+--- /dev/null
++++ b/supabase/tests/billing-scenarios.sql
+@@ -0,0 +1,145 @@
++-- Reloj simulado (SOLO para pruebas; no forma parte de la migración)
++create table test_clock(d date);
++insert into test_clock values ('2026-10-01');
++create or replace function billing_now() returns timestamp language sql stable as $$ select (select d from test_clock)::timestamp + time '10:00' $$;
++create or replace function setclock(p date) returns void language sql as $$ update test_clock set d = p $$;
++
++create or replace function ok(cond boolean, msg text) returns void language plpgsql as $$
++begin if cond then raise notice 'PASS  %', msg; else raise exception 'FAIL  %', msg; end if; end $$;
++
++insert into plans (id,name,duration_days,price,type) values
++ ('aaaaaaaa-0000-0000-0000-000000000001','Mensual 20',30,20,'Mensual'),
++ ('aaaaaaaa-0000-0000-0000-000000000002','Trimestral 50',90,50,'Trimestral'),
++ ('aaaaaaaa-0000-0000-0000-000000000003','Mensual 30',30,30,'Mensual'),
++ ('aaaaaaaa-0000-0000-0000-000000000004','Visita',1,5,'Visita');
++
++-- Datos de usuarios de prueba
++insert into users (id,member_number,name,email,status) values
++ ('bbbbbbbb-0000-0000-0000-00000000000a','T-A','Ana','a@x','Activo'),
++ ('bbbbbbbb-0000-0000-0000-00000000000b','T-B','Beto','b@x','Activo'),
++ ('bbbbbbbb-0000-0000-0000-00000000000c','T-C','Carla','c@x','Activo'),
++ ('bbbbbbbb-0000-0000-0000-00000000000d','T-D','Dario','d@x','Activo'),
++ ('bbbbbbbb-0000-0000-0000-00000000000e','T-E','Eva (gratis)','e@x','Activo'),
++ ('bbbbbbbb-0000-0000-0000-00000000000f','T-F','Fede','f@x','Inactivo'),
++ ('bbbbbbbb-0000-0000-0000-000000000010','T-G','Gina','g@x','Activo');
++update users set is_free_user=true where name like 'Eva%';
++
++-- T1: alta con plan => UNA sola factura (antes: 2-3 duplicadas), concepto en español, sin espacios extra
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000001' where name='Ana';
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')=1, 'T1 alta con plan genera 1 sola factura');
++select ok((select concept from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')='Mensual 20 - Octubre 2026', 'T1 concepto en español sin relleno');
++select ok((select due_date from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')='2026-10-01', 'T1 vence el día 1');
++select ok((select next_payment from users where name='Ana')='2026-10-01', 'T1 next_payment = vencimiento de la factura impaga');
++
++-- T2: pago => payment enlazado, next_payment = 1-nov, paid_until = 1-oct
++select pay_invoice((select id from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a'), 'Pago Móvil', 'REF1');
++select ok((select count(*) from payments where user_id='bbbbbbbb-0000-0000-0000-00000000000a')=1, 'T2 pago con "Pago Móvil" registrado en payments (antes fallaba en silencio)');
++select ok((select payment_id is not null from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a'), 'T2 factura enlazada a su pago');
++select ok((select next_payment from users where name='Ana')='2026-11-01', 'T2 next_payment = 1-nov (no 31-oct)');
++select ok((select paid_until from users where name='Ana')='2026-10-01', 'T2 paid_until = último periodo pagado');
++
++-- T3: doble click / doble pago => error, sin pago duplicado
++do $$ begin
++  begin perform pay_invoice((select id from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a'),'Efectivo'); raise exception 'no debió pagar';
++  exception when others then if sqlerrm like '%ya está pagada%' then raise notice 'PASS  T3 segundo pago rechazado'; else raise; end if; end;
++end $$;
++select ok((select count(*) from payments where user_id='bbbbbbbb-0000-0000-0000-00000000000a')=1, 'T3 sigue habiendo 1 solo pago');
++
++-- T4: el mismo día corre el cron: no se genera nada nuevo ni se pierde next_payment (bug: quedaba NULL)
++select run_daily_billing();
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')=1, 'T4 cron el mismo día no duplica');
++select ok((select next_payment from users where name='Ana') is not null, 'T4 next_payment NO queda NULL tras pagar');
++
++-- T5: llega noviembre => la facturación recurrente CONTINÚA tras haber pagado
++select setclock('2026-11-01'); select run_daily_billing();
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')=2, 'T5 el 1-nov se genera la factura de noviembre');
++select ok((select max(due_date) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')='2026-11-01', 'T5 vence 1-nov (sin desfase de 30 días)');
++select ok((select status from users where name='Ana')='Activo', 'T5 sigue Activo (pagó octubre)');
++select run_daily_billing();
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')=2, 'T5 idempotente: correr el cron 2 veces no duplica');
++
++-- T6: no paga noviembre => 3-dic: Vencida (UNA sola, sin copia), suspendido, sin factura de diciembre
++select setclock('2026-11-02'); select run_daily_billing();
++select ok((select count(*) filter (where status='Vencida') from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')=1, 'T6 Pendiente pasa a Vencida (no se inserta copia)');
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a' and due_date='2026-11-01')=1, 'T6 una sola factura para noviembre');
++select ok((select status from users where name='Ana')='Suspendido', 'T6 usuario suspendido');
++select setclock('2026-12-03'); select run_daily_billing();
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a')=2, 'T6 suspendido no acumula facturas nuevas');
++
++-- T7: paga la vencida => se reactiva y se factura el mes actual (diciembre)
++select pay_invoice((select id from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a' and status='Vencida'), 'Efectivo');
++select ok((select status from users where name='Ana')='Activo', 'T7 se reactiva al saldar lo vencido');
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000a' and due_date='2026-12-01' and status='Pendiente')=1, 'T7 se factura diciembre (no se cobra el periodo suspendido)');
++select ok((select next_payment from users where name='Ana')='2026-12-01', 'T7 next_payment = 1-dic');
++
++-- T8: pago adelantado de 3 meses con UNA sola pendiente => paga 1 existente y CREA 2 (antes pagaba 1 y avisaba "3")
++select setclock('2026-10-01');
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000001' where name='Beto';
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000b')=1, 'T8 Beto parte con 1 pendiente');
++select ok((select (pay_advance_months('bbbbbbbb-0000-0000-0000-00000000000b',3,'Transferencia','TR-99'))->>'paid')::int=3, 'T8 pago adelantado devuelve paid=3');
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000b' and status='Pagada')=3, 'T8 3 facturas Pagadas');
++select ok((select array_agg(to_char(due_date,'YYYY-MM-DD') order by due_date) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000b')=array['2026-10-01','2026-11-01','2026-12-01'], 'T8 octubre, noviembre y diciembre (3 meses calendario distintos)');
++select ok((select count(*) from payments where user_id='bbbbbbbb-0000-0000-0000-00000000000b')=3, 'T8 3 pagos en payments (ahora cuentan en estadísticas)');
++select ok((select paid_until from users where name='Beto')='2026-12-01', 'T8 paid_until = 1-dic');
++select ok((select next_payment from users where name='Beto')='2027-01-01', 'T8 next_payment = 1-ene (no NULL)');
++-- y el cron NO factura periodos ya pagados
++select setclock('2026-11-15'); select run_daily_billing();
++select setclock('2026-12-20'); select run_daily_billing();
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000b')=3, 'T8 cron no re-factura el periodo prepagado');
++select setclock('2027-01-01'); select run_daily_billing();
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000b' and due_date='2027-01-01' and status='Pendiente')=1, 'T8 al terminar el adelanto, aparece enero');
++select ok((select status from users where name='Beto')='Activo', 'T8 sigue Activo durante el adelanto');
++
++-- T9: plan trimestral = 3 meses calendario
++select setclock('2026-10-01');
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000002' where name='Carla';
++select pay_invoice((select id from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000c'),'Tarjeta');
++select ok((select next_payment from users where name='Carla')='2027-01-01', 'T9 trimestral: siguiente vencimiento 1-ene');
++
++-- T10: cambio de plan a mitad de mes => reemplaza la pendiente, una sola factura del mes
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000001' where name='Dario';
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000003' where name='Dario';
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000d')=1, 'T10 cambio de plan: una sola factura del mes');
++select ok((select amount from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000d')=30, 'T10 la factura es del plan nuevo');
++-- si el mes ya estaba pagado con el plan anterior, el cambio no cobra dos veces
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000001' where name='Gina';
++select pay_invoice((select id from invoices where user_id='bbbbbbbb-0000-0000-0000-000000000010'),'Efectivo');
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000003' where name='Gina';
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-000000000010' and due_date='2026-10-01')=1, 'T10 mes ya pagado: el cambio de plan no cobra otra vez');
++
++-- T11: usuario gratuito => sin facturas ni suspensión
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000001' where name like 'Eva%';
++select setclock('2026-12-10'); select run_daily_billing();
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000e')=0, 'T11 usuario gratuito: 0 facturas');
++select ok((select status from users where name like 'Eva%')='Activo', 'T11 usuario gratuito no se suspende');
++
++-- T12: reactivación Inactivo -> Activo: se resetea y se factura el mes actual
++select setclock('2026-10-01');
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000001' where name='Fede';   -- inactivo: no factura
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000f')=0, 'T12 usuario Inactivo no se factura');
++update users set status='Activo' where name='Fede';
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000f' and status='Pendiente')=1, 'T12 al reactivar se factura el mes actual');
++
++-- T13: borrar una factura pagada => se borra su pago y se recalculan las fechas (antes: pagos huérfanos y fechas falsas)
++select setclock('2026-10-01');
++delete from invoices where user_id='bbbbbbbb-0000-0000-0000-000000000010' and status='Pagada';
++select ok((select count(*) from payments where user_id='bbbbbbbb-0000-0000-0000-000000000010')=0, 'T13 borrar factura pagada elimina su pago (no quedan huérfanos)');
++select ok((select paid_until from users where name='Gina') is null, 'T13 paid_until recalculado tras borrar');
++
++-- T14: pago con fecha pasada (UserDetail) y método inválido
++select pay_invoice((select id from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000f'),'Efectivo',null,null,'2026-09-28 15:00');
++select ok((select date::date from payments where user_id='bbbbbbbb-0000-0000-0000-00000000000f')='2026-09-28', 'T14 pago con fecha personalizada');
++do $$ begin
++  begin perform pay_invoice((select id from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000d'),'Bitcoin'); raise exception 'no debió aceptar';
++  exception when check_violation then raise notice 'PASS  T14 método inválido rechazado y revertido'; end;
++end $$;
++select ok((select status from invoices where user_id='bbbbbbbb-0000-0000-0000-00000000000d')<>'Pagada' and (select count(*) from payments where user_id='bbbbbbbb-0000-0000-0000-00000000000d')=0, 'T14 tras el error la factura NO quedó pagada y no hay pago (transaccional)');
++
++-- T15: numeración sin colisiones (secuencia única)
++select ok((select count(distinct invoice_number)=count(*) from invoices), 'T15 todos los números de factura son únicos');
++select ok(generate_invoice_number() <> all (select invoice_number from invoices), 'T15 el siguiente número no choca con uno existente');
++
++-- T16: plan "Visita" = una sola factura
++update users set plan_id='aaaaaaaa-0000-0000-0000-000000000004' where name='Gina';
++select setclock('2026-11-20'); select run_daily_billing();
++select ok((select count(*) from invoices where user_id='bbbbbbbb-0000-0000-0000-000000000010' and plan_id='aaaaaaaa-0000-0000-0000-000000000004')=1, 'T16 plan Visita no es recurrente');
+-- 
+2.43.0
+
