@@ -121,11 +121,49 @@ export function Billing() {
   const [cobroReference, setCobroReference] = useState('');
   const [cobroConcept, setCobroConcept] = useState('');
   const [cobroNotes, setCobroNotes] = useState('');
-  const [cobroUserSearch, setCobroUserSearch] = useState('');
+const [cobroUserSearch, setCobroUserSearch] = useState('');
   const [cobroUserDropdownOpen, setCobroUserDropdownOpen] = useState(false);
   const [cobroErrors, setCobroErrors] = useState<Record<string, string>>({});
   const [selectedUserPlan, setSelectedUserPlan] = useState('');
-
+  
+  // Pago adelantado
+  const [advancePaymentOpen, setAdvancePaymentOpen] = useState(false);
+  const [advanceUserId, setAdvanceUserId] = useState('');
+  const [advanceMonths, setAdvanceMonths] = useState(1);
+  const [advanceMethod, setAdvanceMethod] = useState('Efectivo');
+  const [advanceReference, setAdvanceReference] = useState('');
+  const [advanceLoading, setAdvanceLoading] = useState(false);
+  
+  const handleAdvancePayment = async () => {
+    if (!advanceUserId || !advanceMonths) {
+      toast.error('Selecciona usuario y meses');
+      return;
+    }
+    
+    setAdvanceLoading(true);
+    try {
+      const { error } = await supabase.rpc('pay_advance_months', {
+        p_user_id: advanceUserId,
+        p_months: advanceMonths,
+        p_method: advanceMethod,
+        p_reference: advanceReference || `Pago adelantado ${advanceMonths} meses`,
+      });
+      
+      if (error) throw error;
+      
+      toast.success(`${advanceMonths} mes(es) pagado(s) por adelantado`);
+      setAdvancePaymentOpen(false);
+      setAdvanceUserId('');
+      setAdvanceMonths(1);
+      setAdvanceMethod('Efectivo');
+      setAdvanceReference('');
+    } catch (err: any) {
+      toast.error('Error en pago adelantado', { description: err.message });
+    } finally {
+      setAdvanceLoading(false);
+    }
+  };
+  
   // Calcular due_date = primer día del mes actual (mes que se paga)
   useEffect(() => {
     if (cobroDate) {
@@ -439,6 +477,15 @@ export function Billing() {
           >
             <Plus className="w-4 h-4 mr-2" />
             Registrar Cobro
+          </Button>
+          <Button
+            variant="outline"
+            className="border-[#0ea5e9] text-[#0ea5e9] hover:bg-[#0ea5e9]/10"
+            onClick={() => { setAdvanceUserId(''); setAdvanceMonths(1); setAdvanceMethod('Efectivo'); setAdvanceReference(''); setAdvancePaymentOpen(true); }}
+            data-testid="btn-pago-adelantado"
+          >
+            <CreditCard className="w-4 h-4 mr-2" />
+            Pago Adelantado
           </Button>
         </div>
       </div>
@@ -1147,7 +1194,6 @@ export function Billing() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Modal Impresión */}
       {printInvoice && (
         <PrintInvoice
           invoice={printInvoice.invoice}
@@ -1157,6 +1203,89 @@ export function Billing() {
           onClose={() => setPrintInvoice(null)}
         />
       )}
+
+      {/* Pago Adelantado Dialog */}
+      <Dialog open={advancePaymentOpen} onOpenChange={setAdvancePaymentOpen}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pago Adelantado</DialogTitle>
+            <DialogDescription>
+              Pagar varias mensualidades por adelantado
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="advance-user">Usuario <span className="text-[#ff3b5c]">*</span></Label>
+              <select
+                id="advance-user"
+                value={advanceUserId}
+                onChange={(e) => setAdvanceUserId(e.target.value)}
+                className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
+                data-testid="advance-select-user"
+              >
+                <option value="">Seleccionar usuario</option>
+                {users?.map((user: any) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name} - {user.plan || user.membership_type || 'Sin plan'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="advance-months">Meses a pagar <span className="text-[#ff3b5c]">*</span></Label>
+              <Input
+                id="advance-months"
+                type="number"
+                min="1"
+                max="12"
+                value={advanceMonths}
+                onChange={(e) => setAdvanceMonths(parseInt(e.target.value) || 1)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label htmlFor="advance-method">Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
+              <select
+                id="advance-method"
+                value={advanceMethod}
+                onChange={(e) => setAdvanceMethod(e.target.value)}
+                className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
+              >
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Tarjeta">Tarjeta</option>
+                <option value="Pago Móvil">Pago Móvil</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="advance-reference">Referencia (Opcional)</Label>
+              <Input
+                id="advance-reference"
+                value={advanceReference}
+                onChange={(e) => setAdvanceReference(e.target.value)}
+                placeholder="Nro. de referencia"
+                className="bg-input border-border"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setAdvancePaymentOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold"
+                onClick={handleAdvancePayment}
+                disabled={advanceLoading}
+              >
+                {advanceLoading ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
+                ) : (
+                  <><Plus className="w-4 h-4 mr-2" />Confirmar Pago Adelantado</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

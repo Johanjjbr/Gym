@@ -61,6 +61,13 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   const [payReference, setPayReference] = useState('');
   const [payNotes, setPayNotes] = useState('');
   
+  // Pago adelantado
+  const [advancePaymentOpen, setAdvancePaymentOpen] = useState(false);
+  const [advanceMonths, setAdvanceMonths] = useState(1);
+  const [advanceMethod, setAdvanceMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
+  const [advanceReference, setAdvanceReference] = useState('');
+  const [advanceLoading, setAdvanceLoading] = useState(false);
+  
   // Estados para el formulario de progreso físico
   const [progressWeight, setProgressWeight] = useState('');
   const [progressBodyFat, setProgressBodyFat] = useState('');
@@ -286,6 +293,35 @@ setPaymentReference('');
         setPayNotes('');
       },
     });
+  };
+  
+  const handleAdvancePayment = async () => {
+    if (!advanceMonths || advanceMonths < 1 || advanceMonths > 12) {
+      toast.error('Meses debe estar entre 1 y 12');
+      return;
+    }
+    
+    setAdvanceLoading(true);
+    try {
+      const { error } = await supabase.rpc('pay_advance_months', {
+        p_user_id: id,
+        p_months: advanceMonths,
+        p_method: advanceMethod,
+        p_reference: advanceReference || `Pago adelantado ${advanceMonths} meses`,
+      });
+      
+      if (error) throw error;
+      
+      toast.success(`${advanceMonths} mes(es) pagado(s) por adelantado`);
+      setAdvancePaymentOpen(false);
+      setAdvanceMonths(1);
+      setAdvanceMethod('Efectivo');
+      setAdvanceReference('');
+    } catch (err: any) {
+      toast.error('Error en pago adelantado', { description: err.message });
+    } finally {
+      setAdvanceLoading(false);
+    }
   };
   
   const createProgress = () => {
@@ -966,6 +1002,15 @@ setPaymentReference('');
                   <Plus className="w-4 h-4 mr-1" />
                   Registrar Pago
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-[#0ea5e9] text-[#0ea5e9] hover:bg-[#0ea5e9]/10 ml-2"
+                  onClick={() => setAdvancePaymentOpen(true)}
+                >
+                  <CreditCard className="w-4 h-4 mr-1" />
+                  Pago Adelantado
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1533,6 +1578,75 @@ setPaymentReference('');
           </div>
         </DialogContent>
 </Dialog>
+
+      {/* Pago Adelantado Dialog */}
+      <Dialog open={advancePaymentOpen} onOpenChange={setAdvancePaymentOpen}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pago Adelantado</DialogTitle>
+            <DialogDescription>
+              Pagar varias mensualidades por adelantado para {user.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="advance-months-user">Meses a pagar <span className="text-[#ff3b5c]">*</span></Label>
+              <Input
+                id="advance-months-user"
+                type="number"
+                min="1"
+                max="12"
+                value={advanceMonths}
+                onChange={(e) => setAdvanceMonths(parseInt(e.target.value) || 1)}
+                className="bg-input border-border"
+              />
+            </div>
+            <div>
+              <Label htmlFor="advance-method-user">Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
+              <select
+                id="advance-method-user"
+                value={advanceMethod}
+                onChange={(e) => setAdvanceMethod(e.target.value)}
+                className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
+              >
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Tarjeta">Tarjeta</option>
+                <option value="Pago Móvil">Pago Móvil</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="advance-reference-user">Referencia (Opcional)</Label>
+              <Input
+                id="advance-reference-user"
+                value={advanceReference}
+                onChange={(e) => setAdvanceReference(e.target.value)}
+                placeholder="Nro. de referencia, transferencia, etc."
+                className="bg-input border-border"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setAdvancePaymentOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold"
+                onClick={handleAdvancePayment}
+                disabled={advanceLoading}
+              >
+                {advanceLoading ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
+                ) : (
+                  <><Plus className="w-4 h-4 mr-2" />Confirmar Pago Adelantado</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
