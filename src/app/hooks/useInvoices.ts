@@ -270,10 +270,11 @@ export function usePayInvoice() {
         // No lanzar error para no revertir el pago de la factura
       }
 
-      // Actualizar next_payment del usuario
+      // Actualizar paid_until y next_payment del usuario
       const { error: userError } = await supabase
         .from('users')
         .update({ 
+          paid_until: invoice.due_date,
           next_payment: nextPaymentDate.toISOString(),
           status: 'Activo'
         })
