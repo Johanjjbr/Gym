@@ -38,8 +38,7 @@ const PERMISSION_ACTIONS: { key: 'can_view' | 'can_create' | 'can_edit' | 'can_d
 ];
 
 export function AdminPermissions() {
-  const { user, is_super_admin } = useAuth();
-  const isSuperAdmin = is_super_admin === true;
+  const { user, isSuperAdmin } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<Map<string, RoleModulePermissionInput>>(new Map());

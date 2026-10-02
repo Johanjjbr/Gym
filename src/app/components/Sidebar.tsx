@@ -18,7 +18,7 @@ import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useModulePermissions } from '../hooks/useModulePermissions';
 
-const menuItems = [
+export const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: Users, label: 'Usuarios', path: '/usuarios' },
   { icon: CreditCard, label: 'Facturación', path: '/facturacion' },
@@ -44,13 +44,8 @@ export function Sidebar() {
     navigate('/login');
   };
 
-  const filteredMenuItems = menuItems.filter(item => {
-    // Si está cargando, mostrar solo items básicos para evitar flickering
-    if (isLoading) {
-      return ['/login', '/activar'].some(p => location.pathname.startsWith(p)) || item.path === '/';
-    }
-    return canViewModule(item.path);
-  });
+  // Mientras cargan los permisos no se muestra ningún item (evita mostrar y luego ocultar)
+  const filteredMenuItems = isLoading ? [] : menuItems.filter((item) => canViewModule(item.path));
 
   const getInitials = (name: string) => {
     return name
@@ -81,7 +76,7 @@ export function Sidebar() {
         <ul className="space-y-1">
           {filteredMenuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path;
+            const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path);
             
             return (
               <li key={item.path}>

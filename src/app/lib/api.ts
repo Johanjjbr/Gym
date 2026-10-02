@@ -1751,11 +1751,24 @@ export const modulePermissions = {
     can_delete?: boolean;
     gym_id?: string | null;
   }) => {
-    const { data, error } = await supabase
+    // Se busca la fila existente y se ACTUALIZA. (upsert con onConflict no
+    // detectaba el conflicto cuando gym_id es NULL y creaba duplicados.)
+    let lookup = supabase
       .from('role_module_permissions')
-      .upsert(permission, { onConflict: 'role,module_path,gym_id' })
-      .select()
-      .single();
+      .select('id')
+      .eq('role', permission.role)
+      .eq('module_path', permission.module_path);
+    lookup = permission.gym_id ? lookup.eq('gym_id', permission.gym_id) : lookup.is('gym_id', null);
+    const { data: existing, error: findError } = await lookup
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    if (findError) throw findError;
+
+    const values = { ...permission, gym_id: permission.gym_id ?? null, updated_at: new Date().toISOString() };
+    const query = existing?.[0]
+      ? supabase.from('role_module_permissions').update(values).eq('id', existing[0].id)
+      : supabase.from('role_module_permissions').insert(values);
+    const { data, error } = await query.select().single();
     if (error) throw error;
     return data;
   },

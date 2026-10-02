@@ -2,7 +2,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router';
 import { User, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Menu, X } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../contexts/AuthContext';
-import { ProtectedRoute } from '../components/ProtectedRoute';
+import { ModuleGuard, ProtectedRoute } from '../components/ProtectedRoute';
 import { useState } from 'react';
 
 const menuItems = [
@@ -39,7 +39,7 @@ export function UserLayout() {
   };
 
   return (
-    <ProtectedRoute allowedRoles={['Usuario']}>
+    <ProtectedRoute allowedRoles={['Usuario']} checkModule={false}>
       <div className="min-h-screen bg-background">
         {/* Mobile Header */}
         <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-[#0f0f16] border-b border-border">
@@ -155,7 +155,9 @@ export function UserLayout() {
           "lg:ml-64", // Margin left para desktop (sidebar width)
           "p-4 sm:p-6 lg:p-8"
         )}>
-          <Outlet />
+          <ModuleGuard>
+            <Outlet />
+          </ModuleGuard>
         </main>
       </div>
     </ProtectedRoute>

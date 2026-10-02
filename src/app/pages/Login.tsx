@@ -369,7 +369,7 @@ export function Login() {
             </Button>
           </form>
 
-          {mode === 'login' && (
+          {mode === 'login' && import.meta.env.DEV && (
             <div className="space-y-3">
               <button
                 type="button"

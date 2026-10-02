@@ -1,15 +1,19 @@
 import { Outlet } from 'react-router';
-import { Sidebar } from '../components/Sidebar';
+import { Sidebar, menuItems } from '../components/Sidebar';
 import { Toaster } from '../components/ui/sonner';
-import { ProtectedRoute } from '../components/ProtectedRoute';
+import { ModuleGuard, ProtectedRoute } from '../components/ProtectedRoute';
+
+const STAFF_PATHS = menuItems.map((m) => m.path);
 
 export function Layout() {
   return (
-    <ProtectedRoute allowedRoles={['Administrador', 'Entrenador', 'Recepción']}>
+    <ProtectedRoute allowedRoles={['Administrador', 'Entrenador', 'Recepción']} checkModule={false}>
       <div className="min-h-screen bg-background">
         <Sidebar />
         <main className="ml-64 p-8">
-          <Outlet />
+          <ModuleGuard fallbackPaths={STAFF_PATHS}>
+            <Outlet />
+          </ModuleGuard>
         </main>
         <Toaster position="bottom-right" richColors />
       </div>

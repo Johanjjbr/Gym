@@ -1,186 +1,115 @@
-import { Navigate, useLocation } from 'react-router';
+import type { ReactNode } from 'react';
+import { Navigate, useLocation, useNavigate } from 'react-router';
+import { Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useModulePermissions } from '../hooks/useModulePermissions';
-import { Loader2 } from 'lucide-react';
 import type { UserRole } from '../types';
 
 interface ProtectedRouteProps {
-  children: React.ReactNode;
+  children: ReactNode;
+  /** Roles que pueden entrar a este layout (personal vs. socios). */
   allowedRoles?: UserRole[];
-  modulePath?: string; // Ruta del módulo para validar permisos dinámicos
+  /** Ruta del módulo a validar; por defecto, la ruta actual. */
+  modulePath?: string;
+  /** false = validar solo sesión y rol (el módulo lo valida <ModuleGuard> dentro del layout). */
+  checkModule?: boolean;
 }
 
-export function ProtectedRoute({ children, allowedRoles, modulePath }: ProtectedRouteProps) {
+/**
+ * Orden de las comprobaciones:
+ *  1. sesión  -> si no hay, a /login
+ *  2. rol     -> un socio no entra al panel de personal (y viceversa)
+ *  3. módulo  -> tabla role_module_permissions (el super admin pasa siempre)
+ * Si los permisos no se pudieron cargar, se usa solo el rol (paso 2).
+ */
+export function ProtectedRoute({ children, allowedRoles, modulePath, checkModule = true }: ProtectedRouteProps) {
   const { isAuthenticated, isLoading, hasRole, user } = useAuth();
   const location = useLocation();
   const { canViewModule, isLoading: permissionsLoading, error: permissionsError } = useModulePermissions();
 
-  // Usar modulePath prop o la ruta actual
-  const pathToCheck = modulePath || location.pathname;
-
-  // Mostrar loading mientras verifica la sesión o permisos
-  // Si hay error en permisos, también mostramos loading y luego hacemos fallback
   if (isLoading || permissionsLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
           <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
-          <p className="text-gray-400">Verificando permisos...</p>
+          <p className="text-muted-foreground">Verificando permisos...</p>
         </div>
       </div>
     );
   }
 
-  // Si no está autenticado, redirigir a login
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  // Si hay error cargando permisos dinámicos, usar fallback a allowedRoles
+  if (allowedRoles && !hasRole(allowedRoles)) {
+    // Está logueado pero en el área equivocada: llevarlo a la suya
+    return <Navigate to={user?.role === 'Usuario' ? '/usuario/mi-entrenamiento' : '/'} replace />;
+  }
+
+  if (!checkModule) return <>{children}</>;
+
   if (permissionsError) {
-    console.warn('[ProtectedRoute] Error cargando permisos dinámicos, usando fallback de roles:', permissionsError);
-    
-    // Si se especificaron roles permitidos, verificar con hasRole
-    if (allowedRoles && !hasRole(allowedRoles)) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
-          <div className="text-center space-y-4 max-w-md">
-            <div className="p-4 bg-[#ff3b5c]/10 rounded-full inline-block">
-              <svg
-                className="h-12 w-12 text-[#ff3b5c]"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                />
-              </svg>
-            </div>
-            <h2 className="text-2xl font-bold text-white">Acceso Denegado</h2>
-            <p className="text-gray-400">
-              No tienes permisos para acceder a esta sección.
-            </p>
-            <button
-              onClick={() => window.history.back()}
-              className="mt-4 px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-            >
-              Volver
-            </button>
-          </div>
-        </div>
-      );
-    }
-    
-    // Si no hay allowedRoles o tiene el rol, permitir acceso
+    console.warn('[ProtectedRoute] No se pudieron cargar los permisos; se usa solo el rol.', permissionsError);
     return <>{children}</>;
   }
 
-  // Verificar permisos por módulo (nueva lógica dinámica)
-  // Solo verificar rutas que están en menuPathsToCheck (rutas reales de la app)
-  const shouldCheckModulePermission = menuPathsToCheck.some(p => pathToCheck.startsWith(p));
-  
-  if (shouldCheckModulePermission && !canViewModule(pathToCheck)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="p-4 bg-[#ff3b5c]/10 rounded-full inline-block">
-            <svg
-              className="h-12 w-12 text-[#ff3b5c]"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold text-white">Acceso Denegado</h2>
-          <p className="text-gray-400">
-            No tienes permisos para acceder a esta sección.
-          </p>
-          <button
-            onClick={() => window.history.back()}
-            className="mt-4 px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-          >
-            Volver
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Fallback: verificación por roles (compatibilidad hacia atrás)
-  // Solo se ejecuta si no se debe verificar por módulo O si el módulo no está en la lista
-  if (allowedRoles && !hasRole(allowedRoles)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="p-4 bg-[#ff3b5c]/10 rounded-full inline-block">
-            <svg
-              className="h-12 w-12 text-[#ff3b5c]"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold text-white">Acceso Denegado</h2>
-          <p className="text-gray-400">
-            No tienes permisos para acceder a esta sección.
-          </p>
-          <button
-            onClick={() => window.history.back()}
-            className="mt-4 px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-          >
-            Volver
-          </button>
-        </div>
-      </div>
-    );
+  if (!canViewModule(modulePath || location.pathname)) {
+    return <AccessDenied />;
   }
 
   return <>{children}</>;
 }
 
-// Rutas reales de la aplicación que deben validarse con permisos dinámicos
-// Basado en routes.ts actual
-const menuPathsToCheck = [
-  // Rutas staff (Layout principal)
-  '/',
-  '/usuarios',
-  '/facturacion',
-  '/personal',
-  '/asistencia',
-  '/rutinas',
-  '/rutinas/crear',
-  '/rutinas/:id/editar',
-  '/mi-entrenamiento',
-  '/reportes',
-  '/admin/permisos',
-  // Rutas usuario (UserLayout)
-  '/usuario/mi-entrenamiento',
-  '/usuario/rutinas',
-  '/usuario/rutinas/crear',
-  '/usuario/mi-perfil',
-  '/usuario/progreso',
-  '/usuario/asistencia',
-  '/usuario/pagos',
-  '/usuario/valorar-gimnasio',
-  '/usuario/diagnostico-rutina',
-  '/usuario/migrar-rutinas',
-  '/usuario/debug-asignaciones',
-];
+/**
+ * Valida el permiso del módulo de la ruta actual DENTRO del layout, para que el
+ * menú lateral siga visible si una sección está denegada.
+ */
+export function ModuleGuard({ children, fallbackPaths = [] }: { children: ReactNode; fallbackPaths?: string[] }) {
+  const location = useLocation();
+  const { canViewModule, error } = useModulePermissions();
+
+  if (error) return <>{children}</>;
+  if (canViewModule(location.pathname)) return <>{children}</>;
+
+  // Si el inicio no está permitido para el rol, ir a la primera sección que sí lo esté
+  if (location.pathname === '/') {
+    const first = fallbackPaths.find((p) => p !== '/' && canViewModule(p));
+    if (first) return <Navigate to={first} replace />;
+  }
+  return <AccessDenied />;
+}
+
+function AccessDenied() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const home = user?.role === 'Usuario' ? '/usuario/mi-entrenamiento' : '/';
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center p-4">
+      <div className="text-center space-y-4 max-w-md">
+        <div className="p-4 bg-[#ff3b5c]/10 rounded-full inline-block">
+          <ShieldAlert className="h-12 w-12 text-[#ff3b5c]" aria-hidden />
+        </div>
+        <h2 className="text-2xl font-bold">Acceso denegado</h2>
+        <p className="text-muted-foreground">
+          Tu rol ({user?.role}) no tiene permiso para ver esta sección. Si crees que es un error, pide a un administrador que lo
+          revise en Admin Permisos.
+        </p>
+        <div className="flex justify-center gap-2">
+          <button
+            onClick={() => navigate(-1)}
+            className="px-5 py-2 bg-muted hover:bg-muted/80 rounded-lg transition-colors"
+          >
+            Volver
+          </button>
+          <button
+            onClick={() => navigate(home)}
+            className="px-5 py-2 bg-primary text-primary-foreground rounded-lg transition-colors"
+          >
+            Ir al inicio
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
