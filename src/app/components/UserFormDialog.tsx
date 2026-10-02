@@ -12,7 +12,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronDown, HeartPulse, IdCard, Info, Loader2, Phone, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
-import { userSchema, type UserFormData } from '../lib/validations';
+import { userSchema, type UserFormData, type UserFormInput } from '../lib/validations';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
 import { usePlans } from '../hooks/usePlans';
 import { findDuplicateMember } from '../hooks/useMembers';
@@ -24,6 +24,7 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { formatMoney, toDateOnly } from '../lib/dashboardHelpers';
+import { ageOn, birthDateError, maskDate, normalizeHeight, parseDateInput, toDisplayDate } from '../lib/memberFields';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -82,7 +83,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
             email: user.email ?? '',
             cedula: user.cedula ?? '',
             phone: user.phone ?? '',
-            birth_date: toInputDate(user.birth_date),
+            birth_date: toDisplayDate(toInputDate(user.birth_date) || user.birth_date),
             gender: user.gender ?? '',
             address: user.address ?? '',
             emergency_contact: user.emergency_contact ?? '',
@@ -103,7 +104,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   const {
     register, handleSubmit, reset, control, watch, setError,
     formState: { errors, isSubmitting },
-  } = useForm<UserFormData>({ resolver: zodResolver(userSchema), defaultValues: defaults as any });
+  } = useForm<UserFormInput, unknown, UserFormData>({ resolver: zodResolver(userSchema), defaultValues: defaults as any, mode: 'onTouched' });
 
   // Cargar los datos cada vez que se abre (los Select ahora son controlados: se ven al editar)
   useEffect(() => {
@@ -115,7 +116,10 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
   const planId = watch('plan_id');
   const isFree = watch('is_free_user');
-  const currentBmi = bmi(watch('weight'), watch('height'));
+  const currentBmi = bmi(watch('weight'), normalizeHeight(Number(String(watch('height') ?? '').replace(',', '.')) || undefined));
+  const birthText = watch('birth_date') as string | undefined;
+  const birthIso = parseDateInput(birthText);
+  const birthHint = birthIso && !birthDateError(birthText, today) ? `${ageOn(birthIso, today)} años` : 'Opcional';
 
   const onSubmit = async (data: UserFormData) => {
     // 1) Duplicados con mensaje claro
@@ -131,22 +135,23 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
     const plan = plans.find((p: any) => p.id === data.plan_id);
     const payload: Record<string, unknown> = {
-      name: data.name.trim(),
-      email: data.email.trim().toLowerCase(),
-      cedula: data.cedula.trim(),
-      phone: data.phone.trim(),
+      // El schema ya normaliza: espacios, email en minúsculas, cédula solo dígitos, teléfono 0414-1234567
+      name: data.name,
+      email: data.email,
+      cedula: data.cedula,
+      phone: data.phone,
       birth_date: emptyToNull(data.birth_date),
       gender: emptyToNull(data.gender), // '' violaría el CHECK de la base
-      address: emptyToNull(data.address),
-      emergency_contact: emptyToNull(data.emergency_contact),
+      address: emptyToNull(data.address?.trim()),
+      emergency_contact: emptyToNull(data.emergency_contact?.trim()),
       plan_id: emptyToNull(data.plan_id),
       plan: plan?.name ?? null,
       is_free_user: data.is_free_user === true,
       weight: data.weight ?? null,
       height: data.height ?? null,
       imc: bmi(data.weight, data.height),
-      notes: emptyToNull(data.notes),
-      medical_notes: emptyToNull(data.medical_notes),
+      notes: emptyToNull(data.notes?.trim()),
+      medical_notes: emptyToNull(data.medical_notes?.trim()),
     };
     // El estado Suspendido no se toca desde aquí
     if (!isSuspended) payload.status = data.status === 'Inactivo' ? 'Inactivo' : 'Activo';
@@ -186,11 +191,29 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
               <Field label="Nombre completo" required error={errors.name?.message} className="sm:col-span-2">
                 <Input {...register('name')} autoComplete="off" placeholder="Nombre y apellido" autoFocus={!isEdit} />
               </Field>
-              <Field label="Cédula" required error={errors.cedula?.message} hint="Solo números">
-                <Input {...register('cedula')} inputMode="numeric" placeholder="12345678" />
+              <Field label="Cédula" required error={errors.cedula?.message} hint="Se guardan solo los números">
+                <Input {...register('cedula')} inputMode="numeric" placeholder="V-12345678" autoComplete="off" />
               </Field>
-              <Field label="Fecha de nacimiento" error={errors.birth_date?.message}>
-                <Input type="date" max={today} {...register('birth_date')} />
+              <Field label="Fecha de nacimiento" error={errors.birth_date?.message} hint={birthHint}>
+                <Controller
+                  control={control}
+                  name="birth_date"
+                  render={({ field }) => (
+                    <Input
+                      name={field.name}
+                      ref={field.ref}
+                      value={(field.value as string | undefined) ?? ''}
+                      onChange={(e) => field.onChange(maskDate(e.target.value))}
+                      onBlur={field.onBlur}
+                      inputMode="numeric"
+                      placeholder="DD/MM/AAAA"
+                      maxLength={10}
+                      autoComplete="off"
+                      aria-invalid={!!errors.birth_date}
+                      data-testid="input-birth-date"
+                    />
+                  )}
+                />
               </Field>
               <Field label="Género" className="sm:col-span-2">
                 <Controller
@@ -210,7 +233,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
             <Section icon={Phone} title="Contacto">
               <Field label="Teléfono" required error={errors.phone?.message}>
-                <Input {...register('phone')} inputMode="tel" placeholder="0414-1234567" />
+                <Input {...register('phone')} inputMode="tel" placeholder="0414-1234567" autoComplete="off" />
               </Field>
               <Field label="Email" required error={errors.email?.message} hint="Para activar su cuenta en la app">
                 <Input type="email" {...register('email')} placeholder="nombre@correo.com" autoComplete="off" />
@@ -270,7 +293,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                 </Field>
               ) : (
                 <Field label="Fecha de inicio" error={errors.start_date?.message} hint="La primera factura es la del mes en curso">
-                  <Input type="date" {...register('start_date')} />
+                  <Input type="date" min="2000-01-01" {...register('start_date')} />
                 </Field>
               )}
 
@@ -334,7 +357,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                     <Input type="number" step="0.1" inputMode="decimal" {...register('weight')} placeholder="70" />
                   </Field>
                   <Field label="Estatura (cm)" error={errors.height?.message}>
-                    <Input type="number" step="0.1" inputMode="decimal" {...register('height')} placeholder="175" />
+                    <Input type="number" step="0.1" inputMode="decimal" {...register('height')} placeholder="175" title="En centímetros; si escribes 1.75 se convierte a 175" />
                   </Field>
                   <Field label="IMC">
                     <div className="flex h-9 items-center text-sm">

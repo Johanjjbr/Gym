@@ -13,6 +13,7 @@ import { DeleteInvoiceDialog, InvoicePrint, InvoiceRowMenu, StatusBadge, useCanD
 import type { MemberAccount } from '../../hooks/useMemberAccount';
 import { effectiveStatus, fmtDate, monthLabel, type InvoiceRow } from '../../lib/billing';
 import { formatMoney } from '../../lib/dashboardHelpers';
+import { formatBs } from '../../lib/currency';
 
 const INITIAL_ROWS = 12;
 
@@ -102,7 +103,7 @@ export function MemberPaymentsTab({ account, invoices, loading }: { account: Mem
                           {st === 'Pagada' ? (
                             <>
                               <span className="block text-foreground tabular-nums">{fmtDate(inv.paid_at)}</span>
-                              <span className="block text-xs">{[inv.method, inv.reference].filter(Boolean).join(' · ')}</span>
+                              <span className="block text-xs">{[inv.method, inv.payments?.currency === 'VES' && inv.payments.amount_original != null && formatBs(Number(inv.payments.amount_original)), inv.reference && `Ref. ${inv.reference}`].filter(Boolean).join(' · ')}</span>
                             </>
                           ) : (
                             '—'

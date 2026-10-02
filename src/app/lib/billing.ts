@@ -22,6 +22,8 @@ export interface InvoiceRow {
   notes?: string | null;
   created_at?: string | null;
   payment_id?: string | null;
+  /** Cómo se cobró (embebido desde payments vía payment_id) */
+  payments?: { currency?: string | null; amount_original?: number | string | null; exchange_rate?: number | string | null } | null;
 }
 
 export interface PlanRow {
@@ -37,8 +39,7 @@ export const MONTHS_ES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
-export const PAYMENT_METHODS = ['Efectivo', 'Transferencia', 'Pago Móvil', 'Tarjeta'] as const;
-export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+export { PAYMENT_METHODS, type PaymentMethod } from './currency';
 
 export const dateOnly = (d: string) => d.slice(0, 10);
 

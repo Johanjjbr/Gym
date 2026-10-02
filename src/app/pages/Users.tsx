@@ -7,6 +7,8 @@
  * Parámetros de URL: ?filtro=deuda  ·  ?q=texto
  */
 import { useEffect, useMemo, useState } from 'react';
+import { moneyWithBs } from '../lib/currency';
+import { useCurrentRate } from '../hooks/useExchangeRates';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
   AlertCircle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, MessageCircle, MoreHorizontal, Pencil, Plus,
@@ -58,6 +60,7 @@ export function Users() {
   const { canAccess } = useModulePermissions();
   const canDelete = canAccess('/usuarios', 'delete');
   const gym = useGymInfo();
+  const curRate = useCurrentRate();
 
   const quick = (QUICK_FILTERS.find((f) => f.key === params.get('filtro'))?.key ?? 'todos') as QuickFilter;
   const [search, setSearch] = useState(params.get('q') ?? '');
@@ -101,13 +104,14 @@ export function Users() {
   };
 
   const notify = async (r: MemberRow) => {
+    const remindMoney = moneyWithBs(curRate.rate, curRate.state === 'today');
     const own = (data?.invoices ?? []).filter((i) => i.user_id === r.user.id);
     const debt = membersWithDebt(own, today)[0];
     const message =
       r.payment === 'overdue' && debt
-        ? overdueReminderText(r.user.name, debt, gym.name, formatMoney)
+        ? overdueReminderText(r.user.name, debt, gym.name, remindMoney)
         : r.nextDue && r.nextAmount !== null
-          ? upcomingReminderText(r.user.name, { due: r.nextDue, amount: r.nextAmount }, gym.name, formatMoney)
+          ? upcomingReminderText(r.user.name, { due: r.nextDue, amount: r.nextAmount }, gym.name, remindMoney)
           : null;
     if (!message) return;
     const number = whatsappNumber(r.user.phone);

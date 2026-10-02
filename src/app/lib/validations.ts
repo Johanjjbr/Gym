@@ -4,6 +4,21 @@
  */
 
 import { z } from 'zod';
+import {
+  birthDateError, cedulaError, cleanText, formatPhone, nameError, normalizeCedula, normalizeEmail,
+  normalizeHeight, parseDateInput, phoneError, startDateError,
+} from './memberFields';
+
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** Convierte un validador "(valor) => mensaje | null" en un superRefine de zod. */
+const refineWith = (check: (v: any) => string | null) => (v: unknown, ctx: z.RefinementCtx) => {
+  const msg = check(v as any);
+  if (msg) ctx.addIssue({ code: z.ZodIssueCode.custom, message: msg });
+};
 
 // =============================================
 // USUARIOS (Miembros del Gimnasio)
@@ -15,36 +30,27 @@ export const userSchema = z.object({
     .optional()
     .or(z.literal('')), // Completamente opcional, se genera automáticamente en el backend
   
-  name: z.string()
-    .min(2, 'El nombre debe tener al menos 2 caracteres')
-    .max(100, 'El nombre es demasiado largo'),
-  
-  email: z.string()
-    .email('Email inválido')
-    .max(255, 'Email demasiado largo'),
-  
-  cedula: z.string()
-    .min(1, 'La cédula es requerida')
-    .regex(/^\d+$/, 'La cédula debe contener solo números')
-    .max(20, 'Cédula demasiado larga'),
-  
-  phone: z.string()
-    .min(1, 'El teléfono es requerido')
-    .max(20, 'Teléfono demasiado largo'),
-  
+  name: z.string({ required_error: 'Escribe nombre y apellido' })
+    .transform(cleanText)
+    .superRefine(refineWith(nameError)),
+
+  email: z.string({ required_error: 'El email es requerido' })
+    .transform(normalizeEmail)
+    .pipe(z.string().min(1, 'El email es requerido').email('Email inválido (ej.: nombre@correo.com)').max(255, 'Email demasiado largo')),
+
+  cedula: z.string({ required_error: 'La cédula es requerida' })
+    .superRefine(refineWith(cedulaError))
+    .transform(normalizeCedula),
+
+  phone: z.string({ required_error: 'El teléfono es requerido' })
+    .superRefine(refineWith(phoneError))
+    .transform(formatPhone),
+
+  // Opcional. Se escribe DD/MM/AAAA; se guarda AAAA-MM-DD. Valida fecha real y edad razonable.
   birth_date: z.string()
     .optional()
-    .or(z.literal(''))
-    .transform((val) => {
-      if (!val || val === '') return undefined;
-      // Accept dd/mm/yyyy or yyyy-mm-dd
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
-        const [day, month, year] = val.split('/');
-        return `${year}-${month}-${day}`;
-      }
-      return val;
-    })
-    .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato DD/MM/YYYY').optional()),
+    .superRefine(refineWith((v) => birthDateError(v, todayStr())))
+    .transform((v) => parseDateInput(v) ?? undefined),
   
   gender: z.string()
     .max(20, 'Género demasiado largo')
@@ -77,15 +83,8 @@ plan: z.string()
   
   start_date: z.string()
     .optional()
-    .transform((val) => {
-      if (!val || val === '') return undefined;
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
-        const [day, month, year] = val.split('/');
-        return `${year}-${month}-${day}`;
-      }
-      return val;
-    })
-    .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato DD/MM/YYYY').optional()),
+    .superRefine(refineWith((v) => startDateError(v, todayStr())))
+    .transform((v) => parseDateInput(v) ?? undefined),
   
   next_payment: z.string()
     .optional()
@@ -100,15 +99,16 @@ plan: z.string()
     })
     .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha debe estar en formato DD/MM/YYYY').optional()),
   
-  weight: z.string()
+  weight: z.union([z.string(), z.number()])
     .optional()
-    .transform((val) => val === '' || !val ? undefined : parseFloat(val))
-    .pipe(z.number().positive('El peso debe ser positivo').max(500, 'Peso fuera de rango').optional()),
+    .transform((val) => (val === '' || val === undefined || val === null ? undefined : Number(String(val).replace(',', '.'))))
+    .pipe(z.number({ invalid_type_error: 'Peso inválido' }).min(20, 'Revisa el peso (kg)').max(400, 'Revisa el peso (kg)').optional()),
   
-  height: z.string()
+  // En centímetros; si la escriben en metros (1,75) se convierte.
+  height: z.union([z.string(), z.number()])
     .optional()
-    .transform((val) => val === '' || !val ? undefined : parseFloat(val))
-    .pipe(z.number().positive('La altura debe ser positiva').min(50, 'Altura mínima: 50cm').max(300, 'Altura máxima: 300cm').optional()),
+    .transform((val) => (val === '' || val === undefined || val === null ? undefined : normalizeHeight(Number(String(val).replace(',', '.')))))
+    .pipe(z.number({ invalid_type_error: 'Estatura inválida' }).min(80, 'Revisa la estatura (cm)').max(250, 'Revisa la estatura (cm)').optional()),
   
   imc: z.union([z.string(), z.number()])
     .optional()
@@ -133,6 +133,8 @@ plan: z.string()
 });
 
 export type UserFormData = z.infer<typeof userSchema>;
+/** Lo que escribe el usuario en el formulario (antes de normalizar). */
+export type UserFormInput = z.input<typeof userSchema>;
 
 // =============================================
 // DATOS FÍSICOS

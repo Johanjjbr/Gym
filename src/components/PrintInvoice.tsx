@@ -40,6 +40,8 @@ interface InvoiceData {
   notes?: string;
   items?: InvoiceItem[];
   paid_at?: string;
+  /** Si se cobró en bolívares: "Bs 4.906,00 · tasa 245,30" */
+  paid_label?: string;
 }
 
 interface PrintInvoiceProps {
@@ -190,6 +192,7 @@ export function PrintInvoice({
       <h4>Datos de Pago</h4>
       ${invoice.method ? `<p><span class="label">Método:</span> <span class="value">${invoice.method}</span></p>` : ''}
       ${invoice.reference ? `<p><span class="label">Referencia:</span> <span class="value">${invoice.reference}</span></p>` : ''}
+      ${invoice.paid_label ? `<p><span class="label">Cobrado:</span> <span class="value">${invoice.paid_label}</span></p>` : ''}
       ${invoice.paid_at ? `<p><span class="label">Pagado el:</span> <span class="value">${formatDate(invoice.paid_at)}</span></p>` : ''}
     </div>
   </div>

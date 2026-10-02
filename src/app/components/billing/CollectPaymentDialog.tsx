@@ -12,7 +12,10 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { usePayPeriods, type BillingMember } from '../../hooks/useInvoices';
-import { buildPaymentPlan, monthLabel, PAYMENT_METHODS, type InvoiceRow, type PaymentMethod } from '../../lib/billing';
+import { buildPaymentPlan, monthLabel, type InvoiceRow } from '../../lib/billing';
+import { formatBs, formatRate, methodCurrency, needsReference as methodNeedsReference, PAYMENT_METHODS, rateStatus, toBs, type PaymentMethod } from '../../lib/currency';
+import { useExchangeRates } from '../../hooks/useExchangeRates';
+import { ExchangeRateDialog } from './ExchangeRateButton';
 import { formatMoney, toDateOnly } from '../../lib/dashboardHelpers';
 
 interface Props {
@@ -32,7 +35,9 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
 
   const [userId, setUserId] = useState<string | null>(null);
   const [months, setMonths] = useState(1);
-  const [method, setMethod] = useState<PaymentMethod>('Efectivo');
+  const [method, setMethod] = useState<PaymentMethod>('Efectivo $');
+  const [rateOpen, setRateOpen] = useState(false);
+  const ratesQ = useExchangeRates();
   const [reference, setReference] = useState('');
   const [paidOn, setPaidOn] = useState(today);
   const [notes, setNotes] = useState('');
@@ -42,7 +47,7 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
   useEffect(() => {
     if (!open) return;
     setUserId(initialUserId ?? null);
-    setMethod('Efectivo');
+    setMethod('Efectivo $');
     setReference('');
     setPaidOn(toDateOnly(new Date()));
     setNotes('');
@@ -73,8 +78,13 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
           ? 'El plan del socio no tiene precio.'
           : null;
 
-  const needsReference = method === 'Transferencia' || method === 'Pago Móvil';
-  const canSubmit = !!member && !blocker && months >= 1 && !pay.isPending && paidOn <= today;
+  const needsReference = methodNeedsReference(method);
+  const currency = methodCurrency(method);
+  const rate = useMemo(() => rateStatus(ratesQ.data ?? [], paidOn), [ratesQ.data, paidOn]);
+  // Igual que el servidor: cada factura se convierte y redondea por separado
+  const totalBs = rate.rate ? plan.periods.reduce((a, p) => a + toBs(p.amount, rate.rate!), 0) : null;
+  const missingRate = currency === 'VES' && !ratesQ.isLoading && rate.state === 'missing';
+  const canSubmit = !!member && !blocker && months >= 1 && !pay.isPending && paidOn <= today && !(currency === 'VES' && !rate.rate);
 
   const submit = () => {
     if (!member || !canSubmit) return;
@@ -82,7 +92,8 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
       { user_id: member.id, months, method, reference, notes, paid_on: paidOn },
       {
         onSuccess: (r) => {
-          toast.success(`Cobrado ${formatMoney(Number(r.total))} a ${member.name}`, {
+          const bs = currency === 'VES' && totalBs !== null ? ` (${formatBs(totalBs)})` : '';
+          toast.success(`Cobrado ${formatMoney(Number(r.total))}${bs} a ${member.name}`, {
             description: `${r.paid} período${r.paid === 1 ? '' : 's'}${r.paid_until ? ` · al día hasta ${monthLabel(r.paid_until)}` : ''}`,
           });
           onOpenChange(false);
@@ -167,32 +178,55 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
                   <span className="text-sm text-muted-foreground">
                     {plan.coversThrough ? `Queda al día hasta ${monthLabel(plan.coversThrough)}` : ''}
                   </span>
-                  <span className="text-2xl font-semibold tabular-nums" data-testid="payment-total">
-                    {formatMoney(plan.total)}
+                  <span className="text-right">
+                    <span className="block text-2xl font-semibold tabular-nums" data-testid="payment-total">
+                      {formatMoney(plan.total)}
+                    </span>
+                    {currency === 'VES' && totalBs !== null && (
+                      <span className="block text-sm tabular-nums text-muted-foreground" data-testid="payment-total-bs">
+                        = <span className="font-semibold text-foreground">{formatBs(totalBs)}</span> · tasa {formatRate(rate.rate!)}
+                        {rate.state === 'recent' && ` del ${rate.rateDate!.slice(8, 10)}/${rate.rateDate!.slice(5, 7)}`}
+                      </span>
+                    )}
                   </span>
                 </div>
               </section>
 
-              {/* Método */}
+              {/* Método: define la moneda */}
               <section className="space-y-2">
                 <Label>Método de pago</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label="Método de pago">
-                  {PAYMENT_METHODS.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      role="radio"
-                      aria-checked={method === m}
-                      onClick={() => setMethod(m)}
-                      className={`h-10 rounded-lg border text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                        method === m ? 'border-[#10f94e] bg-[#10f94e]/10 text-[#10f94e]' : 'border-border hover:bg-muted'
-                      }`}
-                      data-testid={`method-${m}`}
-                    >
-                      {m}
-                    </button>
+                <div className="grid gap-3 sm:grid-cols-[2fr_3fr]" role="radiogroup" aria-label="Método de pago">
+                  {([['En dólares', PAYMENT_METHODS.filter((m) => methodCurrency(m) === 'USD')], ['En bolívares', PAYMENT_METHODS.filter((m) => methodCurrency(m) === 'VES')]] as const).map(([title, list]) => (
+                    <div key={title} className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">{title}</p>
+                      <div className={`grid gap-2 ${list.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                        {list.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            role="radio"
+                            aria-checked={method === m}
+                            onClick={() => setMethod(m)}
+                            className={`h-10 rounded-lg border px-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                              method === m ? 'border-[#10f94e] bg-[#10f94e]/10 text-[#10f94e]' : 'border-border hover:bg-muted'
+                            }`}
+                            data-testid={`method-${m}`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
+                {missingRate && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#ff3b5c]/30 bg-[#ff3b5c]/10 p-3 text-sm" role="alert">
+                    <span>
+                      No hay tasa BCV cargada{paidOn === today ? ' para hoy' : ` para el ${paidOn.split('-').reverse().join('/')}`}. Cárgala para cobrar en bolívares.
+                    </span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setRateOpen(true)}>Cargar tasa</Button>
+                  </div>
+                )}
               </section>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -250,12 +284,15 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
               ) : (
                 <>
                   <CheckCircle2 className="mr-2 h-4 w-4" />
-                  {member && !blocker ? `Cobrar ${formatMoney(plan.total)}` : 'Cobrar'}
+                  {member && !blocker
+                    ? `Cobrar ${currency === 'VES' && totalBs !== null ? formatBs(totalBs) : formatMoney(plan.total)}`
+                    : 'Cobrar'}
                 </>
               )}
             </Button>
           </div>
         </form>
+        <ExchangeRateDialog open={rateOpen} onOpenChange={setRateOpen} />
       </DialogContent>
     </Dialog>
   );

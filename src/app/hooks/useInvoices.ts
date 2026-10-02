@@ -20,7 +20,7 @@ export function useInvoices(params?: InvoiceParams) {
     queryFn: async () => {
       let query = supabase
         .from('invoices')
-        .select('*, plans(name)')
+        .select('*, plans(name), payments(currency, amount_original, exchange_rate)')
         .order('created_at', { ascending: false });
 
       if (params?.user_id) query = query.eq('user_id', params.user_id);
@@ -42,7 +42,7 @@ export function useUserInvoices(userId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('invoices')
-        .select('*, plans(name)')
+        .select('*, plans(name), payments(currency, amount_original, exchange_rate)')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -114,7 +114,7 @@ export function useCreateInvoice() {
       const dueDate = data.due_date || toDateOnly(new Date());
       const payArgs = (invoiceId: string) => ({
         p_invoice_id: invoiceId,
-        p_method: data.method || 'Efectivo',
+        p_method: data.method || 'Efectivo $',
         p_reference: data.reference ?? null,
         p_notes: data.notes ?? null,
         p_paid_at: data.paid_at ?? null,
@@ -354,7 +354,7 @@ export function usePaymentsSince(since: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payments')
-        .select('id, user_id, amount, date, method')
+        .select('id, user_id, amount, date, method, currency, amount_original')
         .eq('status', 'Pagado')
         .gte('date', since)
         .order('date', { ascending: false });

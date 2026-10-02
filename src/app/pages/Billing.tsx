@@ -22,6 +22,9 @@ import {
 } from '../lib/billing';
 import { DeleteInvoiceDialog, InvoicePrint, InvoiceRowMenu, NotifyButton, StatusBadge, useCanDeleteInvoice, useGymInfo } from '../components/billing/shared';
 import { formatMoney, monthStart, toDateOnly } from '../lib/dashboardHelpers';
+import { cashBreakdown, formatBs, moneyWithBs, paidAmountLabel } from '../lib/currency';
+import { useCurrentRate } from '../hooks/useExchangeRates';
+import { ExchangeRateButton } from '../components/billing/ExchangeRateButton';
 import { CollectPaymentDialog } from '../components/billing/CollectPaymentDialog';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -89,6 +92,12 @@ export function Billing() {
 
   // ---- Derivados
   const kpis = useMemo(() => billingKpis(invoices, paymentsQ.data ?? [], today), [invoices, paymentsQ.data, today]);
+  const curRate = useCurrentRate();
+  const remindMoney = moneyWithBs(curRate.rate, curRate.state === 'today');
+  const cash = useMemo(
+    () => cashBreakdown(((paymentsQ.data ?? []) as any[]).filter((p) => p.date.slice(0, 10) >= monthStart(today) && p.date.slice(0, 10) <= today)),
+    [paymentsQ.data, today],
+  );
   // Solo deuda VENCIDA; lo que vence pronto está en "Por vencer"
   const debtors = useMemo(() => membersWithDebt(invoices, today).filter((d) => d.overdueTotal > 0), [invoices, today]);
   const renewals = useMemo(() => upcomingRenewals(members, invoices, today), [members, invoices, today]);
@@ -136,7 +145,8 @@ export function Billing() {
           <h1 className="text-4xl mb-1">Facturación</h1>
           <p className="text-muted-foreground">Cobros, mensualidades y deudas</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ExchangeRateButton />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon" aria-label="Más acciones" data-testid="btn-more">
@@ -185,7 +195,11 @@ export function Billing() {
         <Kpi
           label="Cobrado este mes"
           value={formatMoney(kpis.collectedThisMonth)}
-          hint={`${kpis.paymentsThisMonth} pago${kpis.paymentsThisMonth === 1 ? '' : 's'} · ${monthLabel(today)}`}
+          hint={
+            kpis.paymentsThisMonth === 0
+              ? `Sin pagos · ${monthLabel(today)}`
+              : `${kpis.paymentsThisMonth} pago${kpis.paymentsThisMonth === 1 ? '' : 's'} · ${[cash.usd > 0 && `${formatMoney(cash.usd)} en divisas`, cash.ves > 0 && formatBs(cash.ves)].filter(Boolean).join(' + ')}`
+          }
           icon={Wallet}
           tone="green"
           loading={isInitialLoading || paymentsQ.isLoading}
@@ -336,7 +350,10 @@ export function Billing() {
                           <td className="px-4 py-3">
                             <StatusBadge status={st} />
                             {st === 'Pagada' && inv.paid_at && (
-                              <span className="block text-xs text-muted-foreground mt-0.5">{fmtDate(inv.paid_at)} · {inv.method}</span>
+                              <span className="block text-xs text-muted-foreground mt-0.5">
+                                {fmtDate(inv.paid_at)} · {inv.method}
+                                {inv.payments?.currency === 'VES' && inv.payments.amount_original != null && ` · ${formatBs(Number(inv.payments.amount_original))}`}
+                              </span>
                             )}
                           </td>
                           <td className="px-4 py-3 font-mono text-xs tabular-nums">
@@ -453,7 +470,7 @@ export function Billing() {
                           <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(d.total)}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-2">
-                              <NotifyButton phone={m?.phone} message={overdueReminderText(nameOf(d.user_id), d, gym.name, formatMoney)} />
+                              <NotifyButton phone={m?.phone} message={overdueReminderText(nameOf(d.user_id), d, gym.name, remindMoney)} />
                               <Button size="sm" className="bg-[#10f94e] text-black hover:bg-[#0ed145] h-8" onClick={() => setCollectFor(d.user_id)}>
                                 Cobrar
                               </Button>
@@ -517,7 +534,7 @@ export function Billing() {
                           <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(r.amount)}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-2">
-                              <NotifyButton phone={m?.phone} message={upcomingReminderText(nameOf(r.user_id), r, gym.name, formatMoney)} />
+                              <NotifyButton phone={m?.phone} message={upcomingReminderText(nameOf(r.user_id), r, gym.name, remindMoney)} />
                               <Button size="sm" variant="outline" className="h-8" onClick={() => setCollectFor(r.user_id)}>
                                 Cobrar
                               </Button>
@@ -559,6 +576,7 @@ export function Billing() {
                 <Field label="Vence" value={fmtDate(detail.due_date)} />
                 {detail.paid_at && <Field label="Pagada el" value={fmtDate(detail.paid_at)} />}
                 {detail.method && <Field label="Método" value={detail.method} />}
+                {detail.status === 'Pagada' && <Field label="Cobrado" value={paidAmountLabel(Number(detail.amount), detail.payments)} />}
                 {detail.reference && <Field label="Referencia" value={detail.reference} />}
                 {detail.invoice_number && <Field label="N° de factura" value={detail.invoice_number} />}
                 {detail.notes && <Field label="Notas" value={detail.notes} wide />}

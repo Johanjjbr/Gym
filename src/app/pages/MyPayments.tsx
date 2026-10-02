@@ -137,11 +137,7 @@ export function MyPayments() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-VE', {
-      style: 'currency',
-      currency: 'VES',
-      minimumFractionDigits: 2,
-    }).format(amount);
+    return `$${amount.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const getStatusBadge = (status: string) => {

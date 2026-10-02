@@ -57,7 +57,7 @@ export function billingPeriod(days: number, type?: string): { months: number | n
   return { months: null, days: Math.max(days, 1), once: false };
 }
 
-/** "Bs 20 / mes", "Bs 55 / 3 meses", "Bs 5 · pago único" */
+/** "$20 / mes", "$55 / 3 meses", "$5 · pago único" */
 export function priceLabel(price: number, days: number, type?: string): string {
   const p = billingPeriod(days, type);
   const money = formatMoney(price);

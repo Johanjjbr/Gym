@@ -62,6 +62,8 @@ export interface PaymentRow {
   amount: number | string;
   date: string;
   method?: string | null;
+  currency?: string | null;
+  amount_original?: number | string | null;
 }
 
 export interface PaymentInvoiceInfo {
@@ -306,8 +308,11 @@ export function memberSummary(users: MemberRow[], today: DateStr): MemberSummary
 // Formato
 // ---------------------------------------------------------------------------
 
+/** Montos en USD (moneda base): "$20" · "$20,50". */
 export function formatMoney(n: number): string {
-  return `Bs ${n.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const v = Math.round(n * 100) / 100;
+  const abs = Math.abs(v).toLocaleString('es-VE', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 });
+  return `${v < 0 ? '-' : ''}$${abs}`;
 }
 
 export function formatCompact(n: number): string {

@@ -18,6 +18,7 @@ import { useDeleteInvoice } from '../../hooks/useInvoices';
 import { useModulePermissions } from '../../hooks/useModulePermissions';
 import { effectiveStatus, fmtDate, isOpen, whatsappNumber, whatsappUrl, type InvoiceRow, type InvoiceStatus } from '../../lib/billing';
 import { formatMoney, toDateOnly } from '../../lib/dashboardHelpers';
+import { paidAmountLabel } from '../../lib/currency';
 
 const STATUS_STYLE: Record<InvoiceStatus, string> = {
   Pagada: 'bg-[#10f94e]/10 text-[#10f94e] border-[#10f94e]/30',
@@ -161,6 +162,7 @@ export function InvoicePrint({ invoice, member, onClose }: { invoice: InvoiceRow
         reference: invoice.reference ?? undefined,
         notes: invoice.notes || invoice.concept || undefined,
         paid_at: invoice.paid_at ?? undefined,
+        paid_label: invoice.payments?.currency === 'VES' ? paidAmountLabel(Number(invoice.amount), invoice.payments) : undefined,
       }}
       userInfo={{
         name: member?.name ?? 'Socio',

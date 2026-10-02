@@ -20,6 +20,8 @@ import { Button } from '../components/ui/button';
 import { useAuth } from '../contexts/AuthContext';
 import { useDashboard, type DashboardData } from '../hooks/useDashboard';
 import { formatCompact, formatMoney, formatShortDate } from '../lib/dashboardHelpers';
+import { formatBs } from '../lib/currency';
+import { ExchangeRateButton } from '../components/billing/ExchangeRateButton';
 import { dueInWords, REMINDER_DAYS } from '../lib/billing';
 
 const GREEN = '#10f94e';
@@ -44,10 +46,13 @@ export function Dashboard() {
             {todayLabel}
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        <ExchangeRateButton />
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
           Actualizar
         </Button>
+        </div>
       </div>
 
       {error && (
@@ -100,7 +105,13 @@ function DashboardContent({ data, onNavigate }: { data: DashboardData; onNavigat
               ? { value: revenue.pct, isPositive: revenue.pct >= 0, label: 'vs mismo período del mes anterior' }
               : undefined
           }
-          subtitle={revenue.pct === null ? 'Sin cobros el mes anterior para comparar' : undefined}
+          subtitle={
+            data.cash.usd + data.cash.ves > 0
+              ? [data.cash.usd > 0 && `${formatMoney(data.cash.usd)} en divisas`, data.cash.ves > 0 && formatBs(data.cash.ves)].filter(Boolean).join(' + ')
+              : revenue.pct === null
+                ? 'Sin cobros el mes anterior para comparar'
+                : undefined
+          }
           onClick={() => onNavigate('/facturacion')}
         />
         <StatCard
@@ -247,7 +258,7 @@ function DashboardContent({ data, onNavigate }: { data: DashboardData; onNavigat
                     title={data.nameOf(p.user_id)}
                     motive={p.concept ?? undefined}
                     note={p.notes ?? undefined}
-                    detail={[formatShortDate(p.date), p.method, p.reference && `Ref. ${p.reference}`].filter(Boolean).join(' · ')}
+                    detail={[formatShortDate(p.date), p.method, p.currency === 'VES' && p.amount_original != null && formatBs(Number(p.amount_original)), p.reference && `Ref. ${p.reference}`].filter(Boolean).join(' · ')}
                     amount={formatMoney(Number(p.amount))}
                     amountClass="text-[#10f94e]"
                   />

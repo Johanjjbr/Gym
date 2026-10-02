@@ -13,6 +13,7 @@ import {
   addDays,
   attachInvoiceDetails,
   attendanceByDay,
+  monthStart,
   memberSummary,
   receivables,
   revenueByMonth,
@@ -24,6 +25,7 @@ import {
   type OpenInvoiceRow,
   type PaymentRow,
 } from '../lib/dashboardHelpers';
+import { cashBreakdown } from '../lib/currency';
 import { upcomingRenewals, type InvoiceRow, type RenewalMember } from '../lib/billing';
 
 // Cuelga de statsKeys.dashboard: cualquier pago/factura que invalide las
@@ -46,7 +48,7 @@ export async function fetchDashboard(now: Date = new Date()) {
       .select('id, user_id, amount, due_date, status, concept, invoice_number, reference, notes, payment_id'),
     supabase
       .from('payments')
-      .select('id, user_id, amount, date, method')
+      .select('id, user_id, amount, date, method, currency, amount_original')
       .eq('status', 'Pagado')
       .gte('date', revenueSince)
       .order('date', { ascending: false }),
@@ -71,6 +73,8 @@ export async function fetchDashboard(now: Date = new Date()) {
     today,
     members: memberSummary(users, today),
     revenue: revenueMonthToDate(payments, today),
+    // Caja del mes: lo que entró en $ y en Bs
+    cash: cashBreakdown(payments.filter((p) => p.date.slice(0, 10) >= monthStart(today) && p.date.slice(0, 10) <= today)),
     revenueTrend: revenueByMonth(payments, today, REVENUE_MONTHS),
     receivables: receivables(invoices, today),
     // Próximos vencimientos (aunque la factura todavía no exista)

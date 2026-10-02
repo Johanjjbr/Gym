@@ -7,12 +7,10 @@ export function formatDate(dateStr: string): string {
   });
 }
 
-export function formatCurrency(amount: number, currency = 'VES'): string {
-  return new Intl.NumberFormat('es-VE', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
+/** Montos en USD (moneda base del gimnasio): "$20,00". Con currency='VES': "Bs 4.906,00". */
+export function formatCurrency(amount: number, currency: 'USD' | 'VES' = 'USD'): string {
+  const n = amount.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return currency === 'VES' ? `Bs ${n}` : `$${n}`;
 }
 
 export function formatShortDate(dateStr: string): string {

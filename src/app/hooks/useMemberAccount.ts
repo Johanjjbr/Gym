@@ -9,7 +9,9 @@ import { useGymInfo } from '../components/billing/shared';
 import {
   membersWithDebt, nextDueFor, overdueReminderText, REMINDER_DAYS, upcomingReminderText, type InvoiceRow,
 } from '../lib/billing';
-import { daysBetween, formatMoney, toDateOnly } from '../lib/dashboardHelpers';
+import { daysBetween, toDateOnly } from '../lib/dashboardHelpers';
+import { moneyWithBs } from '../lib/currency';
+import { useCurrentRate } from './useExchangeRates';
 
 export type AccountState = 'loading' | 'exempt' | 'no-plan' | 'overdue' | 'due-soon' | 'ok';
 
@@ -17,6 +19,7 @@ export function useMemberAccount(userId: string | undefined, invoices: InvoiceRo
   const today = toDateOnly(new Date());
   const { data: member, isLoading } = useBillingMember(userId);
   const gym = useGymInfo();
+  const curRate = useCurrentRate();
 
   return useMemo(() => {
     const debt = membersWithDebt(invoices, today)[0];
@@ -43,15 +46,15 @@ export function useMemberAccount(userId: string | undefined, invoices: InvoiceRo
 
     const notice =
       member && state === 'overdue'
-        ? overdueReminderText(member.name, debt!, gym.name, formatMoney)
+        ? overdueReminderText(member.name, debt!, gym.name, moneyWithBs(curRate.rate, curRate.state === 'today'))
         : member && state === 'due-soon' && next
-          ? upcomingReminderText(member.name, next, gym.name, formatMoney)
+          ? upcomingReminderText(member.name, next, gym.name, moneyWithBs(curRate.rate, curRate.state === 'today'))
           : null;
 
     const cannotCollect = exempt ? 'Socio exento de pago' : member && !plan ? 'Sin plan asignado' : null;
 
     return { member, isLoading, today, state, debt, lastPaid, next, daysLeft, plan, exempt, notice, cannotCollect };
-  }, [member, isLoading, invoices, today, gym.name]);
+  }, [member, isLoading, invoices, today, gym.name, curRate.rate, curRate.state]);
 }
 
 export type MemberAccount = ReturnType<typeof useMemberAccount>;

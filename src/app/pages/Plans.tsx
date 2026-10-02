@@ -30,6 +30,8 @@ import {
   type DurationPreset, type PlanRecord, type PlanStats,
 } from '../lib/plans';
 import { formatMoney } from '../lib/dashboardHelpers';
+import { formatBs, toBs } from '../lib/currency';
+import { useCurrentRate } from '../hooks/useExchangeRates';
 
 const EMPTY_STATS: PlanStats = { members: 0, paying: 0, suspended: 0, monthlyRevenue: 0, pendingInvoices: 0 };
 
@@ -340,6 +342,7 @@ function PlanFormDialog({ open, plan, plans, pendingInvoices, onClose }: {
   }, [plan]);
 
   const [form, setForm] = useState(initial);
+  const curRate = useCurrentRate();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [repriceAsk, setRepriceAsk] = useState<{ id: string; price: number; old: number } | null>(null);
@@ -455,9 +458,12 @@ function PlanFormDialog({ open, plan, plans, pendingInvoices, onClose }: {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="plan-price">Precio (Bs)</Label>
+              <Label htmlFor="plan-price">Precio (USD)</Label>
               <Input id="plan-price" type="number" min={0} step="0.01" inputMode="decimal" value={form.price} onChange={(e) => set('price', e.target.value)} placeholder="20" className="max-w-40" />
               {errors.price && <p className="text-xs text-[#ff3b5c]" role="alert">{errors.price}</p>}
+              {price > 0 && curRate.rate && (
+                <p className="text-xs text-muted-foreground">≈ {formatBs(toBs(price, curRate.rate))} a tasa BCV {curRate.state === 'today' ? 'de hoy' : 'vigente'} · se cobra en Bs al cambio del día.</p>
+              )}
               {isEdit && price > 0 && Number(plan!.price) !== price && pendingInvoices > 0 && (
                 <p className="text-xs text-[#eab308]">Hay {pendingInvoices} factura{pendingInvoices === 1 ? '' : 's'} pendiente{pendingInvoices === 1 ? '' : 's'} con el precio anterior; al guardar te preguntaré qué hacer con ellas.</p>
               )}

@@ -24,15 +24,15 @@ describe('tipo derivado de la duración', () => {
 
 describe('cómo se factura (igual que plan_next_due)', () => {
   it('etiquetas de precio', () => {
-    expect(priceLabel(20, 30, 'Mensual')).toBe('Bs 20 / mes');
-    expect(priceLabel(55, 90, 'Trimestral')).toBe('Bs 55 / 3 meses');
-    expect(priceLabel(200, 365, 'Anual')).toBe('Bs 200 / año');
-    expect(priceLabel(5, 1, 'Visita')).toBe('Bs 5 · pago único');
-    expect(priceLabel(12, 15, 'Promoción')).toBe('Bs 12 / 15 días');
+    expect(priceLabel(20, 30, 'Mensual')).toBe('$20 / mes');
+    expect(priceLabel(55, 90, 'Trimestral')).toBe('$55 / 3 meses');
+    expect(priceLabel(200, 365, 'Anual')).toBe('$200 / año');
+    expect(priceLabel(5, 1, 'Visita')).toBe('$5 · pago único');
+    expect(priceLabel(12, 15, 'Promoción')).toBe('$12 / 15 días');
   });
   it('descripción', () => {
-    expect(billingDescription(20, 30, 'Mensual')).toBe('Se factura Bs 20 el día 1 de cada mes.');
-    expect(billingDescription(5, 1, 'Visita')).toBe('Se cobra una sola vez Bs 5; no se renueva.');
+    expect(billingDescription(20, 30, 'Mensual')).toBe('Se factura $20 el día 1 de cada mes.');
+    expect(billingDescription(5, 1, 'Visita')).toBe('Se cobra una sola vez $5; no se renueva.');
   });
   it('equivalente mensual', () => {
     expect(monthlyEquivalent(60, 90, 'Trimestral')).toBe(20);
