@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { caracasDayUtcRange, type DayPayment } from '../lib/dailyPayments';
 import { supabase } from '../lib/supabase';
 import { statsKeys } from './useStats';
 
@@ -405,4 +406,61 @@ export function usePayPeriods() {
     },
     onSuccess: () => invalidateBilling(queryClient),
   });
+}
+
+/**
+ * Anula una factura con motivo (void_invoice). No se borra: queda en el
+ * historial como 'Anulada', deja de contar como deuda/ingreso y el proceso
+ * nocturno no la vuelve a generar. Si estaba pagada, su pago queda 'Anulado'.
+ */
+export function useVoidInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const { data, error } = await supabase.rpc('void_invoice', { p_invoice_id: id, p_reason: reason.trim() });
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateBilling(queryClient);
+      toast.success('Factura anulada', { description: 'Queda en el historial con el motivo.' });
+    },
+    onError: (error: Error) => toast.error('No se pudo anular la factura', { description: error.message }),
+  });
+}
+
+/** Pagos de un día (por fecha de pago) + los registrados ese día con fecha anterior. */
+export function useDailyPayments(day: string) {
+  return useQuery({
+    queryKey: ['payments', 'day', day],
+    queryFn: async () => {
+      const select =
+        'id, user_id, amount, date, created_at, method, status, currency, amount_original, exchange_rate, ' +
+        'users(name, member_number, cedula), staff:staff!payments_created_by_fkey(name), ' +
+        'invoices(id, invoice_number, concept, reference, notes, void_reason)';
+      const next = addDaysIso(day, 1);
+      const { from, to } = caracasDayUtcRange(day);
+      const [byDate, late] = await Promise.all([
+        supabase.from('payments').select(select).in('status', ['Pagado', 'Anulado'])
+          .gte('date', day).lt('date', next).order('date', { ascending: true }),
+        supabase.from('payments').select(select).in('status', ['Pagado', 'Anulado'])
+          .gte('created_at', from).lt('created_at', to).lt('date', day).order('date', { ascending: true }),
+      ]);
+      const failed = [byDate, late].find((r) => r.error);
+      if (failed?.error) throw new Error(failed.error.message);
+      const byTime = (a: DayPayment, b: DayPayment) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+      return {
+        payments: ((byDate.data ?? []) as unknown as DayPayment[]).sort(byTime),
+        /** Registrados este día pero con fecha de pago anterior (no suman en este día). */
+        backdated: (late.data ?? []) as unknown as DayPayment[],
+      };
+    },
+    staleTime: 1000 * 30,
+    refetchOnWindowFocus: true,
+  });
+}
+
+function addDaysIso(day: string, n: number) {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }

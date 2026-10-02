@@ -9,7 +9,7 @@ import { ExternalLink, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { PaymentCalendar } from '../PaymentCalendar';
-import { DeleteInvoiceDialog, InvoicePrint, InvoiceRowMenu, StatusBadge, useCanDeleteInvoice } from '../billing/shared';
+import { InvoicePrint, InvoiceRowMenu, StatusBadge, useCanVoidInvoice, VoidInvoiceButton, VoidInvoiceDialog } from '../billing/shared';
 import type { MemberAccount } from '../../hooks/useMemberAccount';
 import { effectiveStatus, fmtDate, monthLabel, type InvoiceRow } from '../../lib/billing';
 import { formatMoney } from '../../lib/dashboardHelpers';
@@ -20,7 +20,7 @@ const INITIAL_ROWS = 12;
 export function MemberPaymentsTab({ account, invoices, loading }: { account: MemberAccount; invoices: InvoiceRow[]; loading: boolean }) {
   const navigate = useNavigate();
   const { member, today, debt, lastPaid, plan } = account;
-  const canDelete = useCanDeleteInvoice();
+  const canVoid = useCanVoidInvoice();
 
   const [toPrint, setToPrint] = useState<InvoiceRow | null>(null);
   const [toDelete, setToDelete] = useState<InvoiceRow | null>(null);
@@ -105,18 +105,21 @@ export function MemberPaymentsTab({ account, invoices, loading }: { account: Mem
                               <span className="block text-foreground tabular-nums">{fmtDate(inv.paid_at)}</span>
                               <span className="block text-xs">{[inv.method, inv.payments?.currency === 'VES' && inv.payments.amount_original != null && formatBs(Number(inv.payments.amount_original)), inv.reference && `Ref. ${inv.reference}`].filter(Boolean).join(' · ')}</span>
                             </>
+                          ) : st === 'Anulada' ? (
+                            <span className="block max-w-[220px] truncate text-xs italic" title={inv.void_reason ?? ''}>{inv.void_reason ?? 'Anulada'}</span>
                           ) : (
                             '—'
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(Number(inv.amount))}</td>
+                        <td className={`px-4 py-3 text-right font-semibold tabular-nums ${st === 'Anulada' ? 'text-muted-foreground line-through' : ''}`}>{formatMoney(Number(inv.amount))}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1">
+                            {canVoid(inv) && <VoidInvoiceButton inv={inv} onVoid={() => setToDelete(inv)} />}
                             <InvoiceRowMenu
                               inv={inv}
-                              canDelete={canDelete(inv)}
+                              canVoid={canVoid(inv)}
                               onPrint={() => setToPrint(inv)}
-                              onDelete={() => setToDelete(inv)}
+                              onVoid={() => setToDelete(inv)}
                             />
                           </div>
                         </td>
@@ -138,7 +141,7 @@ export function MemberPaymentsTab({ account, invoices, loading }: { account: Mem
       </Card>
 
       <InvoicePrint invoice={toPrint} member={printMember || undefined} onClose={() => setToPrint(null)} />
-      <DeleteInvoiceDialog invoice={toDelete} memberName={member?.name ?? 'El socio'} onClose={() => setToDelete(null)} />
+      <VoidInvoiceDialog invoice={toDelete} memberName={member?.name ?? 'El socio'} onClose={() => setToDelete(null)} />
     </div>
   );
 }

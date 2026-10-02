@@ -5,7 +5,7 @@
  */
 import { addDays, daysBetween, monthStart, shiftMonth, type DateStr } from './dashboardHelpers';
 
-export type InvoiceStatus = 'Pendiente' | 'Vencida' | 'Pagada';
+export type InvoiceStatus = 'Pendiente' | 'Vencida' | 'Pagada' | 'Anulada';
 
 export interface InvoiceRow {
   id: string;
@@ -22,6 +22,8 @@ export interface InvoiceRow {
   notes?: string | null;
   created_at?: string | null;
   payment_id?: string | null;
+  voided_at?: string | null;
+  void_reason?: string | null;
   /** Cómo se cobró (embebido desde payments vía payment_id) */
   payments?: { currency?: string | null; amount_original?: number | string | null; exchange_rate?: number | string | null } | null;
 }
@@ -226,8 +228,13 @@ export function membersWithDebt(invoices: InvoiceRow[], today: DateStr): MemberD
 
 /** Cantidad por estado (para los chips de filtro). */
 export function statusCounts(invoices: InvoiceRow[], today: DateStr) {
-  const c = { all: invoices.length, Pendiente: 0, Vencida: 0, Pagada: 0 };
-  for (const inv of invoices) c[effectiveStatus(inv, today)] += 1;
+  // 'all' = todas menos las anuladas (las anuladas tienen su propio filtro)
+  const c = { all: 0, Pendiente: 0, Vencida: 0, Pagada: 0, Anulada: 0 };
+  for (const inv of invoices) {
+    const st = effectiveStatus(inv, today);
+    c[st] += 1;
+    if (st !== 'Anulada') c.all += 1;
+  }
   return c;
 }
 

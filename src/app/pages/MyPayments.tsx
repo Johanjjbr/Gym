@@ -58,6 +58,7 @@ export function MyPayments() {
         .from('invoices')
         .select('*, plans(name)')
         .eq('user_id', user.id)
+        .neq('status', 'Anulada')
         .order('created_at', { ascending: false });
 
       if (error) throw error;

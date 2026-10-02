@@ -2,7 +2,8 @@
  * Piezas de facturación compartidas por la página Facturación y la ficha del socio.
  */
 import { useEffect, useState } from 'react';
-import { Copy, Eye, MessageCircle, MoreHorizontal, Printer, Trash2 } from 'lucide-react';
+import { Ban, Copy, Eye, MessageCircle, MoreHorizontal, Printer, Trash2 } from 'lucide-react';
+import { Textarea } from '../ui/textarea';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import {
@@ -14,7 +15,7 @@ import {
 } from '../ui/dropdown-menu';
 import { PrintInvoice } from '../../../components/PrintInvoice';
 import { supabase } from '../../lib/supabase';
-import { useDeleteInvoice } from '../../hooks/useInvoices';
+import { useVoidInvoice } from '../../hooks/useInvoices';
 import { useModulePermissions } from '../../hooks/useModulePermissions';
 import { effectiveStatus, fmtDate, isOpen, whatsappNumber, whatsappUrl, type InvoiceRow, type InvoiceStatus } from '../../lib/billing';
 import { formatMoney, toDateOnly } from '../../lib/dashboardHelpers';
@@ -24,6 +25,7 @@ const STATUS_STYLE: Record<InvoiceStatus, string> = {
   Pagada: 'bg-[#10f94e]/10 text-[#10f94e] border-[#10f94e]/30',
   Pendiente: 'bg-[#eab308]/10 text-[#eab308] border-[#eab308]/30',
   Vencida: 'bg-[#ff3b5c]/10 text-[#ff3b5c] border-[#ff3b5c]/30',
+  Anulada: 'bg-muted text-muted-foreground border-border line-through decoration-1',
 };
 
 export function StatusBadge({ status }: { status: InvoiceStatus }) {
@@ -35,19 +37,20 @@ export function StatusBadge({ status }: { status: InvoiceStatus }) {
 }
 
 /**
- * Regla de eliminación: las facturas sin pagar se pueden eliminar; las pagadas
- * solo con el permiso "Eliminar" de Facturación (borran también el pago).
+ * Regla de anulación: las facturas sin pagar las puede anular recepción; las
+ * pagadas solo con el permiso "Eliminar" de Facturación (también anula el pago).
+ * La base de datos (void_invoice) aplica la misma regla.
  */
-export function useCanDeleteInvoice() {
+export function useCanVoidInvoice() {
   const { canAccess } = useModulePermissions();
-  const canDeletePaid = canAccess('/facturacion', 'delete');
-  return (inv: InvoiceRow) => isOpen(inv) || canDeletePaid;
+  const canVoidPaid = canAccess('/facturacion', 'delete');
+  return (inv: InvoiceRow) => inv.status !== 'Anulada' && (isOpen(inv) || canVoidPaid);
 }
 
 export function InvoiceRowMenu({
-  inv, canDelete, onView, onPrint, onDelete,
+  inv, canVoid, onView, onPrint, onVoid,
 }: {
-  inv: InvoiceRow; canDelete: boolean; onView?: () => void; onPrint: () => void; onDelete: () => void;
+  inv: InvoiceRow; canVoid: boolean; onView?: () => void; onPrint: () => void; onVoid: () => void;
 }) {
   return (
     <DropdownMenu>
@@ -65,11 +68,17 @@ export function InvoiceRowMenu({
         <DropdownMenuItem onSelect={onPrint} data-testid={`print-${inv.invoice_number}`}>
           <Printer className="mr-2 h-4 w-4" /> Imprimir
         </DropdownMenuItem>
-        {canDelete && (
+        {inv.status !== 'Anulada' && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onDelete} className="text-[#ff3b5c] focus:text-[#ff3b5c]">
-              <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+            <DropdownMenuItem
+              onSelect={onVoid}
+              disabled={!canVoid}
+              className="text-[#ff3b5c] focus:text-[#ff3b5c]"
+              data-testid={`void-${inv.invoice_number}`}
+            >
+              <Ban className="mr-2 h-4 w-4" /> Anular factura
+              {!canVoid && <span className="ml-2 text-xs text-muted-foreground">(requiere permiso)</span>}
             </DropdownMenuItem>
           </>
         )}
@@ -78,44 +87,101 @@ export function InvoiceRowMenu({
   );
 }
 
-export function DeleteInvoiceDialog({
-  invoice, memberName, onClose, onDeleted,
+/** Botón visible de anular para las filas de la tabla. */
+export function VoidInvoiceButton({ inv, onVoid }: { inv: InvoiceRow; onVoid: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-8 w-8 text-muted-foreground hover:bg-[#ff3b5c]/10 hover:text-[#ff3b5c]"
+      title="Anular factura"
+      aria-label={`Anular factura ${inv.invoice_number ?? ''}`}
+      onClick={onVoid}
+      data-testid={`void-btn-${inv.invoice_number}`}
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
+  );
+}
+
+const VOID_REASONS = ['Factura duplicada', 'Monto incorrecto', 'Cobro registrado por error', 'Mes de cortesía', 'Socio se dio de baja'];
+
+export function VoidInvoiceDialog({
+  invoice, memberName, onClose, onVoided,
 }: {
-  invoice: InvoiceRow | null; memberName: string; onClose: () => void; onDeleted?: () => void;
+  invoice: InvoiceRow | null; memberName: string; onClose: () => void; onVoided?: () => void;
 }) {
-  const del = useDeleteInvoice();
+  const voidInv = useVoidInvoice();
+  const [reason, setReason] = useState('');
+  useEffect(() => {
+    if (invoice) setReason('');
+  }, [invoice]);
+  const valid = reason.trim().length >= 3;
+  const paid = invoice?.status === 'Pagada';
+
   return (
     <AlertDialog open={!!invoice} onOpenChange={(o) => !o && onClose()}>
       <AlertDialogContent className="bg-card border-border">
         <AlertDialogHeader>
-          <AlertDialogTitle>¿Eliminar la factura {invoice?.invoice_number}?</AlertDialogTitle>
+          <AlertDialogTitle>¿Anular la factura {invoice?.invoice_number}?</AlertDialogTitle>
           <AlertDialogDescription asChild>
-            <div className="space-y-2">
-              {invoice?.status === 'Pagada' ? (
+            <div className="space-y-3 text-sm">
+              <p>
+                {memberName} · {invoice?.concept ?? 'Factura'} · <strong>{invoice ? formatMoney(Number(invoice.amount)) : ''}</strong>
+              </p>
+              {paid ? (
                 <p className="rounded-md border border-[#ff3b5c]/30 bg-[#ff3b5c]/10 p-3 text-foreground">
-                  Esta factura está <strong>pagada</strong>. Al eliminarla también se borra el pago de{' '}
-                  {formatMoney(Number(invoice.amount))} registrado el {fmtDate(invoice.paid_at)}, y {memberName} volverá a
-                  figurar como deudor de ese período.
+                  Esta factura está <strong>pagada</strong>. Se anula también su pago
+                  ({invoice ? paidAmountLabel(Number(invoice.amount), invoice.payments) : ''} del {fmtDate(invoice?.paid_at)}):
+                  deja de sumar en los ingresos y {memberName} vuelve a deber ese período si no se le factura de nuevo.
                 </p>
               ) : (
-                <p>{invoice && `${memberName} dejará de deber ${invoice.concept ?? 'este período'}.`}</p>
+                <p>{memberName} dejará de deber este período. El sistema no la vuelve a generar.</p>
               )}
-              <p>Esta acción no se puede deshacer.</p>
+              <p className="text-muted-foreground">No se borra: queda en el historial como <em>Anulada</em> con el motivo y quién lo hizo.</p>
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
+
+        <div className="space-y-2">
+          <label htmlFor="void-reason" className="text-sm font-medium">Motivo <span className="text-[#ff3b5c]">*</span></label>
+          <div className="flex flex-wrap gap-1.5">
+            {VOID_REASONS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setReason(r)}
+                className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                  reason === r ? 'border-foreground/40 bg-foreground/10' : 'border-border text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          <Textarea
+            id="void-reason"
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Escribe o elige un motivo"
+            data-testid="void-reason"
+          />
+        </div>
+
         <AlertDialogFooter>
           <AlertDialogCancel>Cancelar</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
-              if (!invoice) return;
-              del.mutate(invoice.id, { onSuccess: () => { onClose(); onDeleted?.(); } });
+              if (!invoice || !valid) return;
+              voidInv.mutate({ id: invoice.id, reason }, { onSuccess: () => { onClose(); onVoided?.(); } });
             }}
-            disabled={del.isPending}
+            disabled={voidInv.isPending || !valid}
             className="bg-[#ff3b5c] hover:bg-[#ff3b5c]/90 text-white"
+            data-testid="void-confirm"
           >
-            {del.isPending ? 'Eliminando…' : 'Eliminar'}
+            {voidInv.isPending ? 'Anulando…' : 'Anular factura'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

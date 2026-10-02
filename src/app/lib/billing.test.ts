@@ -106,7 +106,13 @@ describe('resúmenes', () => {
   });
 
   it('conteos por estado efectivo', () => {
-    expect(statusCounts(invoices, '2026-10-02')).toEqual({ all: 5, Pendiente: 2, Vencida: 2, Pagada: 1 });
+    expect(statusCounts(invoices, '2026-10-02')).toEqual({ all: 5, Pendiente: 2, Vencida: 2, Pagada: 1, Anulada: 0 });
+  });
+
+  it('las anuladas no cuentan como deuda ni en "Todas"', () => {
+    const withVoid = [...invoices, { id: 'x', user_id: 'u9', amount: 20, due_date: '2026-09-01', status: 'Anulada' }];
+    expect(statusCounts(withVoid, '2026-10-02')).toMatchObject({ all: 5, Anulada: 1 });
+    expect(membersWithDebt(withVoid, '2026-10-02').some((d) => d.user_id === 'u9')).toBe(false);
   });
 
   it('formatea fechas sin corrimiento de zona horaria', () => {

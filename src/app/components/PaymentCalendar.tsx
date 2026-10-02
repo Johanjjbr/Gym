@@ -9,7 +9,7 @@ const MONTHS_ES = [
 ];
 const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-export type MonthStatus = 'Pagado' | 'Pendiente' | 'Vencido' | 'Sin factura' | 'Futuro' | 'Antes del alta';
+export type MonthStatus = 'Pagado' | 'Pendiente' | 'Vencido' | 'Anulado' | 'Sin factura' | 'Futuro' | 'Antes del alta';
 
 /**
  * Año y mes (0-11) de un due_date SIN pasar por Date: 'YYYY-MM-DD' se interpretaría
@@ -71,6 +71,7 @@ export function getMonthStatuses(
     if (statuses.has('Vencida')) return 'Vencido';
     if (statuses.has('Pendiente')) return 'Pendiente';
     if (statuses.has('Pagada')) return 'Pagado';
+    if (statuses.has('Anulada')) return 'Anulado';
     if (start && (year < start.year || (year === start.year && month < start.month))) return 'Antes del alta';
     const isFuture = year > currentYear || (year === currentYear && month > currentMonth);
     return isFuture ? 'Futuro' : 'Sin factura';
@@ -81,6 +82,7 @@ const STATUS_STYLES: Record<MonthStatus, string> = {
   Pagado: 'bg-[#10f94e]/15 text-[#10f94e] border-[#10f94e]/30',
   Pendiente: 'bg-[#eab308]/10 text-[#eab308] border-[#eab308]/30',
   Vencido: 'bg-[#ff3b5c]/10 text-[#ff3b5c] border-[#ff3b5c]/40',
+  Anulado: 'bg-muted/40 text-muted-foreground border-border line-through',
   'Sin factura': 'bg-muted/40 text-muted-foreground border-border',
   Futuro: 'bg-transparent text-muted-foreground border-dashed border-border',
   'Antes del alta': 'bg-transparent text-muted-foreground/40 border-transparent',

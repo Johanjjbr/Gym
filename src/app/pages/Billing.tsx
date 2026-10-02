@@ -4,7 +4,7 @@
  *  - Vista "Facturas": búsqueda, estado y mes, sin recargar la página
  *  - Vista "Socios con deuda": una fila por socio, ordenada por atraso
  *  - Un único flujo "Cobrar" (CollectPaymentDialog)
- * Parámetros de URL: ?vista=deudores | por-vencer  ·  ?cobrar=<id de socio>
+ * Parámetros de URL: ?vista=caja | deudores | por-vencer  ·  ?cobrar=<id de socio>
  */
 import { toast } from 'sonner';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -20,7 +20,8 @@ import {
   statusCounts, upcomingRenewals, upcomingReminderText,
   type InvoiceRow, type InvoiceStatus,
 } from '../lib/billing';
-import { DeleteInvoiceDialog, InvoicePrint, InvoiceRowMenu, NotifyButton, StatusBadge, useCanDeleteInvoice, useGymInfo } from '../components/billing/shared';
+import { InvoicePrint, InvoiceRowMenu, NotifyButton, StatusBadge, useCanVoidInvoice, useGymInfo, VoidInvoiceButton, VoidInvoiceDialog } from '../components/billing/shared';
+import { DailyPayments } from '../components/billing/DailyPayments';
 import { formatMoney, monthStart, toDateOnly } from '../lib/dashboardHelpers';
 import { cashBreakdown, formatBs, moneyWithBs, paidAmountLabel } from '../lib/currency';
 import { useCurrentRate } from '../hooks/useExchangeRates';
@@ -34,7 +35,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 
-type View = 'facturas' | 'deudores' | 'por-vencer';
+type View = 'facturas' | 'caja' | 'deudores' | 'por-vencer';
 type StatusFilter = 'all' | InvoiceStatus;
 
 const PAGE_SIZE = 25;
@@ -46,7 +47,7 @@ export function Billing() {
   const today = toDateOnly(new Date());
 
   const vista = params.get('vista');
-  const view: View = vista === 'deudores' || vista === 'por-vencer' ? vista : 'facturas';
+  const view: View = vista === 'deudores' || vista === 'por-vencer' || vista === 'caja' ? vista : 'facturas';
   const setView = (v: View) => {
     const next = new URLSearchParams(params);
     if (v === 'facturas') next.delete('vista');
@@ -59,7 +60,7 @@ export function Billing() {
   const membersQ = useBillingMembers();
   const paymentsQ = usePaymentsSince(monthStart(today));
   const runBilling = useProcessRecurringPayments();
-  const canDelete = useCanDeleteInvoice();
+  const canVoid = useCanVoidInvoice();
 
   const invoices = (invoicesQ.data ?? []) as InvoiceRow[];
   const members = membersQ.data ?? [];
@@ -113,7 +114,8 @@ export function Billing() {
     const term = search.trim().toLowerCase();
     return invoices
       .filter((inv) => {
-        if (status !== 'all' && effectiveStatus(inv, today) !== status) return false;
+        const st = effectiveStatus(inv, today);
+        if (status === 'all' ? st === 'Anulada' : st !== status) return false;
         if (month !== 'all' && inv.due_date.slice(0, 7) !== month) return false;
         if (!term) return true;
         const m = memberById.get(inv.user_id);
@@ -238,6 +240,9 @@ export function Billing() {
         <TabButton active={view === 'facturas'} onClick={() => setView('facturas')} testId="tab-facturas">
           <FileText className="w-4 h-4" /> Facturas
         </TabButton>
+        <TabButton active={view === 'caja'} onClick={() => setView('caja')} testId="tab-caja">
+          <Wallet className="w-4 h-4" /> Pagos del día
+        </TabButton>
         <TabButton active={view === 'deudores'} onClick={() => setView('deudores')} testId="tab-deudores">
           <AlertTriangle className="w-4 h-4" /> Con deuda
           {debtors.length > 0 && <span className="rounded-full bg-[#ff3b5c] px-1.5 text-[11px] text-white tabular-nums">{debtors.length}</span>}
@@ -248,7 +253,9 @@ export function Billing() {
         </TabButton>
       </div>
 
-      {view === 'facturas' ? (
+      {view === 'caja' ? (
+        <DailyPayments memberById={memberById} onOpenInvoice={(id) => { const inv = invoices.find((i) => i.id === id); if (inv) setDetail(inv); }} />
+      ) : view === 'facturas' ? (
         <Card className="bg-card border-border min-w-0 overflow-hidden">
           <CardContent className="p-0">
             {/* Barra de filtros */}
@@ -270,6 +277,7 @@ export function Billing() {
                   ['Vencida', 'Vencidas', counts.Vencida],
                   ['Pendiente', 'Pendientes', counts.Pendiente],
                   ['Pagada', 'Pagadas', counts.Pagada],
+                  ...(counts.Anulada > 0 ? ([['Anulada', 'Anuladas', counts.Anulada]] as const) : []),
                 ] as const).map(([key, label, n]) => (
                   <button
                     key={key}
@@ -349,6 +357,11 @@ export function Billing() {
                           <td className="px-4 py-3 tabular-nums">{fmtDate(inv.due_date)}</td>
                           <td className="px-4 py-3">
                             <StatusBadge status={st} />
+                            {st === 'Anulada' && (
+                              <span className="mt-0.5 block max-w-[220px] truncate text-xs italic text-muted-foreground" title={inv.void_reason ?? ''}>
+                                {inv.void_reason ?? 'Anulada'}
+                              </span>
+                            )}
                             {st === 'Pagada' && inv.paid_at && (
                               <span className="block text-xs text-muted-foreground mt-0.5">
                                 {fmtDate(inv.paid_at)} · {inv.method}
@@ -370,7 +383,7 @@ export function Billing() {
                               <span className="text-muted-foreground">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(Number(inv.amount))}</td>
+                          <td className={`px-4 py-3 text-right font-semibold tabular-nums ${st === 'Anulada' ? 'text-muted-foreground line-through' : ''}`}>{formatMoney(Number(inv.amount))}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1">
                               {isOpen(inv) && (
@@ -383,12 +396,13 @@ export function Billing() {
                                   Cobrar
                                 </Button>
                               )}
+                              {canVoid(inv) && <VoidInvoiceButton inv={inv} onVoid={() => setToDelete(inv)} />}
                               <InvoiceRowMenu
                                 inv={inv}
-                                canDelete={canDelete(inv)}
+                                canVoid={canVoid(inv)}
                                 onView={() => setDetail(inv)}
                                 onPrint={() => setToPrint(inv)}
-                                onDelete={() => setToDelete(inv)}
+                                onVoid={() => setToDelete(inv)}
                               />
                             </div>
                           </td>
@@ -580,11 +594,17 @@ export function Billing() {
                 {detail.reference && <Field label="Referencia" value={detail.reference} />}
                 {detail.invoice_number && <Field label="N° de factura" value={detail.invoice_number} />}
                 {detail.notes && <Field label="Notas" value={detail.notes} wide />}
+                {detail.status === 'Anulada' && (
+                  <>
+                    <Field label="Anulada el" value={fmtDate(detail.voided_at)} />
+                    <Field label="Motivo de anulación" value={detail.void_reason || '—'} wide />
+                  </>
+                )}
               </dl>
               <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-                {canDelete(detail) && (
-                  <Button variant="ghost" className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10 mr-auto" onClick={() => setToDelete(detail)}>
-                    <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+                {canVoid(detail) && (
+                  <Button variant="ghost" className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10 mr-auto" onClick={() => setToDelete(detail)} data-testid="detail-void">
+                    <Trash2 className="h-4 w-4 mr-2" /> Anular factura
                   </Button>
                 )}
                 <Button variant="outline" onClick={() => setToPrint(detail)}>
@@ -601,11 +621,11 @@ export function Billing() {
         </DialogContent>
       </Dialog>
 
-      <DeleteInvoiceDialog
+      <VoidInvoiceDialog
         invoice={toDelete}
         memberName={toDelete ? nameOf(toDelete.user_id) : ''}
         onClose={() => setToDelete(null)}
-        onDeleted={() => setDetail(null)}
+        onVoided={() => setDetail(null)}
       />
 
       <InvoicePrint
