@@ -1,6 +1,6 @@
 /**
  * Tasa BCV del día: indicador + panel para cargarla y ver el historial.
- * Recepción y Admin cargan la tasa; solo Admin corrige una ya cargada.
+ * Recepción y Admin cargan y corrigen la tasa (migración 43).
  */
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, Loader2, TrendingUp } from 'lucide-react';
@@ -75,7 +75,8 @@ export function ExchangeRateDialog({ open, onOpenChange }: { open: boolean; onOp
   const cur = useCurrentRate();
   const save = useSaveRate();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'Administrador' || !!(user as any)?.is_super_admin;
+  // Administración y Recepción cargan y corrigen la tasa (la base lo valida igual)
+  const isAdmin = user?.role === 'Administrador' || user?.role === 'Recepción' || !!(user as any)?.is_super_admin;
 
   const [date, setDate] = useState(cur.today);
   const [text, setText] = useState('');
@@ -164,7 +165,7 @@ export function ExchangeRateDialog({ open, onOpenChange }: { open: boolean; onOp
 
           {locked && (
             <p className="text-xs text-muted-foreground">
-              La tasa de este día ya está cargada. Solo un administrador puede corregirla.
+              La tasa de este día ya está cargada. Solo Administración o Recepción pueden corregirla.
             </p>
           )}
 

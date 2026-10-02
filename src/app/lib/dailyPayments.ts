@@ -6,7 +6,9 @@ import { formatBs, formatUSD } from './currency';
 
 export interface DayPayment {
   id: string;
-  user_id: string;
+  user_id: string | null;
+  /** Nombre guardado si el socio fue eliminado */
+  member_name?: string | null;
   amount: number | string; // USD acreditado
   date: string; // fecha de pago (hora local de Caracas)
   created_at?: string | null; // UTC

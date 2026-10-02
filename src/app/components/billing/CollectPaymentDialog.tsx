@@ -12,7 +12,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { usePayPeriods, type BillingMember } from '../../hooks/useInvoices';
-import { buildPaymentPlan, monthLabel, type InvoiceRow } from '../../lib/billing';
+import { buildPaymentPlan, fmtDate, paidThrough, type InvoiceRow } from '../../lib/billing';
 import { formatBs, formatRate, methodCurrency, needsReference as methodNeedsReference, PAYMENT_METHODS, rateStatus, toBs, type PaymentMethod } from '../../lib/currency';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { ExchangeRateDialog } from './ExchangeRateButton';
@@ -64,7 +64,7 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
   }, [userId, openCount]);
 
   const plan = useMemo(
-    () => buildPaymentPlan(memberInvoices, member?.plans ?? null, months, today),
+    () => buildPaymentPlan(memberInvoices, member?.plans ?? null, months, today, member),
     [memberInvoices, member, months, today],
   );
 
@@ -94,7 +94,7 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
         onSuccess: (r) => {
           const bs = currency === 'VES' && totalBs !== null ? ` (${formatBs(totalBs)})` : '';
           toast.success(`Cobrado ${formatMoney(Number(r.total))}${bs} a ${member.name}`, {
-            description: `${r.paid} período${r.paid === 1 ? '' : 's'}${r.paid_until ? ` · al día hasta ${monthLabel(r.paid_until)}` : ''}`,
+            description: `${r.paid} período${r.paid === 1 ? '' : 's'}${plan.coversThrough ? ` · al día hasta el ${fmtDate(plan.coversThrough)}` : ''}`,
           });
           onOpenChange(false);
         },
@@ -176,7 +176,7 @@ export function CollectPaymentDialog({ open, onOpenChange, members, invoices, in
                 </ul>
                 <div className="flex items-center justify-between border-t border-border bg-muted/40 px-3 py-3">
                   <span className="text-sm text-muted-foreground">
-                    {plan.coversThrough ? `Queda al día hasta ${monthLabel(plan.coversThrough)}` : ''}
+                    {plan.coversThrough ? `Queda al día hasta el ${fmtDate(plan.coversThrough)}` : ''}
                   </span>
                   <span className="text-right">
                     <span className="block text-2xl font-semibold tabular-nums" data-testid="payment-total">
@@ -322,7 +322,7 @@ function MemberSummary({ member, openCount, onChange }: { member: BillingMember;
                 {openCount} período{openCount === 1 ? '' : 's'} sin pagar
               </span>
             ) : member.paid_until ? (
-              <span className="text-muted-foreground">Al día hasta {monthLabel(member.paid_until)}</span>
+              <span className="text-muted-foreground">Al día hasta el {fmtDate(paidThrough(member))}</span>
             ) : (
               <span className="text-muted-foreground">Sin pagos registrados</span>
             )}

@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import {
   birthDateError, cedulaError, cleanText, formatPhone, nameError, normalizeCedula, normalizeEmail,
-  normalizeHeight, parseDateInput, phoneError, startDateError,
+  firstDueError, normalizeHeight, parseDateInput, phoneError, startDateError,
 } from './memberFields';
 
 const todayStr = () => {
@@ -86,6 +86,18 @@ plan: z.string()
     .superRefine(refineWith((v) => startDateError(v, todayStr())))
     .transform((v) => parseDateInput(v) ?? undefined),
   
+  // Socios migrados: fecha de su próximo pago (primer cobro en el sistema)
+  billing_start: z.string()
+    .optional()
+    .superRefine(refineWith((v) => firstDueError(v, todayStr())))
+    .transform((v) => parseDateInput(v) ?? undefined),
+
+  // Día del mes en que paga (1-31)
+  billing_day: z.union([z.string(), z.number()])
+    .optional()
+    .transform((v) => (v === '' || v === undefined || v === null ? undefined : Number(v)))
+    .pipe(z.number({ invalid_type_error: 'Día inválido' }).int('Día inválido').min(1, 'Entre 1 y 31').max(31, 'Entre 1 y 31').optional()),
+
   next_payment: z.string()
     .optional()
     .or(z.literal(''))

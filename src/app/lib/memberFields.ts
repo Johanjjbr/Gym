@@ -144,3 +144,34 @@ export function normalizeHeight(v: number | undefined): number | undefined {
   if (v === undefined || Number.isNaN(v)) return v;
   return v > 0 && v < 3 ? Math.round(v * 100) : v;
 }
+
+/**
+ * Próximo pago sugerido para un socio según su fecha de inscripción:
+ *  - Se inscribe hoy (o en el futuro): ese mismo día.
+ *  - Viene de otra plataforma: su próximo aniversario a partir de hoy
+ *    (se asume que está al día hasta entonces).
+ */
+export function suggestedFirstDue(startIso: string, today: string): string {
+  if (startIso >= today) return startIso;
+  const day = Number(startIso.slice(8, 10));
+  const [y, m] = today.split('-').map(Number);
+  const anchor = (yy: number, mm: number) => {
+    const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+    return `${yy}-${String(mm).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`;
+  };
+  const thisMonth = anchor(y, m);
+  if (thisMonth >= today) return thisMonth;
+  return m === 12 ? anchor(y + 1, 1) : anchor(y, m + 1);
+}
+
+/** Primer cobro: válido, no antes de hoy - 1 año ni más de 1 año en el futuro. */
+export function firstDueError(text: string | null | undefined, today: string): string | null {
+  if (!text || !text.trim()) return null;
+  const iso = parseDateInput(text);
+  if (!iso) return 'Fecha inválida';
+  const [y, m, d] = today.split('-').map(Number);
+  const min = `${y - 1}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const max = `${y + 1}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  if (iso < min || iso > max) return 'Revisa la fecha del próximo pago';
+  return null;
+}

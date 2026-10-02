@@ -1,6 +1,6 @@
 /**
  * Tasa BCV (Bs por 1 USD) cargada a mano cada día.
- * Recepción y Admin la cargan; solo Admin puede corregir una ya cargada (RLS).
+ * Recepción y Admin la cargan y corrigen (migración 43).
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -48,12 +48,12 @@ export function useSaveRate() {
         : supabase.from('exchange_rates').insert({ rate_date: date, rate, source: 'BCV' }).select('rate_date');
       const { data, error } = await q;
       if (error) {
-        if (error.code === '23505') throw new Error('Ya hay una tasa para ese día. Solo un administrador puede corregirla.');
+        if (error.code === '23505') throw new Error('Ya hay una tasa para ese día. Ábrela de nuevo para corregirla.');
         if (error.code === '42501') throw new Error('No tienes permiso para guardar tasas.');
         throw new Error(error.message);
       }
       // Un UPDATE bloqueado por RLS no da error: simplemente no cambia filas
-      if (!data || data.length === 0) throw new Error('Solo un administrador puede corregir una tasa ya cargada.');
+      if (!data || data.length === 0) throw new Error('No tienes permiso para corregir la tasa.');
     },
     onSuccess: (_, v) => {
       qc.invalidateQueries({ queryKey: ratesKey });

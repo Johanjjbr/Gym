@@ -24,7 +24,7 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { formatMoney, toDateOnly } from '../lib/dashboardHelpers';
-import { ageOn, birthDateError, maskDate, normalizeHeight, parseDateInput, toDisplayDate } from '../lib/memberFields';
+import { ageOn, birthDateError, maskDate, normalizeHeight, parseDateInput, suggestedFirstDue, toDisplayDate } from '../lib/memberFields';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -91,18 +91,19 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
             plan_id: user.plan_id ?? '',
             status: user.status ?? 'Activo',
             start_date: toInputDate(user.start_date),
+            billing_day: user.billing_day != null ? String(user.billing_day) : toInputDate(user.start_date) ? String(Number(toInputDate(user.start_date).slice(8, 10))) : '',
             weight: user.weight != null ? String(user.weight) : '',
             height: user.height != null ? String(user.height) : '',
             notes: user.notes ?? '',
             medical_notes: user.medical_notes ?? '',
             is_free_user: user.is_free_user === true,
           }
-        : { status: 'Activo', start_date: today, is_free_user: false, gender: '', plan_id: '' },
+        : { status: 'Activo', start_date: today, billing_start: today, is_free_user: false, gender: '', plan_id: '' },
     [user, today],
   );
 
   const {
-    register, handleSubmit, reset, control, watch, setError,
+    register, handleSubmit, reset, control, watch, setError, setValue,
     formState: { errors, isSubmitting },
   } = useForm<UserFormInput, unknown, UserFormData>({ resolver: zodResolver(userSchema), defaultValues: defaults as any, mode: 'onTouched' });
 
@@ -111,6 +112,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     if (open) {
       reset(defaults as any);
       setHealthOpen(!!(user?.medical_notes || user?.notes || user?.weight || user?.height));
+      setFirstDueTouched(false);
     }
   }, [open, defaults, reset, user]);
 
@@ -118,6 +120,14 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
   const isFree = watch('is_free_user');
   const currentBmi = bmi(watch('weight'), normalizeHeight(Number(String(watch('height') ?? '').replace(',', '.')) || undefined));
   const birthText = watch('birth_date') as string | undefined;
+  const [firstDueTouched, setFirstDueTouched] = useState(false);
+  const firstDue = watch('billing_start') as string | undefined;
+  const firstDueHint = !firstDue
+    ? 'Día en que vence su primera factura'
+    : firstDue <= today
+      ? `Paga hoy · luego el día ${Number(firstDue.slice(8, 10))} de cada mes`
+      : `Primer pago el ${firstDue.split('-').reverse().join('/')}; luego el día ${Number(firstDue.slice(8, 10))} de cada mes`;
+  const billingDayChanged = isEdit && !!watch('billing_day') && String(watch('billing_day')) !== String(defaults.billing_day ?? '');
   const birthIso = parseDateInput(birthText);
   const birthHint = birthIso && !birthDateError(birthText, today) ? `${ageOn(birthIso, today)} años` : 'Opcional';
 
@@ -155,7 +165,15 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     };
     // El estado Suspendido no se toca desde aquí
     if (!isSuspended) payload.status = data.status === 'Inactivo' ? 'Inactivo' : 'Activo';
-    if (!isEdit) payload.start_date = data.start_date || today;
+    if (!isEdit) {
+      payload.start_date = data.start_date || today;
+      // Primer cobro y día de pago (cobro por aniversario)
+      const first = data.billing_start || suggestedFirstDue(String(payload.start_date), today);
+      payload.billing_start = first;
+      payload.billing_day = Number(first.slice(8, 10));
+    } else if (data.billing_day && String(data.billing_day) !== String(defaults.billing_day ?? '')) {
+      payload.billing_day = data.billing_day;
+    }
 
     try {
       if (isEdit) {
@@ -288,13 +306,44 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
               </Field>
 
               {isEdit ? (
-                <Field label="Socio desde">
-                  <Input value={toInputDate(user.start_date) ? toInputDate(user.start_date).split('-').reverse().join('/') : '—'} disabled readOnly />
-                </Field>
+                <>
+                  <Field label="Socio desde">
+                    <Input value={toInputDate(user.start_date) ? toInputDate(user.start_date).split('-').reverse().join('/') : '—'} disabled readOnly />
+                  </Field>
+                  <Field
+                    label="Día de pago"
+                    error={errors.billing_day?.message}
+                    hint={billingDayChanged ? 'Sus facturas pendientes se moverán a este día.' : 'Paga este día de cada mes.'}
+                  >
+                    <Input type="number" min={1} max={31} inputMode="numeric" {...register('billing_day')} className="max-w-28" data-testid="input-billing-day" />
+                  </Field>
+                </>
               ) : (
-                <Field label="Fecha de inicio" error={errors.start_date?.message} hint="La primera factura es la del mes en curso">
-                  <Input type="date" min="2000-01-01" {...register('start_date')} />
-                </Field>
+                <>
+                  <Field label="Fecha de inscripción" error={errors.start_date?.message} hint="Si viene de la plataforma anterior, su fecha original">
+                    <Input
+                      type="date"
+                      min="2000-01-01"
+                      {...register('start_date', {
+                        onChange: (e) => {
+                          if (!firstDueTouched && e.target.value) setValue('billing_start', suggestedFirstDue(e.target.value, today));
+                        },
+                      })}
+                      data-testid="input-start-date"
+                    />
+                  </Field>
+                  <Field
+                    label="Próximo pago"
+                    error={errors.billing_start?.message}
+                    hint={firstDueHint}
+                  >
+                    <Input
+                      type="date"
+                      {...register('billing_start', { onChange: () => setFirstDueTouched(true) })}
+                      data-testid="input-first-due"
+                    />
+                  </Field>
+                </>
               )}
 
               <Field label="Estado">

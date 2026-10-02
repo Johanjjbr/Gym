@@ -8,16 +8,16 @@
 import type { ReactNode } from 'react';
 import {
   AlertTriangle, ArrowLeft, CalendarCheck, CheckCircle2, ChevronRight, Clock, Dumbbell, Gift, HeartPulse, Mail,
-  MoreHorizontal, Pencil, Phone, Ruler, UserRound, Users, Wallet,
+  MoreHorizontal, Pencil, Phone, RotateCcw, Ruler, Trash2, UserMinus, UserRound, Users, Wallet,
 } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { NotifyButton } from '../billing/shared';
 import type { MemberAccount } from '../../hooks/useMemberAccount';
-import { dueInWords, fmtDate, monthLabel } from '../../lib/billing';
+import { billingDayOf, dueInWords, fmtDate, monthLabel, paidThrough } from '../../lib/billing';
 import { formatMoney } from '../../lib/dashboardHelpers';
 import { lastVisitInWords, type AttendanceSummary, type Visit } from '../../lib/attendanceStats';
 import { addDays } from '../../lib/dashboardHelpers';
@@ -35,6 +35,11 @@ interface Props {
   onAssignRoutine: () => void;
   onAssignTrainer: () => void;
   onAddMeasurement: () => void;
+  /** Dar de baja (Inactivo) */
+  onDeactivate?: () => void;
+  onReactivate?: () => void;
+  /** Eliminar definitivo (solo si tiene permiso) */
+  onDelete?: () => void;
 }
 
 const STATUS_PILL: Record<string, string> = {
@@ -125,6 +130,23 @@ export function MemberProfileHeader(p: Props) {
               <DropdownMenuItem onSelect={p.onAddMeasurement}>
                 <Ruler className="mr-2 h-4 w-4" /> Agregar medición
               </DropdownMenuItem>
+              {(p.onDeactivate || p.onReactivate || p.onDelete) && <DropdownMenuSeparator />}
+              {user.status === 'Inactivo'
+                ? p.onReactivate && (
+                    <DropdownMenuItem onSelect={p.onReactivate} data-testid="member-btn-reactivar">
+                      <RotateCcw className="mr-2 h-4 w-4" /> Reactivar
+                    </DropdownMenuItem>
+                  )
+                : p.onDeactivate && (
+                    <DropdownMenuItem onSelect={p.onDeactivate} data-testid="member-btn-baja">
+                      <UserMinus className="mr-2 h-4 w-4" /> Dar de baja (inactivo)
+                    </DropdownMenuItem>
+                  )}
+              {p.onDelete && (
+                <DropdownMenuItem onSelect={p.onDelete} className="text-[#ff3b5c] focus:text-[#ff3b5c]" data-testid="member-btn-eliminar">
+                  <Trash2 className="mr-2 h-4 w-4" /> Eliminar socio
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -223,7 +245,7 @@ function BillingPanel({ account, onOpen }: { account: MemberAccount; onOpen: () 
         <Headline
           icon={CheckCircle2}
           tone="green"
-          title={member?.paid_until ? `Al día hasta ${monthLabel(member.paid_until).split(' ')[0].toLowerCase()}` : 'Sin deudas'}
+          title={member?.paid_until ? `Al día hasta el ${fmtDate(paidThrough(member))}` : 'Sin deudas'}
           detail={next ? `Próximo vencimiento ${fmtDate(next.due)} · ${formatMoney(next.amount)}` : undefined}
         />
       );
@@ -297,7 +319,7 @@ function MembershipPanel({ user, account, onOpen }: { user: any; account: Member
         icon={UserRound}
         tone="muted"
         title={plan ? plan.name : user.plan || 'Sin plan'}
-        detail={plan ? `${formatMoney(Number(plan.price))} cada ${plan.duration_days} días` : undefined}
+        detail={plan ? (plan.type === 'Visita' || plan.duration_days < 28 ? `${formatMoney(Number(plan.price))} cada ${plan.duration_days} día${plan.duration_days === 1 ? '' : 's'}` : `${formatMoney(Number(plan.price))} · paga el día ${billingDayOf(account.member ?? user)}${plan.duration_days >= 60 ? ` cada ${Math.round(plan.duration_days / 30)} meses` : ' de cada mes'}`) : undefined}
       />
       <dl className="mt-1 grid grid-cols-2 gap-2 text-sm">
         <div>

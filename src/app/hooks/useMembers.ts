@@ -12,7 +12,7 @@ import type { InvoiceRow } from '../lib/billing';
 export const membersOverviewKey = ['users', 'overview'] as const;
 
 const MEMBER_FIELDS =
-  'id, name, email, phone, cedula, member_number, status, is_free_user, plan_id, plan, paid_until, next_payment, start_date, created_at, plans(id, name, price, duration_days, type)';
+  'id, name, email, phone, cedula, member_number, status, is_free_user, plan_id, plan, paid_until, next_payment, start_date, billing_day, billing_start, created_at, plans(id, name, price, duration_days, type)';
 
 export function useMembersOverview() {
   return useQuery({
@@ -84,4 +84,35 @@ export async function findDuplicateMember(
     if (data?.[0]) return { field, name: data[0].name };
   }
   return null;
+}
+
+/**
+ * Elimina al socio definitivamente (delete_member): borra facturas, asistencia,
+ * progreso y rutinas, pero CONSERVA sus pagos para que los reportes de
+ * ingresos y los cierres de caja no cambien.
+ */
+export function useDeleteMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.rpc('delete_member', { p_user_id: id });
+      if (error) {
+        if (error.message.includes('Could not find the function') || error.code === 'PGRST202') {
+          throw new Error('Falta aplicar la migración 41 en Supabase (función delete_member).');
+        }
+        throw new Error(error.message);
+      }
+      return data as { deleted: boolean; name: string; payments_kept: number };
+    },
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      qc.invalidateQueries({ queryKey: ['payments'] });
+      qc.invalidateQueries({ queryKey: ['attendance'] });
+      toast.success(`${r?.name ?? 'Socio'} eliminado`, {
+        description: r?.payments_kept ? `Sus ${r.payments_kept} pago(s) se conservan en los reportes.` : undefined,
+      });
+    },
+    onError: (e: Error) => toast.error('No se pudo eliminar', { description: e.message }),
+  });
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ageOn, birthDateError, cedulaError, formatPhone, maskDate, nameError, normalizeCedula, normalizeHeight,
-  parseDateInput, phoneError, startDateError, toDisplayDate,
+  parseDateInput, phoneError, startDateError, toDisplayDate, suggestedFirstDue, firstDueError,
 } from './memberFields';
 import { userSchema } from './validations';
 
@@ -105,5 +105,19 @@ describe('userSchema (registro completo)', () => {
       phone: 'El teléfono es requerido',
     });
     expect(msg.birth_date).toMatch(/Revisa el año/);
+  });
+});
+
+describe('próximo pago sugerido (socios migrados)', () => {
+  it('por aniversario', () => {
+    expect(suggestedFirstDue('2026-10-02', '2026-10-02')).toBe('2026-10-02'); // se inscribe hoy
+    expect(suggestedFirstDue('2026-08-24', '2026-10-02')).toBe('2026-10-24');
+    expect(suggestedFirstDue('2025-08-01', '2026-10-02')).toBe('2026-11-01');
+    expect(suggestedFirstDue('2026-01-31', '2026-11-05')).toBe('2026-11-30');
+    expect(suggestedFirstDue('2026-01-10', '2026-12-20')).toBe('2027-01-10');
+  });
+  it('validación', () => {
+    expect(firstDueError('2026-10-24', '2026-10-02')).toBeNull();
+    expect(firstDueError('2028-10-24', '2026-10-02')).toMatch(/Revisa/);
   });
 });

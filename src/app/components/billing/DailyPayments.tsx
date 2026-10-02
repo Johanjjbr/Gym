@@ -37,7 +37,8 @@ export function DailyPayments({ memberById, onOpenInvoice }: Props) {
   const backdated = q.data?.backdated ?? [];
   const sum = summarizeDay(payments);
   const isToday = day === today;
-  const nameOf = (p: DayPayment) => p.users?.name ?? memberById.get(p.user_id)?.name ?? 'Socio';
+  const nameOf = (p: DayPayment) =>
+    p.users?.name ?? (p.user_id && memberById.get(p.user_id)?.name) ?? (p.member_name ? `${p.member_name} (eliminado)` : 'Socio eliminado');
 
   const exportCsv = () => {
     const blob = new Blob(['﻿' + paymentsCsv(day, payments)], { type: 'text/csv;charset=utf-8' });

@@ -31,7 +31,7 @@ describe('cómo se factura (igual que plan_next_due)', () => {
     expect(priceLabel(12, 15, 'Promoción')).toBe('$12 / 15 días');
   });
   it('descripción', () => {
-    expect(billingDescription(20, 30, 'Mensual')).toBe('Se factura $20 el día 1 de cada mes.');
+    expect(billingDescription(20, 30, 'Mensual')).toBe('Se cobra $20 cada mes, el mismo día en que se inscribió el socio.');
     expect(billingDescription(5, 1, 'Visita')).toBe('Se cobra una sola vez $5; no se renueva.');
   });
   it('equivalente mensual', () => {

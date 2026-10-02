@@ -41,14 +41,14 @@ export async function fetchDashboard(now: Date = new Date()) {
   const attendanceSince = addDays(today, -(ATTENDANCE_DAYS - 1));
 
   const [usersRes, invoicesRes, paymentsRes, attendanceRes] = await Promise.all([
-    supabase.from('users').select('id, name, status, created_at, is_free_user, plans(id, name, price, duration_days)'),
+    supabase.from('users').select('id, name, status, created_at, start_date, billing_day, billing_start, is_free_user, plans(id, name, price, duration_days, type)'),
     supabase
       .from('invoices')
       // Todas: las pagadas hacen falta para calcular el próximo vencimiento
       .select('id, user_id, amount, due_date, status, concept, invoice_number, reference, notes, payment_id'),
     supabase
       .from('payments')
-      .select('id, user_id, amount, date, method, currency, amount_original')
+      .select('id, user_id, member_name, amount, date, method, currency, amount_original')
       .eq('status', 'Pagado')
       .gte('date', revenueSince)
       .order('date', { ascending: false }),

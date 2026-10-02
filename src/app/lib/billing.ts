@@ -50,12 +50,69 @@ export function monthLabel(d: DateStr): string {
   return `${MONTHS_ES[m - 1]} ${y}`;
 }
 
-/** Mismo cálculo que plan_next_due() en SQL. */
-export function planNextDue(last: DateStr, days: number): DateStr {
-  if (days >= 28 && days <= 31) return shiftMonth(last, 1);
-  if (days >= 60 && days <= 360 && days % 30 === 0) return shiftMonth(last, days / 30);
-  if (days === 365 || days === 366) return shiftMonth(last, 12);
+const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+/** "24 oct" */
+export function shortDate(d: DateStr): string {
+  const [, m, day] = d.slice(0, 10).split('-').map(Number);
+  return `${day} ${MONTHS_SHORT[m - 1]}`;
+}
+
+/** Día `day` del mes de `ref` (o el último día si el mes es más corto). Igual que anchor_date() en SQL. */
+export function anchorDate(ref: DateStr, day: number): DateStr {
+  const [y, m] = ref.slice(0, 10).split('-').map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, '0')}-${String(Math.min(Math.max(day, 1), last)).padStart(2, '0')}`;
+}
+
+const isMonthly = (days: number) => (days >= 28 && days <= 31) || (days >= 60 && days <= 360 && days % 30 === 0) || days === 365 || days === 366;
+
+/**
+ * Siguiente vencimiento respetando el día de pago del socio (cobro por
+ * aniversario). Mismo cálculo que plan_next_due(last, days, day) en SQL.
+ * Sin `day` se usa el día de `last`.
+ */
+export function planNextDue(last: DateStr, days: number, day?: number | null): DateStr {
+  const d = day ?? Number(last.slice(8, 10));
+  if (days >= 28 && days <= 31) return anchorDate(shiftMonth(last, 1), d);
+  if (days >= 60 && days <= 360 && days % 30 === 0) return anchorDate(shiftMonth(last, days / 30), d);
+  if (days === 365 || days === 366) return anchorDate(shiftMonth(last, 12), d);
   return addDays(last, Math.max(days, 1));
+}
+
+/** Inicio del ciclo vigente: último día de pago <= hoy. Igual que billing_cycle_start() en SQL. */
+export function cycleStart(today: DateStr, day: number, days: number): DateStr {
+  if (!isMonthly(days)) return today;
+  const a = anchorDate(today, day);
+  return a <= today ? a : anchorDate(shiftMonth(today, -1), day);
+}
+
+/** Período que cubre una factura: "24 oct – 23 nov" (o "24 oct" si es pago único). */
+export function periodLabel(due: DateStr, days: number, day?: number | null, type?: string | null): string {
+  if (type === 'Visita') return shortDate(due);
+  return `${shortDate(due)} – ${shortDate(addDays(planNextDue(due, days, day), -1))}`;
+}
+
+/** Último día cubierto por la factura pagada que vence en `lastPaidDue`. */
+export function coverageEnd(lastPaidDue: DateStr, days: number, day?: number | null): DateStr {
+  return addDays(planNextDue(lastPaidDue, days, day), -1);
+}
+
+/** Datos de cobro del socio (día de pago y primer cobro si viene migrado). */
+export interface BillingAnchor {
+  billing_day?: number | null;
+  billing_start?: string | null;
+  start_date?: string | null;
+}
+
+/** Hasta qué día está cubierto el socio (fin del último período pagado). */
+export function paidThrough(m: (BillingAnchor & { paid_until?: string | null; plans?: { duration_days: number } | null }) | null | undefined): DateStr | null {
+  if (!m?.paid_until) return null;
+  return coverageEnd(m.paid_until.slice(0, 10), m.plans?.duration_days ?? 30, billingDayOf(m));
+}
+
+export function billingDayOf(m: BillingAnchor | null | undefined): number {
+  return m?.billing_day ?? (m?.start_date ? Number(String(m.start_date).slice(8, 10)) : 1);
 }
 
 /**
@@ -87,7 +144,7 @@ export interface PaymentPlan {
   periods: PlannedPeriod[];
   total: number;
   openCount: number;
-  /** Último período cubierto tras el cobro. */
+  /** Último día cubierto tras el cobro (ej. 23/11). */
   coversThrough: DateStr | null;
 }
 
@@ -100,7 +157,9 @@ export function buildPaymentPlan(
   plan: PlanRow | null | undefined,
   months: number,
   today: DateStr,
+  anchor?: BillingAnchor | null,
 ): PaymentPlan {
+  const day = billingDayOf(anchor);
   const open = userInvoices
     .filter(isOpen)
     .sort((a, b) => (dateOnly(a.due_date) < dateOnly(b.due_date) ? -1 : 1));
@@ -110,7 +169,7 @@ export function buildPaymentPlan(
     const due = dateOnly(inv.due_date);
     periods.push({
       due,
-      label: monthLabel(due),
+      label: plan ? periodLabel(due, plan.duration_days, day, plan.type) : shortDate(due),
       amount: Number(inv.amount) || 0,
       invoiceId: inv.id,
       invoiceNumber: inv.invoice_number ?? null,
@@ -122,10 +181,12 @@ export function buildPaymentPlan(
     const allDues = userInvoices.map((i) => dateOnly(i.due_date)).sort();
     let last: DateStr | null = allDues.length ? allDues[allDues.length - 1] : null;
     while (periods.length < months) {
-      const due = last === null ? monthStart(today) : planNextDue(last, plan.duration_days);
+      const due = last === null
+        ? (anchor?.billing_start?.slice(0, 10) ?? cycleStart(today, day, plan.duration_days))
+        : planNextDue(last, plan.duration_days, day);
       periods.push({
         due,
-        label: monthLabel(due),
+        label: periodLabel(due, plan.duration_days, day, plan.type),
         amount: Number(plan.price) || 0,
         invoiceId: null,
         invoiceNumber: null,
@@ -139,7 +200,7 @@ export function buildPaymentPlan(
     periods,
     total: periods.reduce((s, p) => s + p.amount, 0),
     openCount: open.length,
-    coversThrough: periods.length ? periods[periods.length - 1].due : null,
+    coversThrough: periods.length && plan ? coverageEnd(periods[periods.length - 1].due, plan.duration_days, day) : null,
   };
 }
 
@@ -252,7 +313,7 @@ export function fmtDate(d?: string | null): string {
 /** Días de anticipación con que se avisa al socio que debe pagar. */
 export const REMINDER_DAYS = 3;
 
-export interface RenewalMember {
+export interface RenewalMember extends BillingAnchor {
   id: string;
   name: string;
   status: string;
@@ -278,11 +339,14 @@ export function nextDueFor(member: RenewalMember, memberInvoices: InvoiceRow[], 
   const open = memberInvoices.filter(isOpen).sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
   if (open.length) {
     const due = dateOnly(open[0].due_date);
-    return { due, amount: Number(open[0].amount) || 0, invoiceId: open[0].id, label: monthLabel(due) };
+    return { due, amount: Number(open[0].amount) || 0, invoiceId: open[0].id, label: periodLabel(due, member.plans.duration_days, billingDayOf(member), member.plans.type) };
   }
+  const day = billingDayOf(member);
   const dues = memberInvoices.map((i) => dateOnly(i.due_date)).sort();
-  const due = dues.length ? planNextDue(dues[dues.length - 1], member.plans.duration_days) : monthStart(today);
-  return { due, amount: Number(member.plans.price) || 0, invoiceId: null, label: monthLabel(due) };
+  const due = dues.length
+    ? planNextDue(dues[dues.length - 1], member.plans.duration_days, day)
+    : (member.billing_start?.slice(0, 10) ?? cycleStart(today, day, member.plans.duration_days));
+  return { due, amount: Number(member.plans.price) || 0, invoiceId: null, label: periodLabel(due, member.plans.duration_days, day, member.plans.type) };
 }
 
 export interface UpcomingRenewal extends NextDue {

@@ -11,7 +11,7 @@ import { Button } from '../ui/button';
 import { PaymentCalendar } from '../PaymentCalendar';
 import { InvoicePrint, InvoiceRowMenu, StatusBadge, useCanVoidInvoice, VoidInvoiceButton, VoidInvoiceDialog } from '../billing/shared';
 import type { MemberAccount } from '../../hooks/useMemberAccount';
-import { effectiveStatus, fmtDate, monthLabel, type InvoiceRow } from '../../lib/billing';
+import { effectiveStatus, fmtDate, monthLabel, paidThrough, type InvoiceRow } from '../../lib/billing';
 import { formatMoney } from '../../lib/dashboardHelpers';
 import { formatBs } from '../../lib/currency';
 
@@ -40,7 +40,7 @@ export function MemberPaymentsTab({ account, invoices, loading }: { account: Mem
         <CardContent className="p-5 space-y-5">
           <dl className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
             <Meta label="Plan" value={plan ? plan.name : 'Sin plan'} sub={plan ? `${formatMoney(Number(plan.price))} · ${plan.duration_days} días` : undefined} />
-            <Meta label="Al día hasta" value={member?.paid_until ? monthLabel(member.paid_until) : '—'} />
+            <Meta label="Al día hasta" value={member?.paid_until ? fmtDate(paidThrough(member)) : '—'} />
             <Meta
               label="Último pago"
               value={lastPaid ? fmtDate(lastPaid.paid_at) : '—'}

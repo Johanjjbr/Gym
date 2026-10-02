@@ -19,6 +19,8 @@ export interface MemberListUser {
   paid_until?: string | null;
   next_payment?: string | null;
   start_date?: string | null;
+  billing_day?: number | null;
+  billing_start?: string | null;
   created_at?: string | null;
   plans?: PlanRow | null;
 }

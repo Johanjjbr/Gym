@@ -254,8 +254,8 @@ function DashboardContent({ data, onNavigate }: { data: DashboardData; onNavigat
                 {data.recentPayments.map((p) => (
                   <ListRow
                     key={p.id}
-                    onClick={() => onNavigate(`/usuarios/${p.user_id}`)}
-                    title={data.nameOf(p.user_id)}
+                    onClick={() => p.user_id && onNavigate(`/usuarios/${p.user_id}`)}
+                    title={p.user_id ? data.nameOf(p.user_id) : `${p.member_name ?? 'Socio'} (eliminado)`}
                     motive={p.concept ?? undefined}
                     note={p.notes ?? undefined}
                     detail={[formatShortDate(p.date), p.method, p.currency === 'VES' && p.amount_original != null && formatBs(Number(p.amount_original)), p.reference && `Ref. ${p.reference}`].filter(Boolean).join(' · ')}

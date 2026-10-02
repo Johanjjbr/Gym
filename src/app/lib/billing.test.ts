@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   billingKpis,
-  buildPaymentPlan,
+  anchorDate, buildPaymentPlan, coverageEnd, cycleStart, periodLabel,
   effectiveStatus,
   fmtDate,
   membersWithDebt,
@@ -43,7 +43,7 @@ describe('buildPaymentPlan (vista previa de pay_periods)', () => {
       [inv('oct', '2026-10-01', 'Pendiente'), inv('sep', '2026-09-01', 'Vencida'), inv('ago', '2026-08-01', 'Pagada')],
       plan, 1, '2026-10-02',
     );
-    expect(p.periods.map((x) => [x.label, x.invoiceId, x.overdue])).toEqual([['Septiembre 2026', 'sep', true]]);
+    expect(p.periods.map((x) => [x.label, x.invoiceId, x.overdue])).toEqual([['1 sep – 30 sep', 'sep', true]]);
     expect(p.openCount).toBe(2);
   });
 
@@ -55,12 +55,12 @@ describe('buildPaymentPlan (vista previa de pay_periods)', () => {
       ['2026-12-01', null],
     ]);
     expect(p.total).toBe(60);
-    expect(p.coversThrough).toBe('2026-12-01');
+    expect(p.coversThrough).toBe('2026-12-31');
   });
 
   it('socio sin facturas: empieza en el mes actual', () => {
     const p = buildPaymentPlan([], plan, 1, '2026-10-02');
-    expect(p.periods[0]).toMatchObject({ due: '2026-10-01', label: 'Octubre 2026', amount: 20, invoiceId: null });
+    expect(p.periods[0]).toMatchObject({ due: '2026-10-01', label: '1 oct – 31 oct', amount: 20, invoiceId: null });
   });
 
   it('si todo está pagado continúa después del último período', () => {
@@ -132,7 +132,7 @@ describe('próximos vencimientos (avisos con 3 días)', () => {
 
   it('sin facturas abiertas, calcula el siguiente período con el plan (la factura aún no existe)', () => {
     const r = nextDueFor(member('a'), [inv('oct', '2026-10-01', 'Pagada')], '2026-10-29');
-    expect(r).toEqual({ due: '2026-11-01', amount: 20, invoiceId: null, label: 'Noviembre 2026' });
+    expect(r).toEqual({ due: '2026-11-01', amount: 20, invoiceId: null, label: '1 nov – 30 nov' });
   });
 
   it('con una factura abierta, usa esa factura', () => {
@@ -177,5 +177,43 @@ describe('próximos vencimientos (avisos con 3 días)', () => {
     expect(overdueReminderText('Ana', { total: 40, count: 2, oldestDue: '2026-09-01' }, 'GYM', money))
       .toBe('Hola Ana, tienes 2 mensualidades pendientes por Bs 40 desde septiembre 2026. Pasa por recepción para ponerte al día y seguir entrenando en GYM.');
     expect(whatsappUrl('584145511462', 'Hola Ana')).toBe('https://wa.me/584145511462?text=Hola%20Ana');
+  });
+});
+
+describe('cobro por aniversario (día de pago del socio)', () => {
+  const monthly = { id: 'pl', name: 'Premium Plus', price: 20, duration_days: 30 };
+  it('fechas de pago y meses cortos', () => {
+    expect(anchorDate('2026-02-10', 31)).toBe('2026-02-28');
+    expect(anchorDate('2028-02-10', 30)).toBe('2028-02-29');
+    expect(planNextDue('2026-10-24', 30, 24)).toBe('2026-11-24');
+    expect(planNextDue('2026-01-31', 30, 31)).toBe('2026-02-28');
+    expect(planNextDue('2026-02-28', 30, 31)).toBe('2026-03-31'); // vuelve al 31
+    expect(planNextDue('2026-10-23', 90, 23)).toBe('2027-01-23');
+    expect(planNextDue('2026-10-24', 30)).toBe('2026-11-24'); // sin día: usa el de la fecha
+  });
+  it('ciclo vigente y período', () => {
+    expect(cycleStart('2026-10-02', 23, 30)).toBe('2026-09-23');
+    expect(cycleStart('2026-10-02', 2, 30)).toBe('2026-10-02');
+    expect(periodLabel('2026-10-24', 30, 24)).toBe('24 oct – 23 nov');
+    expect(periodLabel('2026-10-02', 1, 2, 'Visita')).toBe('2 oct');
+    expect(coverageEnd('2026-10-24', 30, 24)).toBe('2026-11-23');
+  });
+  it('vista previa del cobro usa el día de pago', () => {
+    const p = buildPaymentPlan([inv('oct', '2026-10-24', 'Pendiente')], monthly, 2, '2026-10-02', { billing_day: 24 });
+    expect(p.periods.map((x) => [x.due, x.label])).toEqual([
+      ['2026-10-24', '24 oct – 23 nov'],
+      ['2026-11-24', '24 nov – 23 dic'],
+    ]);
+    expect(p.coversThrough).toBe('2026-12-23');
+  });
+  it('socio migrado sin facturas: primer cobro en su próximo pago', () => {
+    const p = buildPaymentPlan([], monthly, 1, '2026-10-02', { billing_day: 24, billing_start: '2026-10-24' });
+    expect(p.periods[0].due).toBe('2026-10-24');
+    const r = nextDueFor({ id: 'a', name: 'A', status: 'Activo', plans: monthly, billing_day: 24, billing_start: '2026-10-24' }, [], '2026-10-02');
+    expect(r?.due).toBe('2026-10-24');
+  });
+  it('socio nuevo sin primer cobro: ciclo vigente según su día', () => {
+    const r = nextDueFor({ id: 'a', name: 'A', status: 'Activo', plans: monthly, billing_day: 2 }, [], '2026-10-02');
+    expect(r?.due).toBe('2026-10-02');
   });
 });

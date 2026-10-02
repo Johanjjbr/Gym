@@ -15,8 +15,8 @@ import {
   RotateCcw, Search, Trash2, UserMinus, UserRound, Wallet, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useDeleteUser } from '../hooks/useUsers';
-import { countMemberPayments, useMembersOverview, useSetMemberStatus } from '../hooks/useMembers';
+import { useMembersOverview, useSetMemberStatus } from '../hooks/useMembers';
+import { DeactivateMemberDialog, DeleteMemberDialog } from '../components/member/MemberLifecycleDialogs';
 import { useModulePermissions } from '../hooks/useModulePermissions';
 import { UserFormDialog } from '../components/UserFormDialog';
 import { CollectPaymentDialog } from '../components/billing/CollectPaymentDialog';
@@ -56,7 +56,6 @@ export function Users() {
 
   const { data, isLoading, error, refetch } = useMembersOverview();
   const setStatus = useSetMemberStatus();
-  const deleteUser = useDeleteUser();
   const { canAccess } = useModulePermissions();
   const canDelete = canAccess('/usuarios', 'delete');
   const gym = useGymInfo();
@@ -339,41 +338,15 @@ export function Users() {
         />
       )}
 
-      {/* Dar de baja */}
-      <AlertDialog open={!!toDeactivate} onOpenChange={(o) => !o && setToDeactivate(null)}>
-        <AlertDialogContent className="bg-card border-border">
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Dar de baja a {toDeactivate?.user.name}?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2">
-                <p>Pasa a <strong>Inactivo</strong>: no se le generan más facturas ni cuenta como socio activo.</p>
-                <p>Se conserva todo su historial (pagos, asistencia, progreso). Puedes reactivarlo cuando vuelva.</p>
-                {toDeactivate && toDeactivate.debt > 0 && (
-                  <p className="text-[#ff3b5c]">Tiene una deuda de {formatMoney(toDeactivate.debt)} que seguirá registrada.</p>
-                )}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => toDeactivate && setStatus.mutate({ id: toDeactivate.user.id, status: 'Inactivo' })}
-            >
-              Dar de baja
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeactivateMemberDialog
+        member={toDeactivate && { id: toDeactivate.user.id, name: toDeactivate.user.name, status: toDeactivate.user.status, debt: toDeactivate.debt }}
+        onClose={() => setToDeactivate(null)}
+      />
 
       <DeleteMemberDialog
-        row={toDelete}
+        member={toDelete && { id: toDelete.user.id, name: toDelete.user.name, status: toDelete.user.status, debt: toDelete.debt }}
         onClose={() => setToDelete(null)}
-        onDeactivate={(r) => { setToDelete(null); setToDeactivate(r); }}
-        onConfirm={async (r) => {
-          await deleteUser.mutateAsync(r.user.id);
-          setToDelete(null);
-        }}
-        pending={deleteUser.isPending}
+        onDeactivate={() => { const r = toDelete; setToDelete(null); setToDeactivate(r); }}
       />
     </div>
   );
@@ -425,74 +398,3 @@ function PaymentCell({ r }: { r: MemberRow }) {
   }
 }
 
-/**
- * Eliminar definitivo: solo con permiso, escribiendo el nombre, y bloqueado si
- * el socio tiene pagos (eliminarlo borraría registros de dinero cobrado).
- */
-function DeleteMemberDialog({ row, onClose, onConfirm, onDeactivate, pending }: {
-  row: MemberRow | null;
-  onClose: () => void;
-  onConfirm: (r: MemberRow) => Promise<void>;
-  onDeactivate: (r: MemberRow) => void;
-  pending: boolean;
-}) {
-  const [typed, setTyped] = useState('');
-  const [payments, setPayments] = useState<number | null>(null);
-
-  useEffect(() => {
-    setTyped('');
-    setPayments(null);
-    if (row) countMemberPayments(row.user.id).then(setPayments).catch(() => setPayments(-1));
-  }, [row]);
-
-  const blocked = payments !== null && payments !== 0;
-  const matches = !!row && typed.trim().toLowerCase() === row.user.name.trim().toLowerCase();
-
-  return (
-    <AlertDialog open={!!row} onOpenChange={(o) => !o && onClose()}>
-      <AlertDialogContent className="bg-card border-border">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Eliminar a {row?.user.name}</AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="space-y-3">
-              {payments === null ? (
-                <p>Revisando su historial…</p>
-              ) : blocked ? (
-                <p className="rounded-md border border-[#ff3b5c]/30 bg-[#ff3b5c]/10 p-3 text-foreground">
-                  {payments > 0
-                    ? `Tiene ${payments} pago${payments === 1 ? '' : 's'} registrado${payments === 1 ? '' : 's'}. Eliminarlo borraría ese dinero cobrado de los reportes. Dalo de baja en su lugar.`
-                    : 'No se pudo verificar su historial de pagos. Dalo de baja en su lugar.'}
-                </p>
-              ) : (
-                <>
-                  <p>
-                    Se borra <strong>definitivamente</strong> junto con sus facturas, asistencia, progreso y rutinas. Si solo dejó
-                    de venir, es mejor darlo de baja.
-                  </p>
-                  <label className="block space-y-1.5 text-foreground">
-                    <span className="text-sm">Escribe <strong>{row?.user.name}</strong> para confirmar</span>
-                    <Input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
-                  </label>
-                </>
-              )}
-            </div>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-          {blocked ? (
-            <AlertDialogAction onClick={(e) => { e.preventDefault(); row && onDeactivate(row); }}>Dar de baja</AlertDialogAction>
-          ) : (
-            <AlertDialogAction
-              disabled={!matches || pending || payments === null}
-              onClick={(e) => { e.preventDefault(); row && onConfirm(row); }}
-              className="bg-[#ff3b5c] hover:bg-[#ff3b5c]/90 text-white"
-            >
-              {pending ? 'Eliminando…' : 'Eliminar definitivamente'}
-            </AlertDialogAction>
-          )}
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}

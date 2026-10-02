@@ -73,9 +73,9 @@ export function billingDescription(price: number, days: number, type?: string): 
   const p = billingPeriod(days, type);
   const money = formatMoney(price);
   if (p.once) return `Se cobra una sola vez ${money}; no se renueva.`;
-  if (p.months === 1) return `Se factura ${money} el día 1 de cada mes.`;
-  if (p.months === 12) return `Se factura ${money} una vez al año, el día 1 del mes de inicio.`;
-  if (p.months) return `Se factura ${money} cada ${p.months} meses, el día 1.`;
+  if (p.months === 1) return `Se cobra ${money} cada mes, el mismo día en que se inscribió el socio.`;
+  if (p.months === 12) return `Se cobra ${money} una vez al año, en la fecha de inscripción del socio.`;
+  if (p.months) return `Se cobra ${money} cada ${p.months} meses, el mismo día en que se inscribió el socio.`;
   return `Se factura ${money} cada ${p.days} días.`;
 }
 

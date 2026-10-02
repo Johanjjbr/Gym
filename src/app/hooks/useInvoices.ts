@@ -311,6 +311,9 @@ export interface BillingMember {
   plan_id: string | null;
   paid_until: string | null;
   next_payment: string | null;
+  start_date?: string | null;
+  billing_day?: number | null;
+  billing_start?: string | null;
   plans: { id: string; name: string; price: number; duration_days: number; type: string | null } | null;
 }
 
@@ -321,7 +324,7 @@ export function useBillingMembers() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('users')
-        .select('id, name, cedula, phone, member_number, status, is_free_user, plan_id, paid_until, next_payment, plans(id, name, price, duration_days, type)')
+        .select('id, name, cedula, phone, member_number, status, is_free_user, plan_id, paid_until, next_payment, start_date, billing_day, billing_start, plans(id, name, price, duration_days, type)')
         .order('name');
       if (error) throw new Error(error.message);
       return (data ?? []) as unknown as BillingMember[];
@@ -332,7 +335,7 @@ export function useBillingMembers() {
 }
 
 const BILLING_MEMBER_FIELDS =
-  'id, name, cedula, phone, member_number, status, is_free_user, plan_id, paid_until, next_payment, start_date, plans(id, name, price, duration_days, type)';
+  'id, name, cedula, phone, member_number, status, is_free_user, plan_id, paid_until, next_payment, start_date, billing_day, billing_start, plans(id, name, price, duration_days, type)';
 
 /** Un socio con lo necesario para cobrar (ficha del socio). */
 export function useBillingMember(id: string | undefined) {
@@ -435,7 +438,7 @@ export function useDailyPayments(day: string) {
     queryKey: ['payments', 'day', day],
     queryFn: async () => {
       const select =
-        'id, user_id, amount, date, created_at, method, status, currency, amount_original, exchange_rate, ' +
+        'id, user_id, member_name, amount, date, created_at, method, status, currency, amount_original, exchange_rate, ' +
         'users(name, member_number, cedula), staff:staff!payments_created_by_fkey(name), ' +
         'invoices(id, invoice_number, concept, reference, notes, void_reason)';
       const next = addDaysIso(day, 1);

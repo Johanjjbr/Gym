@@ -29,6 +29,9 @@ import type { InvoiceRow } from '../lib/billing';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
 import { useAuth } from '../contexts/AuthContext';
+import { useModulePermissions } from '../hooks/useModulePermissions';
+import { useSetMemberStatus } from '../hooks/useMembers';
+import { DeactivateMemberDialog, DeleteMemberDialog } from '../components/member/MemberLifecycleDialogs';
 import { supabase } from '../lib/supabase';
 
 const MONTHS_ES = [
@@ -89,6 +92,10 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   };
   const [collectOpen, setCollectOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [lifecycle, setLifecycle] = useState<'baja' | 'eliminar' | null>(null);
+  const { canAccess } = useModulePermissions();
+  const canDeleteMember = canAccess('/usuarios', 'delete');
+  const setMemberStatus = useSetMemberStatus();
 
   // Facturación y asistencia (prioridades del perfil)
   const invoices = (userPayments ?? []) as InvoiceRow[];
@@ -242,6 +249,20 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
         onAssignRoutine={() => setIsAssignRoutineDialogOpen(true)}
         onAssignTrainer={() => setIsAssignTrainerDialogOpen(true)}
         onAddMeasurement={() => { setTab('progreso'); setIsAddProgressDialogOpen(true); }}
+        onDeactivate={() => setLifecycle('baja')}
+        onReactivate={() => setMemberStatus.mutate({ id: user.id, status: 'Activo' })}
+        onDelete={canDeleteMember ? () => setLifecycle('eliminar') : undefined}
+      />
+
+      <DeactivateMemberDialog
+        member={lifecycle === 'baja' ? { id: user.id, name: user.name, status: user.status, debt: account.debt?.total } : null}
+        onClose={() => setLifecycle(null)}
+      />
+      <DeleteMemberDialog
+        member={lifecycle === 'eliminar' ? { id: user.id, name: user.name, status: user.status } : null}
+        onClose={() => setLifecycle(null)}
+        onDeactivate={() => setLifecycle('baja')}
+        onDeleted={() => navigate('/usuarios')}
       />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as ProfileTab)} className="space-y-6">

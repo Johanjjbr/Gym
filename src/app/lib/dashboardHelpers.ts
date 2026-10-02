@@ -58,7 +58,8 @@ function daysInMonth(d: DateStr): number {
 
 export interface PaymentRow {
   id: string;
-  user_id: string;
+  user_id: string | null;
+  member_name?: string | null;
   amount: number | string;
   date: string;
   method?: string | null;
