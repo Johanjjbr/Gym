@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useMemo, useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Download, Calendar, Activity, Dumbbell, User as UserIcon, CreditCard, TrendingUp, FileText, Loader2, AlertCircle, Printer, Plus, Users, LogIn, LogOut, Trash2, CheckCircle, Shield, MapPin, HeartPulse, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -17,8 +17,16 @@ import { format, parseISO, startOfMonth } from 'date-fns';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
 import { useUserInvoices } from '../hooks/useInvoices';
 import { MemberPaymentsTab } from '../components/member/MemberPaymentsTab';
+import { MemberProfileHeader, type ProfileTab } from '../components/member/MemberProfileHeader';
+import { MemberInfoTab } from '../components/member/MemberInfoTab';
+import { MemberAttendanceTab } from '../components/member/MemberAttendanceTab';
+import { CollectPaymentDialog } from '../components/billing/CollectPaymentDialog';
+import { UserFormDialog } from '../components/UserFormDialog';
+import { useMemberAccount } from '../hooks/useMemberAccount';
+import { useMemberAttendance } from '../hooks/useAttendance';
+import { groupVisits, summarizeAttendance } from '../lib/attendanceStats';
+import type { InvoiceRow } from '../lib/billing';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
-import { useUserAttendance } from '../hooks/useAttendance';
 import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -69,8 +77,25 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   // Obtener usuario actual del staff usando el contexto de autenticación
   const { user: currentUser } = useAuth();
   
-  // Obtener asistencia del usuario
-  const { data: userAttendanceData, isLoading: loadingAttendance } = useUserAttendance(id || '');
+  // Pestaña activa en la URL (?tab=pagos) para poder enlazar y volver con "atrás"
+  const [params, setParams] = useSearchParams();
+  const TABS: ProfileTab[] = ['info', 'pagos', 'asistencia', 'rutinas', 'progreso'];
+  const tab: ProfileTab = TABS.includes(params.get('tab') as ProfileTab) ? (params.get('tab') as ProfileTab) : 'info';
+  const setTab = (t: ProfileTab) => {
+    const next = new URLSearchParams(params);
+    if (t === 'info') next.delete('tab');
+    else next.set('tab', t);
+    setParams(next, { replace: true });
+  };
+  const [collectOpen, setCollectOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
+  // Facturación y asistencia (prioridades del perfil)
+  const invoices = (userPayments ?? []) as InvoiceRow[];
+  const account = useMemberAccount(id, invoices);
+  const { data: attendanceRecords, isLoading: loadingVisits } = useMemberAttendance(id);
+  const visits = useMemo(() => groupVisits(attendanceRecords ?? []), [attendanceRecords]);
+  const attendanceSummary = useMemo(() => summarizeAttendance(visits, account.today), [visits, account.today]);
   
   // Obtener progreso físico del usuario
   const { data: userPhysicalProgress, isLoading: loadingPhysicalProgress } = usePhysicalProgress(id || '');
@@ -116,38 +141,6 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
 
   // Datos reales obtenidos de los hooks
   const userProgress = userPhysicalProgress || [];
-  const userInvoices: any[] = userPayments || [];
-  const payments = userPayments || [];
-  // Último pago REAL (la factura más reciente puede estar pendiente)
-  const lastPaid: any = (userPayments || [])
-    .filter((p: any) => p.status === 'Pagada' && p.paid_at)
-    .sort((a: any, b: any) => (a.paid_at < b.paid_at ? 1 : -1))[0];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Activo':
-        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
-      case 'Moroso':
-        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
-      default:
-        return 'bg-muted text-muted-foreground';
-    }
-  };
-
-  const getPaymentStatusColor = (status: string) => {
-    switch (status) {
-      case 'Pagado':
-      case 'Pagada':
-        return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
-      case 'Pendiente':
-        return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
-      case 'Vencido':
-      case 'Vencida':
-        return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
-      default:
-        return 'bg-muted text-muted-foreground';
-    }
-  };
 
   const assignRoutine = () => {
     if (!selectedRoutineId || !startDate) {
@@ -238,407 +231,135 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            onClick={() => navigate('/usuarios')}
-            className="hover:bg-primary/10"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div>
-            <h1 className="text-4xl mb-2">{user.name}</h1>
-            <div className="flex items-center gap-4 text-muted-foreground">
-              <span>ID: {user.id}</span>
-              {user.email && (
-                <>
-                  <span>•</span>
-                  <span>{user.email}</span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <MemberProfileHeader
+        user={user}
+        account={account}
+        attendance={{ summary: attendanceSummary, visits, loading: loadingVisits }}
+        onBack={() => navigate('/usuarios')}
+        onTab={setTab}
+        onCollect={() => setCollectOpen(true)}
+        onEdit={() => setEditOpen(true)}
+        onAssignRoutine={() => setIsAssignRoutineDialogOpen(true)}
+        onAssignTrainer={() => setIsAssignTrainerDialogOpen(true)}
+        onAddMeasurement={() => { setTab('progreso'); setIsAddProgressDialogOpen(true); }}
+      />
 
-      {/* User Info Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <UserIcon className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Estado</p>
-                <Badge variant="outline" className={getStatusColor(user.status)}>
-                  {user.status}
-                </Badge>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-secondary/10">
-                <CreditCard className="w-6 h-6 text-secondary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Plan Actual</p>
-                <p className="text-lg">{user.plan || 'No definido'}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-accent/10">
-                <Activity className="w-6 h-6 text-accent" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">IMC</p>
-                <p className="text-2xl text-primary">
-                  {user.imc ? user.imc.toFixed(1) : 'N/A'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <Calendar className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Próximo Pago</p>
-                <p className="text-lg">
-                  {user.next_payment 
-                    ? new Date(user.next_payment).toLocaleDateString('es-ES')
-                    : 'No definido'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Tabs with Details */}
-      <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-auto">
-          <TabsTrigger value="overview">General</TabsTrigger>
-          <TabsTrigger value="attendance">Asistencia</TabsTrigger>
-          <TabsTrigger value="progress">Progreso Físico</TabsTrigger>
-          <TabsTrigger value="routines">Rutinas</TabsTrigger>
-          <TabsTrigger value="payments">Pagos</TabsTrigger>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as ProfileTab)} className="space-y-6">
+        <TabsList className="w-full justify-start overflow-x-auto lg:w-auto">
+          <TabsTrigger value="info">Información</TabsTrigger>
+          <TabsTrigger value="pagos" className="gap-1.5">
+            Pagos
+            {account.state === 'overdue' && <span className="h-2 w-2 rounded-full bg-[#ff3b5c]" aria-label="con deuda" />}
+            {account.state === 'due-soon' && <span className="h-2 w-2 rounded-full bg-[#eab308]" aria-label="vence pronto" />}
+          </TabsTrigger>
+          <TabsTrigger value="asistencia">Asistencia</TabsTrigger>
+          <TabsTrigger value="rutinas">Rutinas</TabsTrigger>
+          <TabsTrigger value="progreso">Progreso físico</TabsTrigger>
         </TabsList>
 
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Personal Info */}
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UserIcon className="w-5 h-5" />
-                  Información Personal
-                </CardTitle>
-              </CardHeader>
-<CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Identificación */}
-                  {user.cedula && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Cédula</p>
-                      <p className="font-mono text-sm">{user.cedula}</p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Miembro #</p>
-                    <p className="text-primary">{user.member_number || user.id || 'N/A'}</p>
-                  </div>
-
-                  {/* Información Personal */}
-                  {user.birth_date && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Fecha de Nacimiento</p>
-                      <p>
-                        {new Date(user.birth_date).toLocaleDateString('es-ES', { 
-                          day: 'numeric', 
-                          month: 'long', 
-                          year: 'numeric' 
-                        })}
-                      </p>
-                    </div>
-                  )}
-                  {user.gender && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Género</p>
-                      <p>{user.gender}</p>
-                    </div>
-                  )}
-
-                  {/* Contacto */}
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Teléfono</p>
-                    <p>{user.phone || 'No definido'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Email</p>
-                    <p className="text-sm">{user.email || 'No definido'}</p>
-                  </div>
-                  {user.address && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Dirección</p>
-                      <p>{user.address}</p>
-                    </div>
-                  )}
-                  {user.emergency_contact && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Contacto de Emergencia</p>
-                      <p className="flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-primary" />
-                        <span>{user.emergency_contact}</span>
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Membresía */}
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
-                    <p>
-                      {user.start_date 
-                        ? new Date(user.start_date).toLocaleDateString('es-ES')
-                        : 'No definido'}
-                    </p>
-                  </div>
-
-                  {/* Físico */}
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Peso</p>
-                    <p>{user.weight ? `${user.weight} kg` : 'No registrado'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Estatura</p>
-                    <p>{user.height ? `${user.height} cm` : 'No registrado'}</p>
-                  </div>
-
-                  {/* Notas */}
-                  {user.notes && (
-                    <div className="md:col-span-2">
-                      <p className="text-sm text-muted-foreground mb-1">Notas</p>
-                      <p className="flex items-start gap-2">
-                        <FileText className="w-4 h-4 text-primary mt-0.5" />
-                        <span>{user.notes}</span>
-                      </p>
-                    </div>
-                  )}
-                  {user.medical_notes && (
-                    <div className="md:col-span-2">
-                      <p className="text-sm text-muted-foreground mb-1">Notas Médicas</p>
-                      <p className="flex items-start gap-2">
-                        <Building2 className="w-4 h-4 text-primary mt-0.5" />
-                        <span>{user.medical_notes}</span>
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Trainer Assignment Card */}
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-5 h-5" />
-                    Entrenador Asignado
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-primary text-primary hover:bg-primary/10"
-                    onClick={() => setIsAssignTrainerDialogOpen(true)}
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    {user.trainer_name ? 'Cambiar' : 'Asignar'}
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {user.trainer_name ? (
-                  <div className="space-y-4">
-                    <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-primary/20">
-                          <Dumbbell className="w-5 h-5 text-primary" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-lg mb-1">{user.trainer_name}</p>
-                          <p className="text-sm text-muted-foreground">Entrenador Personal</p>
-                        </div>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c]/10"
-                      onClick={() => {
-                        if (!id) return;
-                        assignTrainerMutation.mutate({
-                          userId: id,
-                          trainerId: null,
-                        });
-                      }}
-                    >
-                      Cambiar a Entrenamiento Libre
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="p-3 rounded-lg bg-muted/50 w-fit mx-auto mb-3">
-                      <Users className="w-8 h-8 text-muted-foreground" />
-                    </div>
-                    <p className="text-muted-foreground mb-1">Entrenamiento Libre</p>
-                    <p className="text-sm text-muted-foreground">Sin entrenador asignado</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Rutinas Asignadas */}
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Dumbbell className="w-5 h-5" />
-                  Rutinas Asignadas
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {loadingAssignments ? (
-                  <div className="text-center py-8">
-                    <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
-                  </div>
-                ) : userRoutineAssignments && userRoutineAssignments.length > 0 ? (
-                  <div className="space-y-3">
-                    {userRoutineAssignments.slice(0, 2).map((assignment: any) => (
-                      <div key={assignment.id} className="p-3 bg-muted rounded-lg">
-                        <p className="mb-1">{assignment.routine_templates?.name || 'Rutina'}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Asignada por: {assignment.staff?.name || 'Entrenador'}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Dumbbell className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>No hay rutinas asignadas</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Último Pago */}
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="w-5 h-5" />
-                  Último Pago
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {loadingPayments ? (
-                  <div className="text-center py-8">
-                    <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
-                  </div>
-                ) : lastPaid ? (
-                  <div className="p-4 bg-muted rounded-lg">
-                    <div className="flex items-center justify-between gap-4 mb-2">
-                      <p className="text-2xl text-primary tabular-nums">Bs {Number(lastPaid.amount).toLocaleString('es-VE')}</p>
-                      <span className="text-sm text-muted-foreground">{lastPaid.concept}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Fecha</p>
-                        <p>{lastPaid.paid_at.slice(0, 10).split('-').reverse().join('/')}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Método</p>
-                        <p>{lastPaid.method || '—'}</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <CreditCard className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>No hay pagos registrados</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+        <TabsContent value="info">
+          <MemberInfoTab
+            user={user}
+            routines={userRoutineAssignments as any[] | undefined}
+            loadingRoutines={loadingAssignments}
+            onEdit={() => setEditOpen(true)}
+            onAssignTrainer={() => setIsAssignTrainerDialogOpen(true)}
+            onRemoveTrainer={() => id && assignTrainerMutation.mutate({ userId: id, trainerId: null })}
+            onOpenRoutines={() => setTab('rutinas')}
+          />
         </TabsContent>
 
-        {/* Attendance Tab */}
-        <TabsContent value="attendance" className="space-y-6">
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle>Historial de Asistencia</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingAttendance ? (
-                <div className="text-center py-8">
-                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
-                </div>
-              ) : userAttendanceData && userAttendanceData.length > 0 ? (
-                <div className="space-y-3">
-                  {userAttendanceData.map((attendance) => (
-                    <div
-                      key={attendance.id}
-                      className="flex items-center justify-between p-4 bg-muted rounded-lg"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="p-2 rounded-lg bg-primary/10">
-                          <Calendar className="w-5 h-5 text-primary" />
-                        </div>
-                        <div>
-                          <p>{new Date(attendance.date).toLocaleDateString('es-ES', { 
-                            weekday: 'long', 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric' 
-                          })}</p>
-                          <p className="text-sm text-muted-foreground">{attendance.time}</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
-                        {attendance.type}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Calendar className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p>No hay registros de asistencia</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="pagos">
+          <MemberPaymentsTab account={account} invoices={invoices} loading={loadingPayments} />
         </TabsContent>
 
-        {/* Progress Tab */}
-        <TabsContent value="progress" className="space-y-6">
+        <TabsContent value="asistencia">
+          <MemberAttendanceTab visits={visits} summary={attendanceSummary} loading={loadingVisits} today={account.today} />
+        </TabsContent>
+
+        <TabsContent value="rutinas" className="space-y-6">
+          {loadingAssignments ? (
+            <Card className="bg-card border-border">
+              <CardContent className="py-12">
+                <div className="text-center">
+                  <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto mb-2" />
+                  <p className="text-muted-foreground">Cargando rutinas...</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : userRoutineAssignments && userRoutineAssignments.length > 0 ? (
+            userRoutineAssignments.map((assignment: any) => (
+              <Card key={assignment.id} className="bg-card border-border">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <Dumbbell className="w-5 h-5" />
+                      {assignment.routine_templates?.name || 'Rutina'}
+                    </CardTitle>
+                    <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
+                      {assignment.is_active ? 'Activa' : 'Inactiva'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{assignment.routine_templates?.description || ''}</p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4 pb-4 border-b border-border">
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Asignada por</p>
+                      <p>{assignment.staff?.name || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
+                      <p>{assignment.start_date ? new Date(assignment.start_date).toLocaleDateString('es-ES') : 'N/A'}</p>
+                    </div>
+                  </div>
+                  
+                  {assignment.routine_templates?.exercise_templates && assignment.routine_templates.exercise_templates.length > 0 && (
+                    <div>
+                      <h4 className="mb-3">Ejercicios</h4>
+                      <div className="space-y-3">
+                        {assignment.routine_templates.exercise_templates.map((exercise: any) => (
+                          <div
+                            key={exercise.id}
+                            className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                          >
+                            <div className="flex-1">
+                              <p>{exercise.name}</p>
+                              {exercise.notes && (
+                                <p className="text-sm text-muted-foreground">{exercise.notes}</p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-primary">{exercise.sets} x {exercise.reps}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <Card className="bg-card border-border">
+              <CardContent className="py-12">
+                <div className="text-center text-muted-foreground">
+                  <Dumbbell className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                  <p>No hay rutinas asignadas</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          <Button
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={() => setIsAssignRoutineDialogOpen(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Asignar Rutina
+          </Button>
+        </TabsContent>
+
+        <TabsContent value="progreso" className="space-y-6">
           <Card className="bg-card border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -758,95 +479,18 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
             </CardContent>
           </Card>
         </TabsContent>
-
-        {/* Routines Tab */}
-        <TabsContent value="routines" className="space-y-6">
-          {loadingAssignments ? (
-            <Card className="bg-card border-border">
-              <CardContent className="py-12">
-                <div className="text-center">
-                  <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto mb-2" />
-                  <p className="text-muted-foreground">Cargando rutinas...</p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : userRoutineAssignments && userRoutineAssignments.length > 0 ? (
-            userRoutineAssignments.map((assignment: any) => (
-              <Card key={assignment.id} className="bg-card border-border">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2">
-                      <Dumbbell className="w-5 h-5" />
-                      {assignment.routine_templates?.name || 'Rutina'}
-                    </CardTitle>
-                    <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30">
-                      {assignment.is_active ? 'Activa' : 'Inactiva'}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{assignment.routine_templates?.description || ''}</p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4 pb-4 border-b border-border">
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Asignada por</p>
-                      <p>{assignment.staff?.name || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">Fecha de Inicio</p>
-                      <p>{assignment.start_date ? new Date(assignment.start_date).toLocaleDateString('es-ES') : 'N/A'}</p>
-                    </div>
-                  </div>
-                  
-                  {assignment.routine_templates?.exercise_templates && assignment.routine_templates.exercise_templates.length > 0 && (
-                    <div>
-                      <h4 className="mb-3">Ejercicios</h4>
-                      <div className="space-y-3">
-                        {assignment.routine_templates.exercise_templates.map((exercise: any) => (
-                          <div
-                            key={exercise.id}
-                            className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                          >
-                            <div className="flex-1">
-                              <p>{exercise.name}</p>
-                              {exercise.notes && (
-                                <p className="text-sm text-muted-foreground">{exercise.notes}</p>
-                              )}
-                            </div>
-                            <div className="text-right">
-                              <p className="text-primary">{exercise.sets} x {exercise.reps}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <Card className="bg-card border-border">
-              <CardContent className="py-12">
-                <div className="text-center text-muted-foreground">
-                  <Dumbbell className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p>No hay rutinas asignadas</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          <Button
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={() => setIsAssignRoutineDialogOpen(true)}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Asignar Rutina
-          </Button>
-        </TabsContent>
-
-        {/* Payments Tab */}
-        <TabsContent value="payments" className="space-y-6">
-          <MemberPaymentsTab userId={id || ''} invoices={userPayments || []} loading={loadingPayments} />
-        </TabsContent>
       </Tabs>
+
+      {account.member && (
+        <CollectPaymentDialog
+          open={collectOpen}
+          onOpenChange={setCollectOpen}
+          members={[account.member]}
+          invoices={invoices}
+          initialUserId={account.member.id}
+        />
+      )}
+      <UserFormDialog open={editOpen} onOpenChange={setEditOpen} user={user} />
 
       {/* Assign Routine Dialog */}
       <Dialog open={isAssignRoutineDialogOpen} onOpenChange={setIsAssignRoutineDialogOpen}>

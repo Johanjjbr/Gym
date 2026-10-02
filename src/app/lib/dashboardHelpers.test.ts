@@ -9,6 +9,7 @@ import {
   revenueMonthToDate,
   shiftMonth,
 } from './dashboardHelpers';
+import { attachInvoiceDetails } from './dashboardHelpers';
 
 const pay = (date: string, amount: number) => ({ id: date + amount, user_id: 'u1', amount, date });
 
@@ -109,5 +110,22 @@ describe('memberSummary', () => {
       '2026-10-01',
     );
     expect(s).toEqual({ total: 3, active: 1, suspended: 1, inactive: 1, newThisMonth: 1 });
+  });
+});
+
+describe('attachInvoiceDetails', () => {
+  it('une el pago con su factura: motivo, N° y referencia', () => {
+    const out = attachInvoiceDetails(
+      [
+        { id: 'p1', user_id: 'u', amount: 20, date: '2026-10-01', method: 'Pago Móvil' },
+        { id: 'p0', user_id: 'u', amount: 20, date: '2026-01-01', method: 'Efectivo' },
+      ],
+      [
+        { payment_id: 'p1', invoice_number: 'FAC-2026-0050', concept: 'Premium - Octubre 2026', reference: '012345', notes: null },
+        { payment_id: null, invoice_number: 'FAC-X', concept: 'Pendiente' },
+      ],
+    );
+    expect(out[0]).toMatchObject({ concept: 'Premium - Octubre 2026', invoiceNumber: 'FAC-2026-0050', reference: '012345', notes: null });
+    expect(out[1]).toMatchObject({ concept: null, invoiceNumber: null, reference: null });
   });
 });

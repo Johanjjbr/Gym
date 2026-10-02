@@ -64,6 +64,39 @@ export interface PaymentRow {
   method?: string | null;
 }
 
+export interface PaymentInvoiceInfo {
+  payment_id?: string | null;
+  invoice_number?: string | null;
+  concept?: string | null;
+  reference?: string | null;
+  notes?: string | null;
+}
+
+export interface PaymentWithDetail extends PaymentRow {
+  /** Motivo: concepto de la(s) factura(s) que saldó el pago */
+  concept: string | null;
+  invoiceNumber: string | null;
+  reference: string | null;
+  notes: string | null;
+}
+
+/**
+ * Une cada pago con la factura que saldó (invoices.payment_id) para mostrar
+ * motivo, N° de factura y referencia. Pagos antiguos sin factura quedan en null.
+ */
+export function attachInvoiceDetails(payments: PaymentRow[], invoices: PaymentInvoiceInfo[]): PaymentWithDetail[] {
+  const byPayment = new Map<string, PaymentInvoiceInfo[]>();
+  for (const inv of invoices) {
+    if (!inv.payment_id) continue;
+    (byPayment.get(inv.payment_id) ?? byPayment.set(inv.payment_id, []).get(inv.payment_id)!).push(inv);
+  }
+  return payments.map((p) => {
+    const inv = byPayment.get(p.id) ?? [];
+    const pick = (k: keyof PaymentInvoiceInfo) => inv.map((i) => i[k]).filter(Boolean).join(', ') || null;
+    return { ...p, concept: pick('concept'), invoiceNumber: pick('invoice_number'), reference: pick('reference'), notes: pick('notes') };
+  });
+}
+
 export interface MonthRevenue {
   key: string; // yyyy-MM
   label: string; // 'Oct'

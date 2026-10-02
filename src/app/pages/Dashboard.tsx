@@ -245,7 +245,9 @@ function DashboardContent({ data, onNavigate }: { data: DashboardData; onNavigat
                     key={p.id}
                     onClick={() => onNavigate(`/usuarios/${p.user_id}`)}
                     title={data.nameOf(p.user_id)}
-                    detail={`${formatShortDate(p.date)}${p.method ? ` · ${p.method}` : ''}`}
+                    motive={p.concept ?? undefined}
+                    note={p.notes ?? undefined}
+                    detail={[formatShortDate(p.date), p.method, p.reference && `Ref. ${p.reference}`].filter(Boolean).join(' · ')}
                     amount={formatMoney(Number(p.amount))}
                     amountClass="text-[#10f94e]"
                   />
@@ -375,9 +377,14 @@ function ListRow({
   amount,
   amountClass = '',
   onClick,
+  motive,
+  note,
 }: {
   title: string;
   detail: string;
+  /** Motivo (concepto de la factura) */
+  motive?: string;
+  note?: string;
   amount: string;
   amountClass?: string;
   onClick: () => void;
@@ -391,6 +398,8 @@ function ListRow({
       >
         <span className="min-w-0">
           <span className="block text-sm font-medium truncate">{title}</span>
+          {motive && <span className="block text-xs truncate" title={note ? `${motive} — ${note}` : motive}>{motive}</span>}
+          {note && <span className="block text-xs italic text-muted-foreground truncate" title={note}>{note}</span>}
           <span className="block text-xs text-muted-foreground">{detail}</span>
         </span>
         <span className={`text-sm font-semibold tabular-nums shrink-0 ${amountClass}`}>{amount}</span>

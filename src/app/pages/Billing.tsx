@@ -6,6 +6,7 @@
  *  - Un único flujo "Cobrar" (CollectPaymentDialog)
  * Parámetros de URL: ?vista=deudores | por-vencer  ·  ?cobrar=<id de socio>
  */
+import { toast } from 'sonner';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
@@ -111,7 +112,9 @@ export function Billing() {
           m?.name.toLowerCase().includes(term) ||
           m?.cedula?.toLowerCase().includes(term) ||
           inv.invoice_number?.toLowerCase().includes(term) ||
-          inv.concept?.toLowerCase().includes(term)
+          inv.concept?.toLowerCase().includes(term) ||
+          inv.reference?.toLowerCase().includes(term) ||
+          inv.notes?.toLowerCase().includes(term)
         );
       })
       .sort((a, b) => (a.due_date < b.due_date ? 1 : a.due_date > b.due_date ? -1 : (b.invoice_number ?? '').localeCompare(a.invoice_number ?? '')));
@@ -241,7 +244,7 @@ export function Billing() {
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Socio, cédula, N° de factura…"
+                  placeholder="Socio, cédula, N° de factura o referencia…"
                   className="pl-9"
                   aria-label="Buscar facturas"
                   data-testid="search-invoices"
@@ -301,13 +304,14 @@ export function Billing() {
               </div>
             ) : (
               <div className="relative overflow-x-auto">
-                <table className="w-full min-w-[760px] text-sm" data-testid="invoices-table">
+                <table className="w-full min-w-[900px] text-sm" data-testid="invoices-table">
                   <thead>
                     <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                       <th className="px-4 py-3 font-medium">Socio</th>
-                      <th className="px-4 py-3 font-medium">Período</th>
+                      <th className="px-4 py-3 font-medium">Motivo</th>
                       <th className="px-4 py-3 font-medium">Vence</th>
                       <th className="px-4 py-3 font-medium">Estado</th>
+                      <th className="px-4 py-3 font-medium">Referencia</th>
                       <th className="px-4 py-3 font-medium text-right">Monto</th>
                       <th className="px-4 py-3"><span className="sr-only">Acciones</span></th>
                     </tr>
@@ -324,12 +328,29 @@ export function Billing() {
                             </button>
                             <span className="block text-xs text-muted-foreground font-mono">{inv.invoice_number}</span>
                           </td>
-                          <td className="px-4 py-3">{inv.concept || '—'}</td>
+                          <td className="px-4 py-3 max-w-[260px]">
+                            <span className="block">{inv.concept || '—'}</span>
+                            {inv.notes && <span className="block truncate text-xs italic text-muted-foreground" title={inv.notes}>{inv.notes}</span>}
+                          </td>
                           <td className="px-4 py-3 tabular-nums">{fmtDate(inv.due_date)}</td>
                           <td className="px-4 py-3">
                             <StatusBadge status={st} />
                             {st === 'Pagada' && inv.paid_at && (
                               <span className="block text-xs text-muted-foreground mt-0.5">{fmtDate(inv.paid_at)} · {inv.method}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs tabular-nums">
+                            {inv.reference ? (
+                              <button
+                                type="button"
+                                className="hover:text-[#10f94e]"
+                                title="Copiar referencia"
+                                onClick={() => navigator.clipboard?.writeText(inv.reference!).then(() => toast.success('Referencia copiada'), () => {})}
+                              >
+                                {inv.reference}
+                              </button>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(Number(inv.amount))}</td>
@@ -533,12 +554,13 @@ export function Billing() {
                 <DialogDescription>{nameOf(detail.user_id)}</DialogDescription>
               </DialogHeader>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <Field label="Período" value={detail.concept || '—'} wide />
+                <Field label="Motivo" value={detail.concept || '—'} wide />
                 <Field label="Monto" value={formatMoney(Number(detail.amount))} />
                 <Field label="Vence" value={fmtDate(detail.due_date)} />
                 {detail.paid_at && <Field label="Pagada el" value={fmtDate(detail.paid_at)} />}
                 {detail.method && <Field label="Método" value={detail.method} />}
                 {detail.reference && <Field label="Referencia" value={detail.reference} />}
+                {detail.invoice_number && <Field label="N° de factura" value={detail.invoice_number} />}
                 {detail.notes && <Field label="Notas" value={detail.notes} wide />}
               </dl>
               <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">

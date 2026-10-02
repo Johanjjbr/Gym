@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { statsKeys } from './useStats';
 import {
   addDays,
+  attachInvoiceDetails,
   attendanceByDay,
   memberSummary,
   receivables,
@@ -42,7 +43,7 @@ export async function fetchDashboard(now: Date = new Date()) {
     supabase
       .from('invoices')
       // Todas: las pagadas hacen falta para calcular el próximo vencimiento
-      .select('id, user_id, amount, due_date, status, concept'),
+      .select('id, user_id, amount, due_date, status, concept, invoice_number, reference, notes, payment_id'),
     supabase
       .from('payments')
       .select('id, user_id, amount, date, method')
@@ -76,7 +77,7 @@ export async function fetchDashboard(now: Date = new Date()) {
     renewals: upcomingRenewals((usersRes.data ?? []) as unknown as RenewalMember[], invoices as InvoiceRow[], today),
     attendance,
     todayAttendance: attendance[attendance.length - 1]?.count ?? 0,
-    recentPayments: payments.slice(0, 6),
+    recentPayments: attachInvoiceDetails(payments.slice(0, 6), invoices as InvoiceRow[]),
     nameOf: (id: string) => names.get(id) ?? 'Socio eliminado',
   };
 }

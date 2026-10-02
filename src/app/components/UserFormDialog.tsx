@@ -1,743 +1,453 @@
 /**
- * Componente de ejemplo: Formulario de Usuario con Zod + React Query
- * Muestra cómo integrar validación y mutaciones correctamente
+ * Formulario de socio (crear / editar) en panel lateral, por secciones:
+ *  1. Datos personales  2. Contacto  3. Membresía  4. Salud y notas (opcional)
+ *
+ * Reglas:
+ *  - No envía next_payment / paid_until: los calcula la base a partir de las facturas.
+ *  - "Suspendido" lo pone y lo quita el sistema según los pagos; aquí solo Activo / Inactivo.
+ *  - Avisa antes de guardar si la cédula o el email ya pertenecen a otro socio.
  */
-
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { ChevronDown, HeartPulse, IdCard, Info, Loader2, Phone, UserRound } from 'lucide-react';
+import { toast } from 'sonner';
 import { userSchema, type UserFormData } from '../lib/validations';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
-import { useStaff } from '../hooks/useStaff';
 import { usePlans } from '../hooks/usePlans';
+import { findDuplicateMember } from '../hooks/useMembers';
 import { ActivationModal } from './ActivationModal';
-import { formatCurrency } from '../../lib/format';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
-import { toast } from 'sonner';
-import { Loader2, Calendar } from 'lucide-react';
+import { formatMoney, toDateOnly } from '../lib/dashboardHelpers';
 
 interface UserFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  user?: any; // Usuario existente para editar (opcional)
+  /** Socio a editar; sin él, se crea uno nuevo. */
+  user?: any;
 }
 
-// Formatear YYYY-MM-DD -> DD/MM/YYYY
-function formatToDisplay(dateStr: string): string {
-  if (!dateStr) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
+const GENDERS = ['Masculino', 'Femenino', 'Otro'] as const;
+
+/** yyyy-MM-dd de un valor de la base (date, timestamp o dd/mm/yyyy). */
+function toInputDate(v?: string | null): string {
+  if (!v) return '';
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [d, m, y] = s.split('/');
+    return `${y}-${m}-${d}`;
   }
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return '';
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
+  return '';
 }
 
-// Formatear DD/MM/YYYY -> YYYY-MM-DD (para BD)
-function formatToISO(dateStr: string): string {
-  if (!dateStr) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-    const [day, month, year] = dateStr.split('/');
-    return `${year}-${month}-${day}`;
-  }
-  return dateStr;
+function bmi(weight?: unknown, height?: unknown): number | null {
+  const w = Number(weight);
+  const h = Number(height);
+  if (!w || !h) return null;
+  return Math.round((w / (h / 100) ** 2) * 10) / 10;
 }
 
-// Componente de input fecha DD/MM/YYYY con picker nativo
-function DateInput({ 
-  id, 
-  label, 
-  register, 
-  error, 
-  disabled, 
-  required = false,
-  value 
-}: { 
-  id: string; 
-  label: string; 
-  register: any; 
-  error?: any; 
-  disabled?: boolean; 
-  required?: boolean;
-  value?: string;
-}) {
-  const [displayValue, setDisplayValue] = useState(() => formatToDisplay(value || ''));
-  const pickerRef = useRef<HTMLInputElement>(null);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let val = e.target.value.replace(/\D/g, '');
-    if (val.length >= 2) val = val.slice(0, 2) + '/' + val.slice(2);
-    if (val.length >= 5) val = val.slice(0, 5) + '/' + val.slice(5, 9);
-    setDisplayValue(val.slice(0, 10));
-    register(id).onChange({ target: { name: id, value: formatToISO(val.slice(0, 10)) } });
-  };
-
-  const handleBlur = () => {
-    if (displayValue && !/^\d{2}\/\d{2}\/\d{4}$/.test(displayValue)) {
-      setDisplayValue('');
-      register(id).onChange({ target: { name: id, value: '' } });
-    }
-  };
-
-  const openPicker = () => {
-    if (pickerRef.current) {
-      // Usar showPicker() API moderna si está disponible
-      if (pickerRef.current.showPicker) {
-        pickerRef.current.showPicker();
-      } else {
-        pickerRef.current.focus();
-        pickerRef.current.click();
-      }
-    }
-  };
-
-  const handlePickerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDisplayValue(formatToDisplay(e.target.value));
-    register(id).onChange({ target: { name: id, value: e.target.value } });
-  };
-
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id} className="text-gray-300">
-        {label} {required && <span className="text-[#ff3b5c]">*</span>}
-      </Label>
-      <div className="relative">
-        <Input
-          id={id}
-          type="text"
-          placeholder="DD/MM/YYYY"
-          value={displayValue}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          disabled={disabled}
-          className="bg-gray-800 border-gray-700 text-white pr-12"
-        />
-        <div className="absolute right-0 top-0 bottom-0 w-10 flex items-center justify-center">
-          <button
-            type="button"
-            onClick={openPicker}
-            className="w-full h-full text-[#10f94e] hover:text-[#0ed145] p-1"
-            disabled={disabled}
-            aria-label="Abrir calendario"
-          >
-            <Calendar className="h-5 w-5" />
-          </button>
-          <input
-            ref={pickerRef}
-            type="date"
-            className="absolute inset-0 opacity-0 cursor-pointer"
-            value={value || ''}
-            onChange={handlePickerChange}
-            disabled={disabled}
-            tabIndex={-1}
-          />
-        </div>
-      </div>
-      {error && <p className="text-xs text-[#ff3b5c]">{error.message}</p>}
-    </div>
-  );
+function bmiLabel(v: number) {
+  if (v < 18.5) return { label: 'Bajo peso', cls: 'text-[#eab308]' };
+  if (v < 25) return { label: 'Normal', cls: 'text-[#10f94e]' };
+  if (v < 30) return { label: 'Sobrepeso', cls: 'text-[#eab308]' };
+  return { label: 'Obesidad', cls: 'text-[#ff3b5c]' };
 }
+
+const emptyToNull = (v: unknown) => (v === '' || v === undefined ? null : v);
 
 export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps) {
   const isEdit = !!user;
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
-  const { data: plans = [], isLoading: loadingPlans } = usePlans({ is_active: true });
-  const [calculatedBMI, setCalculatedBMI] = useState<number | null>(null);
-  const [activationData, setActivationData] = useState<{
-    token: string;
-    userName: string;
-    userEmail: string;
-  } | null>(null);
+  const { data: plansData, isLoading: loadingPlans } = usePlans();
+  // Planes activos + el plan actual del socio aunque esté desactivado (si no, no se vería)
+  const plans = ((plansData ?? []) as any[]).filter((p) => p.is_active || p.id === user?.plan_id);
+  const [activationData, setActivationData] = useState<{ token: string; userName: string; userEmail: string } | null>(null);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const today = toDateOnly(new Date());
+  const isSuspended = user?.status === 'Suspendido';
 
-  // Función para obtener categoría de IMC
-  const getBMICategory = (imc: number) => {
-    if (imc < 18.5) return { label: 'Bajo peso', color: 'text-yellow-400' };
-    if (imc < 25) return { label: 'Normal', color: 'text-[#10f94e]' };
-    if (imc < 30) return { label: 'Sobrepeso', color: 'text-orange-400' };
-    return { label: 'Obesidad', color: 'text-[#ff3b5c]' };
-  };
+  const defaults = useMemo<Record<string, unknown>>(
+    () =>
+      user
+        ? {
+            name: user.name ?? '',
+            email: user.email ?? '',
+            cedula: user.cedula ?? '',
+            phone: user.phone ?? '',
+            birth_date: toInputDate(user.birth_date),
+            gender: user.gender ?? '',
+            address: user.address ?? '',
+            emergency_contact: user.emergency_contact ?? '',
+            plan: user.plan ?? '',
+            plan_id: user.plan_id ?? '',
+            status: user.status ?? 'Activo',
+            start_date: toInputDate(user.start_date),
+            weight: user.weight != null ? String(user.weight) : '',
+            height: user.height != null ? String(user.height) : '',
+            notes: user.notes ?? '',
+            medical_notes: user.medical_notes ?? '',
+            is_free_user: user.is_free_user === true,
+          }
+        : { status: 'Activo', start_date: today, is_free_user: false, gender: '', plan_id: '' },
+    [user, today],
+  );
 
   const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    control,
-    watch,
+    register, handleSubmit, reset, control, watch, setError,
     formState: { errors, isSubmitting },
-  } = useForm<UserFormData>({
-    resolver: zodResolver(userSchema),
-    defaultValues: {
-      status: 'Activo',
-      start_date: new Date().toISOString().split('T')[0],
-      is_free_user: false,
-    },
-  });
+  } = useForm<UserFormData>({ resolver: zodResolver(userSchema), defaultValues: defaults as any });
 
-  // Observar cambios en peso y altura para calcular IMC
-  const weight = watch('weight');
-  const height = watch('height');
-
-  // Calcular IMC automáticamente
+  // Cargar los datos cada vez que se abre (los Select ahora son controlados: se ven al editar)
   useEffect(() => {
-    if (weight && height) {
-      const weightNum = typeof weight === 'string' ? parseFloat(weight) : weight;
-      const heightNum = typeof height === 'string' ? parseFloat(height) : height;
-      
-      if (!isNaN(weightNum) && !isNaN(heightNum) && heightNum > 0) {
-        // IMC = peso(kg) / (altura(m))^2
-        const heightInMeters = heightNum / 100;
-        const imc = weightNum / (heightInMeters * heightInMeters);
-        const roundedIMC = Math.round(imc * 100) / 100;
-        setCalculatedBMI(roundedIMC);
-        setValue('imc', roundedIMC);
-      }
-    } else {
-      setCalculatedBMI(null);
-      setValue('imc', undefined);
+    if (open) {
+      reset(defaults as any);
+      setHealthOpen(!!(user?.medical_notes || user?.notes || user?.weight || user?.height));
     }
-  }, [weight, height, setValue]);
+  }, [open, defaults, reset, user]);
 
-  // Handler para cambio de plan - actualiza plan_id, plan name y next_payment
-  const handlePlanChange = (planId: string) => {
-    const plan = plans.find(p => p.id === planId);
-    if (plan) {
-      setValue('plan_id', plan.id);
-      setValue('plan', plan.name);
-      // Calcular next_payment automático: hoy + duration_days
-      const nextPayment = new Date();
-      nextPayment.setDate(nextPayment.getDate() + plan.duration_days);
-      setValue('next_payment', nextPayment.toISOString().split('T')[0]);
-    }
-  };
-
-  // Función para formatear fecha a YYYY-MM-DD
-  const formatDateForInput = (dateStr: string | null | undefined) => {
-    if (!dateStr) return '';
-    // Si ya está en formato YYYY-MM-DD, devolverlo (necesario para type="date")
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-    // Si es DD/MM/YYYY, convertir a YYYY-MM-DD
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-      const [day, month, year] = dateStr.split('/');
-      return `${year}-${month}-${day}`;
-    }
-    // Si es timestamp ISO, extraer y formatear
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return '';
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  // Actualizar formulario cuando cambia el usuario
-  useEffect(() => {
-    if (user && open) {
-      // Resetear el formulario con los datos del usuario
-      reset({
-        name: user.name || '',
-        email: user.email || '',
-        cedula: user.cedula || '',
-        phone: user.phone || '',
-        birth_date: formatDateForInput(user.birth_date),
-        gender: user.gender || '',
-        address: user.address || '',
-        plan: user.plan || '',
-        plan_id: user.plan_id || '',
-        status: user.status || 'Activo',
-        start_date: formatDateForInput(user.start_date),
-        next_payment: formatDateForInput(user.next_payment),
-        weight: user.weight?.toString() || '',
-        height: user.height?.toString() || '',
-        emergency_contact: user.emergency_contact || '',
-        notes: user.notes || '',
-        medical_notes: user.medical_notes || '',
-        member_number: user.member_number || '',
-        is_free_user: user.is_free_user === true,
-      });
-    } else if (!open) {
-      // Limpiar formulario al cerrar
-      reset({
-        status: 'Activo',
-        start_date: new Date().toISOString().split('T')[0],
-        is_free_user: false,
-      });
-      setCalculatedBMI(null);
-    }
-  }, [user, open, reset]);
+  const planId = watch('plan_id');
+  const isFree = watch('is_free_user');
+  const currentBmi = bmi(watch('weight'), watch('height'));
 
   const onSubmit = async (data: UserFormData) => {
+    // 1) Duplicados con mensaje claro
     try {
-      // El número de miembro se genera automáticamente en el backend
-      // No es necesario enviarlo en la creación
+      const dup = await findDuplicateMember({ cedula: data.cedula, email: data.email }, user?.id);
+      if (dup) {
+        setError(dup.field, { message: `Ya pertenece a ${dup.name}` });
+        return;
+      }
+    } catch {
+      /* si falla la verificación, la base igual lo impide */
+    }
+
+    const plan = plans.find((p: any) => p.id === data.plan_id);
+    const payload: Record<string, unknown> = {
+      name: data.name.trim(),
+      email: data.email.trim().toLowerCase(),
+      cedula: data.cedula.trim(),
+      phone: data.phone.trim(),
+      birth_date: emptyToNull(data.birth_date),
+      gender: emptyToNull(data.gender), // '' violaría el CHECK de la base
+      address: emptyToNull(data.address),
+      emergency_contact: emptyToNull(data.emergency_contact),
+      plan_id: emptyToNull(data.plan_id),
+      plan: plan?.name ?? null,
+      is_free_user: data.is_free_user === true,
+      weight: data.weight ?? null,
+      height: data.height ?? null,
+      imc: bmi(data.weight, data.height),
+      notes: emptyToNull(data.notes),
+      medical_notes: emptyToNull(data.medical_notes),
+    };
+    // El estado Suspendido no se toca desde aquí
+    if (!isSuspended) payload.status = data.status === 'Inactivo' ? 'Inactivo' : 'Activo';
+    if (!isEdit) payload.start_date = data.start_date || today;
+
+    try {
       if (isEdit) {
-        await updateUser.mutateAsync({ id: user.id, data });
-        toast.success('Usuario actualizado exitosamente');
-        reset();
+        await updateUser.mutateAsync({ id: user.id, data: payload as any });
+        toast.success('Socio actualizado');
         onOpenChange(false);
       } else {
-        const result = await createUser.mutateAsync(data);
-        reset();
+        const result = await createUser.mutateAsync(payload as any);
         onOpenChange(false);
-        
-        // Mostrar modal de activación con el token generado
-        setActivationData({
-          token: result.activationToken,
-          userName: data.name,
-          userEmail: data.email,
-        });
+        setActivationData({ token: result.activationToken, userName: data.name, userEmail: data.email });
       }
-    } catch (error) {
-      // El error ya se muestra en toast automáticamente
-      console.error(error);
+    } catch (error: any) {
+      const msg = String(error?.message ?? '');
+      if (msg.includes('users_cedula_key')) setError('cedula', { message: 'Ya existe un socio con esta cédula' });
+      else if (msg.includes('users_email_key')) setError('email', { message: 'Ya existe un socio con este email' });
+      // otros errores ya se muestran como toast en el hook
     }
   };
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 border-gray-700">
-          <DialogHeader>
-            <DialogTitle className="text-2xl text-white">
-              {isEdit ? 'Editar Usuario' : 'Nuevo Usuario'}
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              {isEdit
-                ? 'Modifica los datos del usuario. Los campos con * son obligatorios.'
-                : 'Completa los datos del nuevo usuario. Los campos con * son obligatorios.'}
-            </DialogDescription>
-          </DialogHeader>
+      <Sheet open={open} onOpenChange={(o) => !isSubmitting && onOpenChange(o)}>
+        <SheetContent side="right" className="w-full gap-0 bg-card p-0 sm:max-w-xl" data-testid="user-form">
+          <SheetHeader className="border-b border-border px-6 py-5">
+            <SheetTitle className="text-2xl">{isEdit ? `Editar ${user.name}` : 'Nuevo socio'}</SheetTitle>
+            <SheetDescription>
+              {isEdit ? 'Los cambios se guardan al presionar Guardar.' : 'Completa los datos básicos; lo demás se puede agregar después.'}
+            </SheetDescription>
+          </SheetHeader>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Información Personal */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
-                Información Personal
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-gray-300">
-                    Nombre Completo <span className="text-[#ff3b5c]">*</span>
-                  </Label>
-                  <Input
-                    id="name"
-                    {...register('name')}
-                    disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder="Juan Pérez"
-                  />
-                  {errors.name && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.name.message}</p>
+          <form id="user-form" onSubmit={handleSubmit(onSubmit)} className="flex-1 space-y-8 overflow-y-auto px-6 py-6" noValidate>
+            <Section icon={IdCard} title="Datos personales">
+              <Field label="Nombre completo" required error={errors.name?.message} className="sm:col-span-2">
+                <Input {...register('name')} autoComplete="off" placeholder="Nombre y apellido" autoFocus={!isEdit} />
+              </Field>
+              <Field label="Cédula" required error={errors.cedula?.message} hint="Solo números">
+                <Input {...register('cedula')} inputMode="numeric" placeholder="12345678" />
+              </Field>
+              <Field label="Fecha de nacimiento" error={errors.birth_date?.message}>
+                <Input type="date" max={today} {...register('birth_date')} />
+              </Field>
+              <Field label="Género" className="sm:col-span-2">
+                <Controller
+                  control={control}
+                  name="gender"
+                  render={({ field }) => (
+                    <Segmented
+                      options={GENDERS.map((g) => ({ value: g, label: g }))}
+                      value={field.value ?? ''}
+                      onChange={(v) => field.onChange(field.value === v ? '' : v)}
+                      ariaLabel="Género"
+                    />
                   )}
-                </div>
+                />
+              </Field>
+            </Section>
 
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-gray-300">
-                    Email <span className="text-[#ff3b5c]">*</span>
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    {...register('email')}
-                    disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder="juan@ejemplo.com"
-                  />
-                  {errors.email && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.email.message}</p>
-                  )}
-                </div>
+            <Section icon={Phone} title="Contacto">
+              <Field label="Teléfono" required error={errors.phone?.message}>
+                <Input {...register('phone')} inputMode="tel" placeholder="0414-1234567" />
+              </Field>
+              <Field label="Email" required error={errors.email?.message} hint="Para activar su cuenta en la app">
+                <Input type="email" {...register('email')} placeholder="nombre@correo.com" autoComplete="off" />
+              </Field>
+              <Field label="Dirección" error={errors.address?.message} className="sm:col-span-2">
+                <Input {...register('address')} placeholder="Sector, ciudad" />
+              </Field>
+              <Field label="Contacto de emergencia" error={errors.emergency_contact?.message} className="sm:col-span-2" hint="Nombre, parentesco y teléfono">
+                <Input {...register('emergency_contact')} placeholder="María Pérez (madre) · 0412-9876543" />
+              </Field>
+            </Section>
 
-                <div className="space-y-2">
-                  <Label htmlFor="cedula" className="text-gray-300">
-                    Cédula <span className="text-[#ff3b5c]">*</span>
-                  </Label>
-                  <Input
-                    id="cedula"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="\d*"
-                    {...register('cedula')}
-                    disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder="12345678"
-                  />
-                  {errors.cedula && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.cedula.message}</p>
-                  )}
-                </div>
+            <Section icon={UserRound} title="Membresía">
+              <Field label="Plan" className="sm:col-span-2" error={errors.plan_id?.message}>
+                <Controller
+                  control={control}
+                  name="plan_id"
+                  render={({ field }) =>
+                    loadingPlans ? (
+                      <div className="h-16 animate-pulse rounded-lg bg-muted" />
+                    ) : (
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Plan">
+                        {plans.map((p: any) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={field.value === p.id}
+                            onClick={() => field.onChange(p.id)}
+                            className={`rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                              field.value === p.id ? 'border-[#10f94e] bg-[#10f94e]/10' : 'border-border hover:bg-muted/50'
+                            }`}
+                            data-testid={`plan-${p.id}`}
+                          >
+                            <span className="block font-medium">
+                              {p.name}
+                              {!p.is_active && <span className="ml-1 text-xs font-normal text-muted-foreground">(ya no se ofrece)</span>}
+                            </span>
+                            <span className="block text-sm text-muted-foreground">
+                              {formatMoney(Number(p.price))} · {p.duration_days} días
+                            </span>
+                          </button>
+                        ))}
+                        {plans.length === 0 && <p className="text-sm text-muted-foreground">No hay planes activos. Créalos en Planes.</p>}
+                      </div>
+                    )
+                  }
+                />
+                {!planId && !isFree && !loadingPlans && plans.length > 0 && (
+                  <p className="mt-1 text-xs text-[#eab308]">Sin plan no se le genera factura.</p>
+                )}
+              </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="phone" className="text-gray-300">
-                    Teléfono
-                  </Label>
-                  <Input
-                    id="phone"
-                    {...register('phone')}
-                    disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder="04121234567"
-                  />
-                  {errors.phone && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.phone.message}</p>
-                  )}
-                </div>
+              {isEdit ? (
+                <Field label="Socio desde">
+                  <Input value={toInputDate(user.start_date) ? toInputDate(user.start_date).split('-').reverse().join('/') : '—'} disabled readOnly />
+                </Field>
+              ) : (
+                <Field label="Fecha de inicio" error={errors.start_date?.message} hint="La primera factura es la del mes en curso">
+                  <Input type="date" {...register('start_date')} />
+                </Field>
+              )}
 
-                <DateInput
-                    id="birth_date"
-                    label="Fecha de Nacimiento"
-                    register={register}
-                    error={errors.birth_date}
-                    disabled={isSubmitting}
-                    value={watch('birth_date')}
-                  />
-
-                <div className="space-y-2">
-                  <Label htmlFor="gender" className="text-gray-300">
-                    Género
-                  </Label>
+              <Field label="Estado">
+                {isSuspended ? (
+                  <div className="flex items-start gap-2 rounded-md border border-[#ff3b5c]/30 bg-[#ff3b5c]/10 px-3 py-2 text-sm">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#ff3b5c]" aria-hidden />
+                    <span>Suspendido por falta de pago. Se reactiva solo al cobrarle la deuda.</span>
+                  </div>
+                ) : (
                   <Controller
                     control={control}
-                    name="gender"
+                    name="status"
                     render={({ field }) => (
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
-                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                          <SelectValue placeholder="Seleccionar..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Masculino">Masculino</SelectItem>
-                          <SelectItem value="Femenino">Femenino</SelectItem>
-                          <SelectItem value="Otro">Otro</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Segmented
+                        options={[{ value: 'Activo', label: 'Activo' }, { value: 'Inactivo', label: 'Inactivo' }]}
+                        value={field.value}
+                        onChange={field.onChange}
+                        ariaLabel="Estado"
+                      />
                     )}
                   />
-                  {errors.gender && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.gender.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="address" className="text-gray-300">
-                    Dirección
-                  </Label>
-                  <Input
-                    id="address"
-                    {...register('address')}
-                    disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder="Los Teques, Lagunetica"
-                  />
-                  {errors.address && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.address.message}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Información de Membresía */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
-                Información de Membresía
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="plan" className="text-gray-300">
-                    Tipo de Membresía <span className="text-[#ff3b5c]">*</span>
-                  </Label>
-                  {loadingPlans ? (
-                    <Select disabled>
-                      <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                        <SelectValue placeholder="Cargando planes..." />
-                      </SelectTrigger>
-                    </Select>
-                  ) : (
-                    <Select
-                      onValueChange={handlePlanChange}
-                      defaultValue={watch('plan_id')}
-                    >
-                      <SelectTrigger className="bg-gray-800 border-gray-700 text-white" disabled={isSubmitting}>
-                        <SelectValue placeholder="Seleccionar plan..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {plans.map(plan => (
-                          <SelectItem key={plan.id} value={plan.id}>
-                            {plan.name} - {formatCurrency(Number(plan.price))} ({plan.duration_days} días)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {errors.plan && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.plan.message}</p>
-                  )}
-                  {errors.plan_id && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.plan_id.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="status" className="text-gray-300">
-                    Estado <span className="text-[#ff3b5c]">*</span>
-                  </Label>
-                  <select
-                    id="status"
-                    {...register('status')}
-                    disabled={isSubmitting}
-                    className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-                  >
-                    <option value="Activo">Activo</option>
-                    <option value="Inactivo">Inactivo</option>
-                    <option value="Suspendido">Suspendido</option>
-                  </select>
-                  {errors.status && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.status.message}</p>
-                  )}
-                </div>
-              </div>
+                )}
+              </Field>
 
               <Controller
                 name="is_free_user"
                 control={control}
                 render={({ field }) => (
-                  <div className="flex items-start justify-between gap-4 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+                  <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-muted/30 p-3 sm:col-span-2">
                     <div>
-                      <Label htmlFor="is_free_user" className="text-gray-200">Exento de pago</Label>
-                      <p className="text-xs text-gray-400 mt-1">
+                      <Label htmlFor="is_free_user">Exento de pago</Label>
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {field.value
-                          ? 'No se le generan facturas ni se le suspende por falta de pago. Las facturas pendientes que ya tenga no se borran.'
-                          : 'Se le factura según su plan. Si estaba exento, la factura del mes se genera en el próximo proceso nocturno o al cobrarle.'}
+                          ? 'No se le generan facturas ni se le suspende por falta de pago.'
+                          : 'Se le factura según su plan.'}
                       </p>
                     </div>
-                    <Switch
-                      id="is_free_user"
-                      checked={field.value === true}
-                      onCheckedChange={field.onChange}
-                      disabled={isSubmitting}
-                      data-testid="switch-free-user"
-                    />
+                    <Switch id="is_free_user" checked={field.value === true} onCheckedChange={field.onChange} data-testid="switch-free-user" />
                   </div>
                 )}
               />
-            </div>
+            </Section>
 
-            {/* Información Adicional */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
-                Información Adicional
-              </h3>
-
-              <div className="space-y-2">
-                <Label htmlFor="emergency_contact" className="text-gray-300">
-                  Contacto de Emergencia
-                </Label>
-                <Input
-                  id="emergency_contact"
-                  {...register('emergency_contact')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  placeholder="Nombre: María Pérez, Tel: 0412-9876543"
-                />
-                {errors.emergency_contact && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.emergency_contact.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notes" className="text-gray-300">
-                  Notas
-                </Label>
-                <Textarea
-                  id="notes"
-                  {...register('notes')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
-                  placeholder="Observaciones médicas, alergias, etc."
-                />
-                {errors.notes && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.notes.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="medical_notes" className="text-gray-300">
-                  Notas Médicas
-                </Label>
-                <Textarea
-                  id="medical_notes"
-                  {...register('medical_notes')}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white min-h-[80px]"
-                  placeholder="Observaciones médicas, alergias, etc."
-                />
-                {errors.medical_notes && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.medical_notes.message}</p>
-                )}
-              </div>
-
-              {/* Solo mostrar el número de miembro cuando se edita un usuario */}
-              {isEdit && (
-                <div className="space-y-2">
-                  <Label htmlFor="member_number" className="text-gray-300">
-                    Número de Miembro
-                  </Label>
-                  <Input
-                    id="member_number"
-                    {...register('member_number')}
-                    disabled={true}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder={user?.member_number}
-                  />
-                  {errors.member_number && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.member_number.message}</p>
-                  )}
-                </div>
-              )}
-
-              <DateInput
-                  id="start_date"
-                  label="Fecha de Inicio"
-                  register={register}
-                  error={errors.start_date}
-                  disabled={isEdit || isSubmitting}
-                  value={watch('start_date')}
-                />
-                {isEdit && (
-                  <p className="text-xs text-gray-500">La fecha de inicio no se puede modificar</p>
-                )}
-
-              <DateInput
-                  id="next_payment"
-                  label="Próximo Pago"
-                  register={register}
-                  error={errors.next_payment}
-                  disabled={isSubmitting}
-                  value={watch('next_payment')}
-                />
-
-              <div className="space-y-2">
-                <Label htmlFor="weight" className="text-gray-300">
-                  Peso (kg)
-                </Label>
-                <Input
-                  id="weight"
-                  type="number"
-                  step="0.01"
-                  {...register('weight', { valueAsNumber: false })}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  placeholder="70.5"
-                />
-                {errors.weight && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.weight.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="height" className="text-gray-300">
-                  Altura (cm)
-                </Label>
-                <Input
-                  id="height"
-                  type="number"
-                  step="0.01"
-                  {...register('height', { valueAsNumber: false })}
-                  disabled={isSubmitting}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  placeholder="175.5"
-                />
-                {errors.height && (
-                  <p className="text-xs text-[#ff3b5c]">{errors.height.message}</p>
-                )}
-              </div>
-
-              {calculatedBMI !== null && (
-                <div className="space-y-2">
-                  <Label htmlFor="imc" className="text-gray-300">
-                    IMC (Indice de Masa Corporal)
-                  </Label>
-                  <Input
-                    id="imc"
-                    type="number"
-                    step="0.01"
-                    {...register('imc', { valueAsNumber: false })}
-                    disabled={isSubmitting}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder="22.5"
-                    value={calculatedBMI}
-                  />
-                  {errors.imc && (
-                    <p className="text-xs text-[#ff3b5c]">{errors.imc.message}</p>
-                  )}
-                  <p className={getBMICategory(calculatedBMI).color}>
-                    {getBMICategory(calculatedBMI).label}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <DialogFooter className="gap-2">
-              <Button
+            <section className="rounded-lg border border-border">
+              <button
                 type="button"
-                variant="outline"
-                onClick={() => {
-                  reset();
-                  onOpenChange(false);
-                }}
-                disabled={isSubmitting}
-                className="border-gray-700 hover:bg-gray-800"
+                className="flex w-full items-center justify-between px-4 py-3 text-left"
+                onClick={() => setHealthOpen((v) => !v)}
+                aria-expanded={healthOpen}
               >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  <>{isEdit ? 'Actualizar' : 'Crear'} Usuario</>
-                )}
-              </Button>
-            </DialogFooter>
+                <span className="flex items-center gap-2 font-medium">
+                  <HeartPulse className="h-4 w-4 text-muted-foreground" aria-hidden /> Salud y notas
+                  <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                </span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${healthOpen ? 'rotate-180' : ''}`} aria-hidden />
+              </button>
+              {healthOpen && (
+                <div className="grid grid-cols-1 gap-4 border-t border-border p-4 sm:grid-cols-3">
+                  <Field label="Peso (kg)" error={errors.weight?.message}>
+                    <Input type="number" step="0.1" inputMode="decimal" {...register('weight')} placeholder="70" />
+                  </Field>
+                  <Field label="Estatura (cm)" error={errors.height?.message}>
+                    <Input type="number" step="0.1" inputMode="decimal" {...register('height')} placeholder="175" />
+                  </Field>
+                  <Field label="IMC">
+                    <div className="flex h-9 items-center text-sm">
+                      {currentBmi ? (
+                        <>
+                          <span className="font-medium tabular-nums">{currentBmi}</span>
+                          <span className={`ml-2 text-xs ${bmiLabel(currentBmi).cls}`}>{bmiLabel(currentBmi).label}</span>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">Se calcula solo</span>
+                      )}
+                    </div>
+                  </Field>
+                  <Field label="Notas médicas" className="sm:col-span-3" hint="Lesiones, alergias, condiciones. Se muestran destacadas en el perfil.">
+                    <Textarea rows={2} {...register('medical_notes')} placeholder="Ej.: lesión de rodilla izquierda, asma" />
+                  </Field>
+                  <Field label="Notas generales" className="sm:col-span-3">
+                    <Textarea rows={2} {...register('notes')} placeholder="Ej.: prefiere entrenar en la mañana" />
+                  </Field>
+                </div>
+              )}
+            </section>
           </form>
-        </DialogContent>
-      </Dialog>
+
+          <div className="flex items-center justify-end gap-2 border-t border-border bg-card px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form="user-form"
+              disabled={isSubmitting}
+              className="min-w-36 bg-[#10f94e] font-semibold text-black hover:bg-[#0ed145]"
+              data-testid="btn-save-user"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando…
+                </>
+              ) : isEdit ? (
+                'Guardar cambios'
+              ) : (
+                'Crear socio'
+              )}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
       {activationData && (
         <ActivationModal
-          open={true}
-          onOpenChange={() => setActivationData(null)}
-          activationToken={activationData.token}  // ✅ corregido
+          open={!!activationData}
+          onOpenChange={(o: boolean) => !o && setActivationData(null)}
+          activationToken={activationData.token}
           userName={activationData.userName}
           userEmail={activationData.userEmail}
         />
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function Section({ icon: Icon, title, children }: { icon: typeof Phone; title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-4">
+      <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <Icon className="h-4 w-4" aria-hidden /> {title}
+      </h3>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
+function Field({
+  label, required, error, hint, className = '', children,
+}: { label: string; required?: boolean; error?: string; hint?: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={`space-y-1.5 ${className}`}>
+      <Label className={error ? 'text-[#ff3b5c]' : ''}>
+        {label}
+        {required && <span className="ml-0.5 text-[#ff3b5c]" aria-hidden>*</span>}
+      </Label>
+      {children}
+      {error ? (
+        <p className="text-xs text-[#ff3b5c]" role="alert">{error}</p>
+      ) : hint ? (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function Segmented({ options, value, onChange, ariaLabel }: {
+  options: { value: string; label: string }[]; value: string; onChange: (v: string) => void; ariaLabel: string;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-border p-0.5" role="radiogroup" aria-label={ariaLabel}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+            value === o.value ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }

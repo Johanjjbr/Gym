@@ -1,792 +1,301 @@
-import { useState, useEffect, useRef } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
-import { saveAs } from 'file-saver';
-import { 
-  Search, QrCode, UserCheck, Loader2, AlertCircle, LogIn, LogOut, 
-  Calendar as CalendarIcon, User, ChevronLeft, ChevronRight, 
-  UserPlus, X, Download, RefreshCw, Filter, CalendarDays
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Input } from '../components/ui/input';
-import { Button } from '../components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
-import { Label } from '../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Badge } from '../components/ui/badge';
-import { useAttendance, useCreateAttendance, useAttendanceStatus } from '../hooks/useAttendance';
-import { useUsers } from '../hooks/useUsers';
-import { toast } from 'sonner';
+/**
+ * Asistencia — pensada para recepción:
+ *  1. Registrar entrada/salida buscando al socio (un clic, Enter o lector QR).
+ *  2. Quién está dentro ahora, con salida en un clic.
+ *  3. Historial por día: sesiones entrada→salida y afluencia por hora.
+ */
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Clock, Flame, LogOut, QrCode, RefreshCw, Search, Timer, UserCheck, Users as UsersIcon } from 'lucide-react';
+import { Card, CardContent } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { StatCard } from '../components/StatCard';
+import { CheckInPanel } from '../components/attendance/CheckInPanel';
+import { MemberQrDialog } from '../components/attendance/MemberQrDialog';
+import { CollectPaymentDialog } from '../components/billing/CollectPaymentDialog';
+import { useGymInfo } from '../components/billing/shared';
+import { useAttendanceDay, useAttendanceTrend, useRegisterAttendance } from '../hooks/useAttendance';
+import { useMembersOverview } from '../hooks/useMembers';
+import {
+  dailyAverage, elapsedSince, hourLabel, hourlyEntries, insideMap, pairSessions, peakHour, sourceLabel, time12, uniqueVisitors, type Session,
+} from '../lib/attendanceDay';
+import { formatDuration } from '../lib/attendanceStats';
+import { addDays, toDateOnly } from '../lib/dashboardHelpers';
 
-type AttendanceRecord = {
-  id: string;
-  user_id: string;
-  date: string;
-  time: string;
-  type: 'Entrada' | 'Salida';
-  source?: string;
-  device_id?: string | null;
-  session_number?: number;
-  created_at: string;
-  users?: { name: string; member_number?: string };
+const LONG_STAY_MIN = 4 * 60;
+
+const longDate = (d: string) =>
+  new Date(`${d}T12:00:00`).toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+const nowHHmm = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
-
-type UserStatus = {
-  inside: boolean;
-  last_entry_time: string | null;
-  session_count_today: number;
-  can_enter: boolean;
-  can_exit: boolean;
-  last_record_type: string | null;
-};
-
-const PAGE_SIZES = [10, 25, 50, 100];
-const DATE_FILTER_OPTIONS = [
-  { value: 'today', label: 'Hoy' },
-  { value: 'month', label: 'Este mes' },
-  { value: 'all', label: 'Todos' },
-];
 
 export function Attendance() {
   const navigate = useNavigate();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
-  const [dateFilter, setDateFilter] = useState<'today' | 'month' | 'all'>('today');
-  const [customDate, setCustomDate] = useState('');
-  const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
-  const [isQRDialogOpen, setIsQRDialogOpen] = useState(false);
-  const [registerUserId, setRegisterUserId] = useState('');
-  const [registerType, setRegisterType] = useState<'Entrada' | 'Salida'>('Entrada');
-  
-  // Paginación
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  
-  // Estados usuarios dentro
-  const [usersInside, setUsersInside] = useState<Record<string, UserStatus>>({});
-  const [checkingStatus, setCheckingStatus] = useState<Set<string>>(new Set());
+  const gym = useGymInfo();
+  const today = toDateOnly(new Date());
 
-  // Obtener datos
-  const { data: attendance, isLoading, error, refetch } = useAttendance();
-  const { data: users, isLoading: loadingUsers } = useUsers();
-  const createAttendanceMutation = useCreateAttendance();
+  const members = useMembersOverview();
+  const todayQ = useAttendanceDay(today);
+  const trend = useAttendanceTrend(today, 28);
+  const register = useRegisterAttendance();
 
-  // Calcular fecha efectiva según filtro
-  const getEffectiveDate = () => {
-    if (dateFilter === 'today') return new Date().toISOString().split('T')[0];
-    if (dateFilter === 'month') {
-      const now = new Date();
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-    }
-    return undefined;
-  };
+  const [qrOpen, setQrOpen] = useState(false);
+  const [collectFor, setCollectFor] = useState<string | null>(null);
 
-  // Verificar estado de usuarios (solo para filtro hoy)
-  useEffect(() => {
-    if (dateFilter !== 'today' || !users?.length) return;
-    
-    const checkUsersStatus = async () => {
-      const today = new Date().toISOString().split('T')[0];
-      const newStatus: Record<string, UserStatus> = {};
-      const checking = new Set<string>();
-      
-      for (const user of users) {
-        if (user.status !== 'Activo') continue;
-        checking.add(user.id);
-        try {
-          const { attendance: status } = await import('../lib/api');
-          const result = await status.getStatus(user.id, today);
-          if (result?.inside) {
-            newStatus[user.id] = result;
-          }
-        } catch (e) {
-          console.warn(`Error checking status for ${user.id}:`, e);
-        }
-      }
-      setUsersInside(newStatus);
-      setCheckingStatus(checking);
-    };
-    
-    checkUsersStatus();
-  }, [dateFilter, users, refetch]);
+  const todayRecords = todayQ.data ?? [];
+  const todaySessions = useMemo(() => pairSessions(todayRecords), [todayRecords]);
+  const inside = useMemo(() => insideMap(todaySessions), [todaySessions]);
+  const insideList = useMemo(() => [...inside.values()].sort((a, b) => (a.checkIn < b.checkIn ? -1 : 1)), [inside]);
 
-  // Función para refrescar estado de usuarios dentro (llamar tras mutación exitosa)
-  const refreshUsersInside = async () => {
-    if (dateFilter !== 'today' || !users?.length) return;
-    
-    const today = new Date().toISOString().split('T')[0];
-    const newStatus: Record<string, UserStatus> = {};
-    const checking = new Set<string>();
-    
-    for (const user of users) {
-      if (user.status !== 'Activo') continue;
-      checking.add(user.id);
-      try {
-        const { attendance: statusApi } = await import('../lib/api');
-        const result = await statusApi.getStatus(user.id, today);
-        if (result?.inside) {
-          newStatus[user.id] = result;
-        }
-      } catch (e) {
-        console.warn(`Error checking status for ${user.id}:`, e);
-      }
-    }
-    setUsersInside(newStatus);
-    setCheckingStatus(checking);
-  };
+  const visitsToday = uniqueVisitors(todayRecords);
+  const avg = trend.data ? dailyAverage(trend.data, 28) : null;
+  const peak = peakHour(hourlyEntries(todayRecords));
+  const closed = todaySessions.filter((s) => s.minutes);
+  const avgStay = closed.length ? Math.round(closed.reduce((a, s) => a + (s.minutes ?? 0), 0) / closed.length) : null;
+  const now = nowHHmm();
 
-  // Filtrar asistencia
-  const filteredAttendance = attendance && attendance.length > 0 
-    ? attendance.filter((a: AttendanceRecord) => {
-        const matchesSearch = a.users?.name?.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        if (dateFilter === 'today') {
-          const today = new Date().toISOString().split('T')[0];
-          return matchesSearch && a.date === today;
-        }
-        if (dateFilter === 'month') {
-          const now = new Date();
-          const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-          const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-31`;
-          return matchesSearch && a.date >= monthStart && a.date <= monthEnd;
-        }
-        return matchesSearch; // all
-      })
-    : [];
-
-  // Paginación
-  const totalPages = Math.ceil(filteredAttendance.length / pageSize);
-  const paginatedAttendance = filteredAttendance.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
-
-  // Stats de hoy
-  const today = new Date().toISOString().split('T')[0];
-  const todayAttendance = attendance && attendance.length > 0 
-    ? attendance.filter((a: AttendanceRecord) => a.date === today) 
-    : [];
-  const todayUniqueUsers = todayAttendance.length > 0 
-    ? new Set(todayAttendance.map((a: AttendanceRecord) => a.user_id)).size
-    : 0;
-  const todayTotalRecords = todayAttendance.length;
-  const usersInsideCount = Object.keys(usersInside).length;
-
-  // Registrar asistencia
-  const handleRegisterAttendance = () => {
-    if (!registerUserId) {
-      toast.error('Selecciona un usuario');
-      return;
-    }
-    
-    createAttendanceMutation.mutate({
-      user_id: registerUserId,
-      type: registerType,
-      date: new Date().toISOString().split('T')[0],
-      time: new Date().toTimeString().split(' ')[0],
-    }, {
-      onSuccess: () => {
-        setIsRegisterDialogOpen(false);
-        setRegisterUserId('');
-        setRegisterType('Entrada');
-        refetch();
-        refreshUsersInside(); // Actualizar panel "Dentro Ahora" inmediatamente
-      }
-    });
-  };
-
-  // Abrir modal registro con pre-selección inteligente
-  const openRegisterDialog = (userId?: string, type?: 'Entrada' | 'Salida') => {
-    if (userId) setRegisterUserId(userId);
-    if (type) setRegisterType(type);
-    setIsRegisterDialogOpen(true);
-  };
-
-  // Descargar QR real
-  const handleDownloadQR = (userId: string) => {
-    const user = users?.find((u: any) => u.id === userId);
-    const memberNumber = user?.member_number || userId.slice(0, 8);
-    const name = user?.name || 'Usuario';
-    
-    // Crear canvas del QR
-    const qrValue = `GYM-${userId}`;
-    const canvas = document.createElement('canvas');
-    const size = 400;
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d')!;
-    
-    // Fondo
-    ctx.fillStyle = '#1f1f2e';
-    ctx.fillRect(0, 0, size, size);
-    
-    // Generar QR en canvas usando QRCodeSVG renderizado
-    const qrSvg = document.createElement('div');
-    // Usamos un enfoque más simple: renderizamos el SVG a canvas via data URL
-    const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(qrValue)}&bgcolor=1f1f2e&color=10f94e&qzone=2&format=png`;
-    
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, size, size);
-      canvas.toBlob((blob) => {
-        if (blob) {
-          saveAs(blob, `QR_${memberNumber}_${name.replace(/\s+/g, '_')}.png`);
-          toast.success('QR descargado correctamente');
-        }
-      }, 'image/png');
-    };
-    img.src = qrDataUrl;
-  };
-
-  // Loading state
-  if (isLoading) {
+  if (todayQ.error) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
-          <p className="text-gray-400">Cargando asistencia...</p>
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
+        <AlertCircle className="h-12 w-12 text-[#ff3b5c]" />
+        <div>
+          <h2 className="text-xl">No se pudo cargar la asistencia</h2>
+          <p className="text-sm text-muted-foreground">{(todayQ.error as Error).message}</p>
         </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <AlertCircle className="h-16 w-16 text-[#ff3b5c]" />
-        <h2 className="text-2xl">Error al cargar asistencia</h2>
-        <p className="text-muted-foreground text-center max-w-md">
-          Ocurrió un error al cargar los datos de asistencia. Verifica tu conexión a Supabase.
-        </p>
-        <Button onClick={() => refetch()} className="mt-4">
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Reintentar
-        </Button>
+        <Button onClick={() => todayQ.refetch()}><RefreshCw className="mr-2 h-4 w-4" /> Reintentar</Button>
       </div>
     );
   }
 
   return (
     <div className="space-y-6" data-testid="attendance-page">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-4xl mb-2">Control de Asistencia</h1>
-          <p className="text-muted-foreground">Registro de entrada y salida de usuarios</p>
+          <h1 className="text-3xl md:text-4xl">Asistencia</h1>
+          <p className="text-muted-foreground">{capital(longDate(today))}</p>
         </div>
-        <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            className="border-primary text-primary hover:bg-primary/10"
-            onClick={() => setIsQRDialogOpen(true)}
-          >
-            <QrCode className="w-4 h-4 mr-2" />
-            Generar QR
-          </Button>
-          <Button 
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={() => openRegisterDialog()}
-          >
-            <UserCheck className="w-4 h-4 mr-2" />
-            Registrar Asistencia
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => setQrOpen(true)}>
+          <QrCode className="mr-2 h-4 w-4" /> Carnet QR
+        </Button>
       </div>
 
-      {/* Today's Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <UserCheck className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Usuarios Hoy</p>
-                <p className="text-2xl">{todayUniqueUsers}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-accent/10">
-                <LogIn className="w-6 h-6 text-accent" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Registros Hoy</p>
-                <p className="text-2xl">{todayTotalRecords}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-[#10f94e]/10">
-                <UserPlus className="w-6 h-6 text-[#10f94e]" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Dentro Ahora</p>
-                <p className="text-2xl text-[#10f94e]">{usersInsideCount}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-secondary/10">
-                <CalendarIcon className="w-6 h-6 text-secondary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Registros</p>
-                <p className="text-2xl">{attendance?.length || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Dentro ahora" value={inside.size} icon={UserCheck} color="green" />
+        <StatCard
+          title="Visitas hoy"
+          value={visitsToday}
+          icon={UsersIcon}
+          color="blue"
+          subtitle={avg !== null ? `Promedio: ${avg.toLocaleString('es-VE')} por día` : undefined}
+        />
+        <StatCard
+          title="Hora pico"
+          value={peak ? hourLabel(peak.hour) : '—'}
+          icon={Flame}
+          color="amber"
+          subtitle={peak ? `${peak.count} entrada${peak.count === 1 ? '' : 's'}` : 'Sin entradas aún'}
+        />
+        <StatCard title="Permanencia promedio" value={formatDuration(avgStay)} icon={Timer} color="purple" subtitle={closed.length ? `${closed.length} salida${closed.length === 1 ? '' : 's'} registradas` : 'Sin salidas aún'} />
       </div>
 
-      {/* Panel "Dentro Ahora" - Solo si hay usuarios dentro y filtro es hoy */}
-      {dateFilter === 'today' && usersInsideCount > 0 && (
-        <Card className="bg-card border-border border-[#10f94e]/30">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-[#10f94e]">
-                <UserPlus className="w-5 h-5" />
-                Usuarios Dentro del Gimnasio ({usersInsideCount})
-              </CardTitle>
-              <Badge variant="outline" className="bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30">
-                <span className="w-2 h-2 rounded-full bg-[#10f94e] mr-1 inline-block" />
-                Activos
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {Object.entries(usersInside).map(([userId, status]) => {
-                const user = users?.find((u: any) => u.id === userId);
-                const isChecking = checkingStatus.has(userId);
-                return (
-                  <div 
-                    key={userId} 
-                    className="p-4 bg-[#10f94e]/5 border border-[#10f94e]/20 rounded-lg flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="w-10 h-10 rounded-full bg-[#10f94e]/20 flex items-center justify-center flex-shrink-0">
-                        <UserCheck className="w-5 h-5 text-[#10f94e]" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">{user?.name || 'Usuario'}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Entrada: {status.last_entry_time || '--:--'} 
-                          <span className="ml-1 text-[#10f94e]">● Sesión #{status.session_count_today}</span>
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c]/10 whitespace-nowrap"
-                      onClick={() => openRegisterDialog(userId, 'Salida')}
-                      disabled={isChecking || createAttendanceMutation.isPending}
-                    >
-                      <LogOut className="w-3 h-3 mr-1" />
-                      Salida
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <CheckInPanel rows={members.data?.rows ?? []} inside={inside} recent={todayRecords} loading={members.isLoading} onCollect={setCollectFor} />
+        </div>
 
-      {/* Filters */}
-      <Card className="bg-card border-border">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Búsqueda usuario */}
-            <div className="relative md:col-span-2">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input
-                placeholder="Buscar por nombre de usuario..."
-                value={searchTerm}
-                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                className="pl-10 bg-input border-border"
-              />
+        <Card className="bg-card border-border" data-testid="inside-now">
+          <CardContent className="p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-semibold">
+                <span className="relative flex h-2.5 w-2.5">
+                  {inside.size > 0 && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#10f94e] opacity-60" />}
+                  <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${inside.size > 0 ? 'bg-[#10f94e]' : 'bg-muted-foreground/40'}`} />
+                </span>
+                Dentro ahora
+              </h2>
+              <span className="text-sm tabular-nums text-muted-foreground">{inside.size}</span>
             </div>
-            
-            {/* Filtro fecha rápida */}
-            <div className="md:col-span-1">
-              <Select value={dateFilter} onValueChange={(v: 'today' | 'month' | 'all') => { setDateFilter(v); setCurrentPage(1); setCustomDate(''); }}>
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Filtrar por fecha" />
-                </SelectTrigger>
-                <SelectContent className="bg-popover border-border">
-                  {DATE_FILTER_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      <div className="flex items-center gap-2">
-                        {opt.value === 'today' && <CalendarDays className="w-4 h-4 text-[#10f94e]" />}
-                        {opt.value === 'month' && <CalendarIcon className="w-4 h-4 text-accent" />}
-                        {opt.value === 'all' && <Filter className="w-4 h-4 text-secondary" />}
-                        {opt.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Fecha personalizada (opcional) */}
-            <div className="md:col-span-1">
-              <Input
-                type="date"
-                value={customDate}
-                onChange={(e) => { setCustomDate(e.target.value); setDateFilter('all'); setCurrentPage(1); }}
-                className="bg-input border-border"
-                placeholder="Fecha específica"
-                max={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Attendance Table */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Registro de Asistencia ({filteredAttendance.length})</CardTitle>
-            <div className="flex items-center gap-2">
-              <Label className="text-sm text-muted-foreground">Mostrar:</Label>
-              <Select value={pageSize} onValueChange={(v: string) => { setPageSize(Number(v)); setCurrentPage(1); }}>
-                <SelectTrigger className="w-[100px] bg-input border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-popover border-border">
-                  {PAGE_SIZES.map(size => (
-                    <SelectItem key={size} value={String(size)}>{size} por página</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {paginatedAttendance.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full" data-testid="attendance-table">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 text-muted-foreground">Usuario</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Fecha</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Hora</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Tipo</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Fuente</th>
-                    <th className="text-left py-3 px-4 text-muted-foreground">Sesión</th>
-                    <th className="text-right py-3 px-4 text-muted-foreground">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedAttendance.map((record: AttendanceRecord) => (
-                    <tr key={record.id} className="border-b border-border hover:bg-muted/50 transition-colors" data-testid={`attendance-record-${record.id}`}>
-                      <td className="py-4 px-4">
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-muted-foreground" />
-                          {record.users?.name || 'Usuario desconocido'}
-                          {record.users?.member_number && (
-                            <span className="text-xs text-muted-foreground ml-1">({record.users.member_number})</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">{new Date(record.date).toLocaleDateString('es-ES')}</td>
-                      <td className="py-4 px-4">
-                        <span className="text-primary font-mono">{record.time}</span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <Badge 
-                          variant="outline" 
-                          className={record.type === 'Entrada' 
-                            ? 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30' 
-                            : 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30'}
-                        >
-                          {record.type === 'Entrada' ? <LogIn className="w-3 h-3 mr-1 inline" /> : <LogOut className="w-3 h-3 mr-1 inline" />}
-                          {record.type}
-                        </Badge>
-                      </td>
-                      <td className="py-4 px-4">
-                        <Badge variant="secondary" className="text-xs">
-                          {record.source || 'manual'}
-                        </Badge>
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className="text-sm font-mono text-muted-foreground">#{record.session_number || 1}</span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            className="border-primary text-primary hover:bg-primary/10"
-                            onClick={() => navigate(`/usuarios/${record.user_id}`)}
-                          >
-                            Ver Usuario
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              <UserCheck className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p>No hay registros de asistencia</p>
-              {searchTerm && <p className="text-sm mt-1">Intenta cambiar los filtros o limpiar la búsqueda</p>}
-            </div>
-          )}
-          
-          {/* Paginación */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-border">
-              <div className="text-sm text-muted-foreground">
-                Página {currentPage} de {totalPages} · {filteredAttendance.length} registros
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) pageNum = i + 1;
-                  else if (currentPage <= 3) pageNum = i + 1;
-                  else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
-                  else pageNum = currentPage - 2 + i;
+            {todayQ.isLoading ? (
+              <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-12 animate-pulse rounded bg-muted/60" />)}</div>
+            ) : insideList.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">No hay nadie dentro.</p>
+            ) : (
+              <ul className="max-h-[420px] space-y-1 overflow-y-auto pr-1">
+                {insideList.map((s) => {
+                  const mins = elapsedSince(s.checkIn, now);
+                  const long = mins >= LONG_STAY_MIN;
                   return (
-                    <Button
-                      key={pageNum}
-                      variant={currentPage === pageNum ? 'default' : 'outline'}
-                      size="sm"
-                      className="w-8 h-8 px-0"
-                      onClick={() => setCurrentPage(pageNum)}
-                    >
-                      {pageNum}
-                    </Button>
+                    <li key={s.key} className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/40">
+                      <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => navigate(`/usuarios/${s.userId}`)}>
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#10f94e]/15 text-xs font-semibold text-[#10f94e]">{initials(s.name)}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">{s.name}</span>
+                          <span className={`block text-xs ${long ? 'text-[#eab308]' : 'text-muted-foreground'}`}>
+                            {time12(s.checkIn)} · {formatDuration(mins) === '—' ? 'recién' : formatDuration(mins)}
+                            {long && ' · ¿olvidó marcar salida?'}
+                          </span>
+                        </span>
+                      </button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 shrink-0 text-[#ff3b5c] hover:bg-[#ff3b5c]/10 hover:text-[#ff3b5c]"
+                        disabled={register.isPending}
+                        onClick={() => register.mutate({ userId: s.userId, type: 'Salida', name: s.name })}
+                        aria-label={`Registrar salida de ${s.name}`}
+                      >
+                        <LogOut className="mr-1 h-3.5 w-3.5" /> Salida
+                      </Button>
+                    </li>
                   );
                 })}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Register Attendance Dialog */}
-      <Dialog open={isRegisterDialogOpen} onOpenChange={setIsRegisterDialogOpen}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogHeader>
-            <DialogTitle>Registrar Asistencia</DialogTitle>
-            <DialogDescription>
-              Registra la entrada o salida de un usuario
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="user-select">Usuario *</Label>
-              <Select value={registerUserId} onValueChange={setRegisterUserId}>
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Seleccionar usuario" />
-                </SelectTrigger>
-                <SelectContent className="bg-popover border-border max-h-[300px]">
-                  {loadingUsers ? (
-                    <div className="p-4 text-center">
-                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                    </div>
-                  ) : users && users.length > 0 ? (
-                    users
-                      .filter((u: any) => u.status === 'Activo')
-                      .map((user: any) => {
-                        const inside = usersInside[user.id]?.inside;
-                        return (
-                          <SelectItem key={user.id} value={user.id} disabled={inside && registerType === 'Entrada'}>
-                            <div className="flex items-center justify-between w-full">
-                              <span>{user.name} - {user.member_number || user.id.slice(0, 8)}</span>
-                              {inside && (
-                                <Badge variant="outline" className="bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30 text-xs">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-[#10f94e] mr-1 inline-block" />
-                                  Dentro
-                                </Badge>
-                              )}
-                            </div>
-                          </SelectItem>
-                        );
-                      })
-                  ) : (
-                    <div className="p-4 text-center text-muted-foreground">
-                      No hay usuarios disponibles
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-              {registerUserId && usersInside[registerUserId]?.inside && registerType === 'Entrada' && (
-                <p className="text-xs text-[#ff3b5c] mt-1">⚠ Este usuario ya está dentro. Selecciona "Salida" para registrar su salida.</p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="type-select">Tipo de Registro *</Label>
-              <Select value={registerType} onValueChange={(value: 'Entrada' | 'Salida') => setRegisterType(value)}>
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-popover border-border">
-                  <SelectItem value="Entrada" disabled={registerUserId && usersInside[registerUserId]?.inside}>
-                    <div className="flex items-center gap-2">
-                      <LogIn className="w-4 h-4 text-[#10f94e]" />
-                      Entrada {registerUserId && usersInside[registerUserId]?.inside && '(no disponible)'}
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Salida" disabled={registerUserId && !usersInside[registerUserId]?.inside}>
-                    <div className="flex items-center gap-2">
-                      <LogOut className="w-4 h-4 text-[#ff3b5c]" />
-                      Salida {registerUserId && !usersInside[registerUserId]?.inside && '(no hay entrada pendiente)'}
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              {registerUserId && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {usersInside[registerUserId]?.inside 
-                    ? 'El usuario está dentro. Solo puede registrar Salida.'
-                    : 'El usuario está fuera. Puede registrar Entrada.'}
-                </p>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsRegisterDialogOpen(false);
-                  setRegisterUserId('');
-                  setRegisterType('Entrada');
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                className="bg-primary hover:bg-primary/90"
-                onClick={handleRegisterAttendance}
-                disabled={createAttendanceMutation.isPending || !registerUserId}
-              >
-                {createAttendanceMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Registrando...
-                  </>
-                ) : (
-                  <>
-                    <UserCheck className="w-4 h-4 mr-2" />
-                    Registrar {registerType}
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* QR Code Dialog */}
-      <Dialog open={isQRDialogOpen} onOpenChange={setIsQRDialogOpen}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogHeader>
-            <DialogTitle>Generar Código QR de Usuario</DialogTitle>
-            <DialogDescription>
-              Selecciona un usuario para generar su código QR de acceso
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="qr-user-select">Seleccionar Usuario</Label>
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Seleccionar usuario" />
-                </SelectTrigger>
-                <SelectContent className="bg-popover border-border max-h-[300px]">
-                  {loadingUsers ? (
-                    <div className="p-4 text-center">
-                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                    </div>
-                  ) : users && users.length > 0 ? (
-                    users.map((user: any) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.name} - {user.member_number || user.id.slice(0, 8)}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <div className="p-4 text-center text-muted-foreground">
-                      No hay usuarios disponibles
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            {selectedUserId && (
-              <div className="flex flex-col items-center gap-4 p-6 bg-muted rounded-lg">
-                <div className="relative">
-                  <QRCodeSVG
-                    value={`GYM-${selectedUserId}`}
-                    size={200}
-                    level="H"
-                    bgColor="#1f1f2e"
-                    fgColor="#10f94e"
-                  />
-                </div>
-                <p className="text-sm text-muted-foreground text-center">
-                  Código QR para {users?.find((u: any) => u.id === selectedUserId)?.name || 'Usuario'}
-                </p>
-                <div className="flex gap-2 w-full">
-                  <Button 
-                    className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
-                    onClick={() => handleDownloadQR(selectedUserId)}
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Descargar PNG
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    className="flex-1 border-primary text-primary hover:bg-primary/10"
-                    onClick={() => {
-                      const qrValue = `GYM-${selectedUserId}`;
-                      navigator.clipboard.writeText(qrValue);
-                      toast.success('Código copiado al portapapeles');
-                    }}
-                  >
-                    <QrCode className="w-4 h-4 mr-2" />
-                    Copiar Código
-                  </Button>
-                </div>
-              </div>
+              </ul>
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
+          </CardContent>
+        </Card>
+      </div>
+
+      <DayHistory today={today} todaySessions={todaySessions} todayRecords={todayRecords} />
+
+      <MemberQrDialog open={qrOpen} onOpenChange={setQrOpen} rows={members.data?.rows ?? []} gymName={gym.name} />
+      {members.data && collectFor && (
+        <CollectPaymentDialog
+          open
+          onOpenChange={(o) => !o && setCollectFor(null)}
+          members={members.data.users as any}
+          invoices={members.data.invoices}
+          initialUserId={collectFor}
+        />
+      )}
     </div>
+  );
+}
+
+/* ───────────────────────── Historial por día ───────────────────────── */
+
+function DayHistory({ today, todaySessions, todayRecords }: { today: string; todaySessions: Session[]; todayRecords: ReturnType<typeof useAttendanceDay>['data'] }) {
+  const navigate = useNavigate();
+  const [date, setDate] = useState(today);
+  const [term, setTerm] = useState('');
+  const isToday = date === today;
+  const dayQ = useAttendanceDay(date);
+
+  const records = isToday ? todayRecords ?? [] : dayQ.data ?? [];
+  const sessions = isToday ? todaySessions : pairSessions(records);
+  const hours = hourlyEntries(records);
+  const loading = isToday ? false : dayQ.isLoading;
+
+  const q = term.trim().toLowerCase();
+  const shown = q ? sessions.filter((s) => s.name.toLowerCase().includes(q) || (s.memberNumber ?? '').toLowerCase().includes(q)) : sessions;
+
+  // Rango de horas a mostrar: 5am–10pm, ampliado si hubo entradas fuera de él
+  const used = hours.map((n, h) => (n ? h : -1)).filter((h) => h >= 0);
+  const from = Math.min(5, ...used);
+  const to = Math.max(22, ...used);
+  const max = Math.max(1, ...hours);
+
+  return (
+    <Card className="bg-card border-border" data-testid="day-history">
+      <CardContent className="p-5 space-y-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Historial</h2>
+            <p className="text-sm text-muted-foreground">
+              {capital(longDate(date))} · {uniqueVisitors(records)} visita{uniqueVisitors(records) === 1 ? '' : 's'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-md border border-border">
+              <Button size="icon" variant="ghost" className="h-9 w-9 rounded-r-none" onClick={() => setDate(addDays(date, -1))} aria-label="Día anterior">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <label className="relative flex h-9 items-center gap-2 border-x border-border px-3 text-sm">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <input
+                  type="date"
+                  value={date}
+                  max={today}
+                  onChange={(e) => e.target.value && setDate(e.target.value)}
+                  className="bg-transparent text-sm outline-none [color-scheme:dark]"
+                  aria-label="Elegir fecha"
+                />
+              </label>
+              <Button size="icon" variant="ghost" className="h-9 w-9 rounded-l-none" disabled={isToday} onClick={() => setDate(addDays(date, 1))} aria-label="Día siguiente">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            {!isToday && <Button size="sm" variant="outline" className="h-9" onClick={() => setDate(today)}>Hoy</Button>}
+          </div>
+        </div>
+
+        {/* Afluencia por hora */}
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground"><Clock className="h-3.5 w-3.5" /> Entradas por hora</p>
+          <div className="flex items-end gap-1" role="img" aria-label="Entradas por hora">
+            {Array.from({ length: to - from + 1 }, (_, i) => from + i).map((h) => (
+              <div key={h} className="flex flex-1 flex-col items-center gap-1" title={`${hourLabel(h)}: ${hours[h]} entrada${hours[h] === 1 ? '' : 's'}`}>
+                <div className="flex h-20 w-full items-end">
+                  <div className={`w-full rounded-t ${hours[h] ? 'bg-[#10f94e]/70' : 'bg-muted/50'}`} style={{ height: hours[h] ? Math.max(6, Math.round((hours[h] / max) * 80)) : 3 }} />
+                </div>
+                <span className="text-[10px] text-muted-foreground tabular-nums">{h % 3 === 0 ? hourLabel(h).replace(' ', '') : ' '}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Filtrar por socio…" className="pl-9 bg-input border-border" />
+        </div>
+
+        {loading ? (
+          <div className="space-y-2">{[0, 1, 2, 3].map((i) => <div key={i} className="h-11 animate-pulse rounded bg-muted/60" />)}</div>
+        ) : shown.length === 0 ? (
+          <div className="py-10 text-center text-muted-foreground">
+            <UserCheck className="mx-auto mb-2 h-10 w-10 opacity-40" />
+            <p>{sessions.length === 0 ? 'No hubo asistencias este día.' : 'Ningún socio coincide.'}</p>
+          </div>
+        ) : (
+          <div className="relative overflow-x-auto">
+            <table className="w-full min-w-[620px] text-sm" data-testid="attendance-table">
+              <thead>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-3 py-2 font-medium">Socio</th>
+                  <th className="px-3 py-2 font-medium">Entrada</th>
+                  <th className="px-3 py-2 font-medium">Salida</th>
+                  <th className="px-3 py-2 font-medium">Permanencia</th>
+                  <th className="px-3 py-2 font-medium">Registro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((s) => (
+                  <tr key={s.key} className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/40" onClick={() => navigate(`/usuarios/${s.userId}`)}>
+                    <td className="px-3 py-2.5">
+                      <span className="font-medium">{s.name}</span>
+                      {s.memberNumber && <span className="ml-2 text-xs text-muted-foreground">{s.memberNumber}</span>}
+                    </td>
+                    <td className="px-3 py-2.5 tabular-nums">{time12(s.checkIn)}</td>
+                    <td className="px-3 py-2.5 tabular-nums">
+                      {s.checkOut ? time12(s.checkOut) : isToday ? (
+                        <span className="rounded-full bg-[#10f94e]/15 px-2 py-0.5 text-xs text-[#10f94e]">Dentro</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Sin salida</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 tabular-nums">{formatDuration(s.minutes)}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{sourceLabel(s.source)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

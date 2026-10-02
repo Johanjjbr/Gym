@@ -1,34 +1,26 @@
 /**
- * Pestaña "Pagos" de la ficha del socio.
- *  1. Estado de cuenta: si debe, cuánto y desde cuándo, o hasta cuándo está al día,
- *     con un único botón "Cobrar" (el mismo panel que en Facturación).
- *  2. Calendario del año.
- *  3. Una sola lista de facturas (antes se mostraba la misma lista dos veces).
+ * Pestaña "Pagos" del perfil del socio. El estado de cuenta y los botones
+ * Cobrar / Avisar están en la cabecera del perfil; aquí va el detalle:
+ * datos de la membresía, calendario del año y la lista de facturas.
  */
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlertTriangle, CheckCircle2, Clock, ExternalLink, FileText, Gift, Wallet } from 'lucide-react';
+import { ExternalLink, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { PaymentCalendar } from '../PaymentCalendar';
-import { CollectPaymentDialog } from '../billing/CollectPaymentDialog';
-import { DeleteInvoiceDialog, InvoicePrint, InvoiceRowMenu, NotifyButton, StatusBadge, useCanDeleteInvoice, useGymInfo } from '../billing/shared';
-import { useBillingMember } from '../../hooks/useInvoices';
-import {
-  dueInWords, effectiveStatus, fmtDate, membersWithDebt, monthLabel, nextDueFor, overdueReminderText, REMINDER_DAYS,
-  upcomingReminderText, type InvoiceRow, type NextDue,
-} from '../../lib/billing';
-import { daysBetween, formatMoney, toDateOnly } from '../../lib/dashboardHelpers';
+import { DeleteInvoiceDialog, InvoicePrint, InvoiceRowMenu, StatusBadge, useCanDeleteInvoice } from '../billing/shared';
+import type { MemberAccount } from '../../hooks/useMemberAccount';
+import { effectiveStatus, fmtDate, monthLabel, type InvoiceRow } from '../../lib/billing';
+import { formatMoney } from '../../lib/dashboardHelpers';
 
 const INITIAL_ROWS = 12;
 
-export function MemberPaymentsTab({ userId, invoices, loading }: { userId: string; invoices: InvoiceRow[]; loading: boolean }) {
+export function MemberPaymentsTab({ account, invoices, loading }: { account: MemberAccount; invoices: InvoiceRow[]; loading: boolean }) {
   const navigate = useNavigate();
-  const today = toDateOnly(new Date());
-  const { data: member } = useBillingMember(userId);
+  const { member, today, debt, lastPaid, plan } = account;
   const canDelete = useCanDeleteInvoice();
 
-  const [collectOpen, setCollectOpen] = useState(false);
   const [toPrint, setToPrint] = useState<InvoiceRow | null>(null);
   const [toDelete, setToDelete] = useState<InvoiceRow | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -37,66 +29,15 @@ export function MemberPaymentsTab({ userId, invoices, loading }: { userId: strin
     () => [...invoices].sort((a, b) => (a.due_date < b.due_date ? 1 : a.due_date > b.due_date ? -1 : 0)),
     [invoices],
   );
-  const debt = useMemo(() => membersWithDebt(invoices, today)[0], [invoices, today]);
-  const lastPaid = useMemo(
-    () => invoices.filter((i) => i.status === 'Pagada' && i.paid_at).sort((a, b) => (a.paid_at! < b.paid_at! ? 1 : -1))[0],
-    [invoices],
-  );
-  const gym = useGymInfo();
-  // Próximo vencimiento (aunque la factura del período todavía no exista)
-  const next = useMemo(() => (member ? nextDueFor(member, invoices, today) : null), [member, invoices, today]);
-  const daysLeft = next ? daysBetween(today, next.due) : null;
-  const overdue = !!debt && debt.overdueTotal > 0;
-  const dueSoon = !overdue && daysLeft !== null && daysLeft >= 0 && daysLeft <= REMINDER_DAYS;
-  const notice = !member
-    ? null
-    : overdue
-      ? overdueReminderText(member.name, debt!, gym.name, formatMoney)
-      : dueSoon && next
-        ? upcomingReminderText(member.name, next, gym.name, formatMoney)
-        : null;
-
-  const plan = member?.plans ?? null;
-  const exempt = member?.is_free_user === true;
-  const cannotCollect = exempt ? 'Socio exento de pago' : !plan ? 'Sin plan asignado' : null;
   const rows = showAll ? sorted : sorted.slice(0, INITIAL_ROWS);
   const printMember = member && { name: member.name, cedula: member.cedula, member_number: member.member_number, plan: plan?.name, phone: member.phone };
 
   return (
     <div className="space-y-6">
-      {/* Estado de cuenta */}
+      {/* Membresía y calendario */}
       <Card className="bg-card border-border">
         <CardContent className="p-5 space-y-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <AccountStatus
-              loading={loading || !member}
-              exempt={exempt}
-              hasPlan={!!plan}
-              debt={debt}
-              next={next}
-              daysLeft={daysLeft}
-              paidUntil={member?.paid_until ?? null}
-            />
-            <div className="flex flex-col items-stretch gap-1 md:items-end">
-              <Button
-                className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-semibold"
-                onClick={() => setCollectOpen(true)}
-                disabled={!member || !!cannotCollect}
-                data-testid="member-btn-cobrar"
-              >
-                <Wallet className="mr-2 h-4 w-4" /> Cobrar
-              </Button>
-              {cannotCollect ? (
-                <span className="text-xs text-muted-foreground">{cannotCollect}</span>
-              ) : notice ? (
-                <NotifyButton phone={member?.phone} message={notice} />
-              ) : (
-                <span className="text-xs text-muted-foreground">Deuda o meses por adelantado</span>
-              )}
-            </div>
-          </div>
-
-          <dl className="grid grid-cols-2 gap-4 border-t border-border pt-4 text-sm md:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
             <Meta label="Plan" value={plan ? plan.name : 'Sin plan'} sub={plan ? `${formatMoney(Number(plan.price))} · ${plan.duration_days} días` : undefined} />
             <Meta label="Al día hasta" value={member?.paid_until ? monthLabel(member.paid_until) : '—'} />
             <Meta
@@ -195,15 +136,6 @@ export function MemberPaymentsTab({ userId, invoices, loading }: { userId: strin
         </CardContent>
       </Card>
 
-      {member && (
-        <CollectPaymentDialog
-          open={collectOpen}
-          onOpenChange={setCollectOpen}
-          members={[member]}
-          invoices={invoices}
-          initialUserId={member.id}
-        />
-      )}
       <InvoicePrint invoice={toPrint} member={printMember || undefined} onClose={() => setToPrint(null)} />
       <DeleteInvoiceDialog invoice={toDelete} memberName={member?.name ?? 'El socio'} onClose={() => setToDelete(null)} />
     </div>
@@ -211,83 +143,6 @@ export function MemberPaymentsTab({ userId, invoices, loading }: { userId: strin
 }
 
 // ---------------------------------------------------------------------------
-
-function AccountStatus({
-  loading, exempt, hasPlan, debt, next, daysLeft, paidUntil,
-}: {
-  loading: boolean;
-  exempt: boolean;
-  hasPlan: boolean;
-  debt: ReturnType<typeof membersWithDebt>[number] | undefined;
-  next: NextDue | null;
-  daysLeft: number | null;
-  paidUntil: string | null;
-}) {
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-      </div>
-    );
-  }
-  if (exempt) {
-    return <StatusLine icon={Gift} tone="muted" title="Exento de pago" detail="No se le generan facturas ni se le suspende por deuda." />;
-  }
-  if (debt && debt.overdueTotal > 0) {
-    return (
-      <StatusLine
-        icon={AlertTriangle}
-        tone="red"
-        title={`Debe ${formatMoney(debt.total)}`}
-        detail={`${debt.count} período${debt.count === 1 ? '' : 's'} sin pagar · desde ${monthLabel(debt.oldestDue)} · ${debt.daysLate} día${debt.daysLate === 1 ? '' : 's'} de atraso`}
-      />
-    );
-  }
-  if (next && daysLeft !== null && daysLeft >= 0 && daysLeft <= REMINDER_DAYS) {
-    return (
-      <StatusLine
-        icon={Clock}
-        tone="amber"
-        title={`${dueInWords(daysLeft)} · ${formatMoney(next.amount)}`}
-        detail={`${next.label} · ${fmtDate(next.due)}. Avísale para que pague a tiempo: si no, se suspende al día siguiente.`}
-      />
-    );
-  }
-  if (!hasPlan) {
-    return <StatusLine icon={AlertTriangle} tone="amber" title="Sin plan asignado" detail="Asígnale un plan desde Editar para poder facturarle." />;
-  }
-  return (
-    <StatusLine
-      icon={CheckCircle2}
-      tone="green"
-      title={paidUntil ? `Al día hasta ${monthLabel(paidUntil)}` : 'Sin deudas'}
-      detail={next ? `Próximo vencimiento: ${fmtDate(next.due)} · ${formatMoney(next.amount)}` : 'Todavía no tiene pagos registrados.'}
-    />
-  );
-}
-
-const TONE = {
-  red: 'text-[#ff3b5c] bg-[#ff3b5c]/10',
-  amber: 'text-[#eab308] bg-[#eab308]/10',
-  green: 'text-[#10f94e] bg-[#10f94e]/10',
-  muted: 'text-muted-foreground bg-muted',
-};
-
-function StatusLine({ icon: Icon, tone, title, detail }: { icon: typeof Wallet; tone: keyof typeof TONE; title: string; detail: string }) {
-  return (
-    <div className="flex items-start gap-3" data-testid="account-status">
-      <span className={`rounded-lg p-2.5 ${TONE[tone]}`}>
-        <Icon className="h-5 w-5" aria-hidden />
-      </span>
-      <div>
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Estado de cuenta</p>
-        <p className="text-2xl font-semibold">{title}</p>
-        <p className="text-sm text-muted-foreground">{detail}</p>
-      </div>
-    </div>
-  );
-}
 
 function Meta({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (

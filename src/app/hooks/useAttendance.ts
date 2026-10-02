@@ -6,6 +6,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { attendance } from '../lib/api';
 import { toast } from 'sonner';
+import { supabase } from '../lib/supabase';
+import type { AttendanceRecord } from '../lib/attendanceStats';
+import { localTime, type DayRecord } from '../lib/attendanceDay';
+import { addDays, toDateOnly } from '../lib/dashboardHelpers';
 import type { AttendanceFormData, CheckinFormData } from '../lib/validations';
 
 // Keys para el caché
@@ -91,5 +95,102 @@ export function useCheckin() {
     onError: (error: Error) => {
       toast.error(error.message || 'Error al registrar check-in');
     },
+  });
+}
+/**
+ * Asistencia de UN socio leída directamente de Supabase (filtrada en la base).
+ * useUserAttendance descargaba la asistencia de todo el gimnasio y filtraba en el navegador.
+ */
+export function useMemberAttendance(userId: string | undefined, sinceDays = 400) {
+  return useQuery({
+    queryKey: [...attendanceKeys.byUser(userId ?? ''), 'direct', sinceDays],
+    queryFn: async () => {
+      const since = new Date();
+      since.setDate(since.getDate() - sinceDays);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const sinceStr = `${since.getFullYear()}-${pad(since.getMonth() + 1)}-${pad(since.getDate())}`;
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('id, date, time, type, source')
+        .eq('user_id', userId!)
+        .gte('date', sinceStr)
+        .order('date', { ascending: false })
+        .order('time', { ascending: false });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as AttendanceRecord[];
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60,
+  });
+}
+
+/**
+ * Registros de UN día (con nombre del socio), leídos directo de Supabase.
+ * Reemplaza la descarga de toda la tabla + N llamadas de estado por socio.
+ */
+export function useAttendanceDay(date: string) {
+  return useQuery({
+    queryKey: ['attendance', 'day', date],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('id, user_id, date, time, type, source, users(name, member_number)')
+        .eq('date', date)
+        .order('time', { ascending: true });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as unknown as DayRecord[];
+    },
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** Entradas de los últimos `days` días (sin hoy) para el promedio diario. */
+export function useAttendanceTrend(today: string, days = 28) {
+  return useQuery({
+    queryKey: ['attendance', 'trend', today, days],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('user_id, date')
+        .eq('type', 'Entrada')
+        .gte('date', addDays(today, -days))
+        .lt('date', today);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as { user_id: string; date: string }[];
+    },
+    staleTime: 1000 * 60 * 10,
+  });
+}
+
+/**
+ * Registra Entrada o Salida con register_attendance_atomic (valida que el socio
+ * esté Activo, que no tenga ya una entrada abierta, y evita dobles clics).
+ * Fecha y hora se envían en hora local del gimnasio, no UTC.
+ */
+export function useRegisterAttendance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ userId, type, source = 'manual' }: { userId: string; type: 'Entrada' | 'Salida'; source?: string; name?: string }) => {
+      const now = new Date();
+      const { data, error } = await supabase.rpc('register_attendance_atomic', {
+        p_user_id: userId,
+        p_type: type,
+        p_date: toDateOnly(now),
+        p_time: localTime(now),
+        p_source: source,
+      });
+      if (error) throw new Error(error.message);
+      const res = data as { allowed: boolean; reason?: string };
+      if (!res?.allowed) throw new Error(res?.reason || 'No se pudo registrar');
+      return res;
+    },
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ['attendance'] });
+      qc.invalidateQueries({ queryKey: ['users', 'overview'] });
+      toast.success(`${v.type} registrada`, { description: v.name });
+    },
+    onError: (e: Error) => toast.error('No se pudo registrar', { description: e.message }),
   });
 }
