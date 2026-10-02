@@ -68,6 +68,7 @@ export function toDateOnly(d: Date): string {
 function invalidateBilling(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: invoiceKeys.all });
   queryClient.invalidateQueries({ queryKey: ['users'] });
+  queryClient.invalidateQueries({ queryKey: ['payments'] });
   queryClient.invalidateQueries({ queryKey: statsKeys.dashboard });
 }
 
@@ -291,5 +292,117 @@ export function useProcessRecurringPayments() {
     onError: (error: Error) => {
       toast.error('Error al procesar facturación automática', { description: error.message });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Facturación: datos y cobro unificado
+// ---------------------------------------------------------------------------
+
+export interface BillingMember {
+  id: string;
+  name: string;
+  cedula: string | null;
+  phone: string | null;
+  member_number: string | null;
+  status: string;
+  is_free_user: boolean | null;
+  plan_id: string | null;
+  paid_until: string | null;
+  next_payment: string | null;
+  plans: { id: string; name: string; price: number; duration_days: number; type: string | null } | null;
+}
+
+/** Socios con lo necesario para cobrar (lectura directa, sin la edge function). */
+export function useBillingMembers() {
+  return useQuery({
+    queryKey: ['users', 'billing'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name, cedula, phone, member_number, status, is_free_user, plan_id, paid_until, next_payment, plans(id, name, price, duration_days, type)')
+        .order('name');
+      if (error) throw new Error(error.message);
+      return (data ?? []) as unknown as BillingMember[];
+    },
+    staleTime: 1000 * 60 * 2,
+    enabled: !!localStorage.getItem('access_token'),
+  });
+}
+
+const BILLING_MEMBER_FIELDS =
+  'id, name, cedula, phone, member_number, status, is_free_user, plan_id, paid_until, next_payment, start_date, plans(id, name, price, duration_days, type)';
+
+/** Un socio con lo necesario para cobrar (ficha del socio). */
+export function useBillingMember(id: string | undefined) {
+  return useQuery({
+    queryKey: ['users', 'billing', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('users').select(BILLING_MEMBER_FIELDS).eq('id', id!).maybeSingle();
+      if (error) throw new Error(error.message);
+      return data as unknown as (BillingMember & { start_date: string | null }) | null;
+    },
+    enabled: !!id,
+    staleTime: 1000 * 30,
+  });
+}
+
+/** Pagos recibidos desde una fecha (yyyy-MM-dd). */
+export function usePaymentsSince(since: string) {
+  return useQuery({
+    queryKey: ['payments', since],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('id, user_id, amount, date, method')
+        .eq('status', 'Pagado')
+        .gte('date', since)
+        .order('date', { ascending: false });
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+    staleTime: 1000 * 60 * 2,
+    enabled: !!localStorage.getItem('access_token'),
+  });
+}
+
+export interface PayPeriodsInput {
+  user_id: string;
+  months: number;
+  method: string;
+  reference?: string;
+  notes?: string;
+  /** yyyy-MM-dd; vacío = ahora. */
+  paid_on?: string;
+}
+
+export interface PayPeriodsResult {
+  paid: number;
+  created: number;
+  total: number;
+  paid_until: string | null;
+}
+
+/**
+ * Cobro unificado: salda las facturas abiertas más antiguas y adelanta
+ * períodos si se pagan más. Una sola transacción en la base (pay_periods).
+ */
+export function usePayPeriods() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: PayPeriodsInput) => {
+      const isToday = !input.paid_on || input.paid_on === toDateOnly(new Date());
+      const { data, error } = await supabase.rpc('pay_periods', {
+        p_user_id: input.user_id,
+        p_months: input.months,
+        p_method: input.method,
+        p_reference: input.reference?.trim() || null,
+        p_notes: input.notes?.trim() || null,
+        p_paid_at: isToday ? null : `${input.paid_on}T12:00:00`,
+      });
+      if (error) throw new Error(error.message);
+      return data as PayPeriodsResult;
+    },
+    onSuccess: () => invalidateBilling(queryClient),
   });
 }

@@ -15,8 +15,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { toast } from 'sonner';
 import { format, parseISO, startOfMonth } from 'date-fns';
 import { useUser, useAssignTrainer, useTrainers } from '../hooks/useUsers';
-import { useUserInvoices, useCreateInvoice, usePayInvoice, usePayAdvanceMonths } from '../hooks/useInvoices';
-import { PaymentCalendar } from '../components/PaymentCalendar';
+import { useUserInvoices } from '../hooks/useInvoices';
+import { MemberPaymentsTab } from '../components/member/MemberPaymentsTab';
 import { useRoutines, useRoutineAssignments, useAssignRoutine } from '../hooks/useRoutines';
 import { useUserAttendance } from '../hooks/useAttendance';
 import { usePhysicalProgress, useCreatePhysicalProgress, useDeletePhysicalProgress } from '../hooks/usePhysicalProgress';
@@ -42,33 +42,6 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   const [endDate, setEndDate] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   
-  // Estados para el formulario de pago
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentNextDate, setPaymentNextDate] = useState(() => {
-    const nextMonth = new Date();
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-    return nextMonth.toISOString().split('T')[0];
-  });
-  const [paymentStatus, setPaymentStatus] = useState<'Pagado' | 'Pendiente' | 'Vencido'>('Pagado');
-  const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
-  const [paymentReference, setPaymentReference] = useState('');
-  const [paymentNotes, setPaymentNotes] = useState('');
-  const [paymentConcept, setPaymentConcept] = useState('');
-  
-  // Estados para pagar factura pendiente
-  const [payingInvoice, setPayingInvoice] = useState<any>(null);
-  const [payMethod, setPayMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
-  const [payReference, setPayReference] = useState('');
-  const [payNotes, setPayNotes] = useState('');
-  
-  // Pago adelantado
-  const [advancePaymentOpen, setAdvancePaymentOpen] = useState(false);
-  const [advanceMonths, setAdvanceMonths] = useState(1);
-  const [advanceMethod, setAdvanceMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Pago Móvil'>('Efectivo');
-  const [advanceReference, setAdvanceReference] = useState('');
-  
-  // Estados para el formulario de progreso físico
   const [progressWeight, setProgressWeight] = useState('');
   const [progressBodyFat, setProgressBodyFat] = useState('');
   const [progressMuscleMass, setProgressMuscleMass] = useState('');
@@ -92,9 +65,6 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   const assignTrainerMutation = useAssignTrainer();
   
   // Hook para crear pagos
-  const createPaymentMutation = useCreateInvoice();
-  const payInvoice = usePayInvoice();
-  const payAdvance = usePayAdvanceMonths();
   
   // Obtener usuario actual del staff usando el contexto de autenticación
   const { user: currentUser } = useAuth();
@@ -148,6 +118,10 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   const userProgress = userPhysicalProgress || [];
   const userInvoices: any[] = userPayments || [];
   const payments = userPayments || [];
+  // Último pago REAL (la factura más reciente puede estar pendiente)
+  const lastPaid: any = (userPayments || [])
+    .filter((p: any) => p.status === 'Pagada' && p.paid_at)
+    .sort((a: any, b: any) => (a.paid_at < b.paid_at ? 1 : -1))[0];
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -219,89 +193,6 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
         setSelectedTrainerId(null);
       },
     });
-  };
-
-  const createPayment = async () => {
-    if (!id || !paymentAmount || !paymentDate || !paymentNextDate || !paymentStatus || !paymentMethod || !paymentConcept.trim()) {
-      toast.error('Por favor completa todos los campos del pago');
-      return;
-    }
-
-    try {
-      // Generar concept: Plan - Mes Año (basado en due_date = primer día del mes de paymentDate)
-      // parseISO: yyyy-MM-dd en hora LOCAL (new Date(str) usa UTC y un pago del día 1
-      // caería en el mes anterior en UTC-3 / UTC-4)
-      const dueDate = startOfMonth(parseISO(paymentDate));
-      const dueDateStr = format(dueDate, 'yyyy-MM-dd');
-      const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
-      const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
-      const concept = `${planName} - ${monthYear}`;
-
-      await createPaymentMutation.mutateAsync({
-        user_id: id,
-        plan_id: user?.plan_id || undefined,
-        amount: parseFloat(paymentAmount),
-        due_date: dueDateStr,
-        paid_at: paymentStatus === 'Pagado' ? paymentDate : undefined,
-        status: paymentStatus === 'Pagado' ? 'Pagada' : paymentStatus === 'Vencido' ? 'Vencida' : 'Pendiente',
-        method: paymentMethod,
-        concept: concept,
-        reference: paymentReference || undefined,
-        notes: paymentNotes || undefined,
-      });
-
-      // next_payment / paid_until los recalcula la base de datos (trigger sobre invoices)
-
-      setIsCreatePaymentDialogOpen(false);
-      setPaymentAmount('');
-      setPaymentConcept('');
-      setPaymentDate(new Date().toISOString().split('T')[0]);
-      setPaymentNextDate(() => {
-        const nextMonth = new Date();
-        nextMonth.setMonth(nextMonth.getMonth() + 1);
-        return nextMonth.toISOString().split('T')[0];
-      });
-      setPaymentStatus('Pagado');
-      setPaymentMethod('Efectivo');
-setPaymentReference('');
-      setPaymentNotes('');
-    } catch (error: any) {
-      console.error('Error creating payment:', error);
-      toast.error('Error al registrar pago', { description: error.message });
-    }
-  };
-
-  const handlePayInvoice = async () => {
-    if (!payingInvoice) return;
-    payInvoice.mutate({
-      id: payingInvoice.id,
-      data: { method: payMethod, reference: payReference || undefined, notes: payNotes || undefined },
-    }, {
-      onSuccess: () => {
-        setPayingInvoice(null);
-        setPayMethod('Efectivo');
-        setPayReference('');
-        setPayNotes('');
-      },
-    });
-  };
-  
-  const handleAdvancePayment = () => {
-    if (!id || !advanceMonths || advanceMonths < 1 || advanceMonths > 12) {
-      toast.error('Meses debe estar entre 1 y 12');
-      return;
-    }
-    payAdvance.mutate(
-      { user_id: id, months: advanceMonths, method: advanceMethod, reference: advanceReference || undefined },
-      {
-        onSuccess: () => {
-          setAdvancePaymentOpen(false);
-          setAdvanceMonths(1);
-          setAdvanceMethod('Efectivo');
-          setAdvanceReference('');
-        },
-      },
-    );
   };
 
   const createProgress = () => {
@@ -670,24 +561,20 @@ setPaymentReference('');
                   <div className="text-center py-8">
                     <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto" />
                   </div>
-                ) : userPayments && userPayments.length > 0 ? (
-                  <div className="space-y-3">
-                    <div className="p-4 bg-muted rounded-lg">
-                      <div className="flex items-center gap-4 mb-2">
-                        <p className="text-2xl text-primary">Bs {userPayments[0].amount.toLocaleString()}</p>
-                        <Badge variant="outline" className={getPaymentStatusColor(userPayments[0].status)}>
-                          {userPayments[0].status}
-                        </Badge>
+                ) : lastPaid ? (
+                  <div className="p-4 bg-muted rounded-lg">
+                    <div className="flex items-center justify-between gap-4 mb-2">
+                      <p className="text-2xl text-primary tabular-nums">Bs {Number(lastPaid.amount).toLocaleString('es-VE')}</p>
+                      <span className="text-sm text-muted-foreground">{lastPaid.concept}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Fecha</p>
+                        <p>{lastPaid.paid_at.slice(0, 10).split('-').reverse().join('/')}</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Fecha</p>
-                          <p>{new Date(userPayments[0].paid_at || userPayments[0].created_at).toLocaleDateString('es-ES')}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Método</p>
-                          <p>{userPayments[0].method}</p>
-                        </div>
+                      <div>
+                        <p className="text-muted-foreground">Método</p>
+                        <p>{lastPaid.method || '—'}</p>
                       </div>
                     </div>
                   </div>
@@ -957,158 +844,7 @@ setPaymentReference('');
 
         {/* Payments Tab */}
         <TabsContent value="payments" className="space-y-6">
-          {/* Calendario de Pagos */}
-          <PaymentCalendar invoices={userPayments} />
-
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CreditCard className="w-5 h-5" />
-                  Historial de Pagos
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-primary text-primary hover:bg-primary/10"
-                  onClick={() => {
-                    const dueDate = parseISO(paymentDate);
-                    const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
-                    const concept = `${planName} - ${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
-                    setPaymentConcept(concept);
-                    setIsCreatePaymentDialogOpen(true);
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Registrar Pago
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-[#0ea5e9] text-[#0ea5e9] hover:bg-[#0ea5e9]/10 ml-2"
-                  onClick={() => setAdvancePaymentOpen(true)}
-                >
-                  <CreditCard className="w-4 h-4 mr-1" />
-                  Pago Adelantado
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingPayments ? (
-                <div className="text-center py-8">
-                  <Loader2 className="h-8 w-8 text-[#10f94e] animate-spin mx-auto mb-2" />
-                  <p className="text-muted-foreground text-sm">Cargando pagos...</p>
-                </div>
-              ) : userPayments && userPayments.length > 0 ? (
-                <div className="space-y-3">
-                  {userPayments.map((payment: any) => (
-                    <div
-                      key={payment.id}
-                      className="flex items-center justify-between p-4 bg-muted rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-2">
-                          <p className="text-2xl text-primary">Bs {payment.amount.toLocaleString()}</p>
-                          <Badge variant="outline" className={getPaymentStatusColor(payment.status)}>
-                            {payment.status}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <p className="text-muted-foreground">Fecha de Pago</p>
-                            <p>{new Date(payment.paid_at || payment.created_at).toLocaleDateString('es-ES')}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Método</p>
-                            <p>{payment.method}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Próximo Pago</p>
-                            <p>{user?.next_payment ? new Date(user.next_payment).toLocaleDateString('es-ES') : '-'}</p>
-                          </div>
-                        </div>
-                      </div>
-                      {payment.status === 'Pendiente' && (
-                        <Button
-                          size="sm"
-                          className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
-                          onClick={() => setPayingInvoice(payment)}
-                        >
-                          Pagar
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  <CreditCard className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p>No hay registros de pagos</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Facturas Generadas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {userInvoices.length > 0 ? (
-                <div className="space-y-3">
-                  {userInvoices.map((invoice) => (
-                    <div
-                      key={invoice.id}
-                      className="flex items-center justify-between p-4 bg-muted rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-2">
-                          <p className="text-primary">{invoice.invoice_number}</p>
-                          <Badge variant="outline" className="bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30">
-                            {invoice.status}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{invoice.concept}</p>
-                        <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
-                          <div>
-                            <p className="text-muted-foreground">Fecha</p>
-                            <p>{new Date(invoice.paid_at || invoice.created_at || invoice.due_date).toLocaleDateString('es-ES')}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Monto</p>
-                            <p className="text-lg">Bs {invoice.amount.toLocaleString()}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {invoice.status === 'Pendiente' && (
-                          <Button
-                            size="sm"
-                            className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
-                            onClick={() => setPayingInvoice(invoice)}
-                          >
-                            Pagar
-                          </Button>
-                        )}
-                        <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary/10">
-                          <Download className="w-4 h-4 mr-2" />
-                          Descargar
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No hay facturas generadas</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <MemberPaymentsTab userId={id || ''} invoices={userPayments || []} loading={loadingPayments} />
         </TabsContent>
       </Tabs>
 
@@ -1271,203 +1007,6 @@ setPaymentReference('');
         </DialogContent>
       </Dialog>
 
-      {/* Create Payment Dialog */}
-      <Dialog open={isCreatePaymentDialogOpen} onOpenChange={setIsCreatePaymentDialogOpen}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogHeader>
-            <DialogTitle>Registrar Pago</DialogTitle>
-            <DialogDescription>
-              Registrar un nuevo pago para {user.name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Concepto <span className="text-[#ff3b5c]">*</span></Label>
-              <Input
-                value={paymentConcept}
-                onChange={(e) => setPaymentConcept(e.target.value)}
-                placeholder="Ej: Mensualidad Enero 2026"
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Monto (Bs) <span className="text-[#ff3b5c]">*</span></Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-                placeholder="300"
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Fecha de Pago <span className="text-[#ff3b5c]">*</span></Label>
-              <Input
-                type="date"
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Próximo Pago</Label>
-              <Input
-                type="date"
-                value={paymentNextDate}
-                onChange={(e) => setPaymentNextDate(e.target.value)}
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Estado</Label>
-              <Select
-                value={paymentStatus}
-                onValueChange={setPaymentStatus}
-                className="bg-input border-border"
-              >
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Selecciona un estado" />
-                </SelectTrigger>
-                <SelectContent className="bg-input border-border">
-                  <SelectItem value="Pagado">Pagado</SelectItem>
-                  <SelectItem value="Pendiente">Pendiente</SelectItem>
-                  <SelectItem value="Vencido">Vencido</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Método de Pago</Label>
-              <Select
-                value={paymentMethod}
-                onValueChange={setPaymentMethod}
-                className="bg-input border-border"
-              >
-                <SelectTrigger className="bg-input border-border">
-                  <SelectValue placeholder="Selecciona un método" />
-                </SelectTrigger>
-                <SelectContent className="bg-input border-border">
-                  <SelectItem value="Efectivo">Efectivo</SelectItem>
-                  <SelectItem value="Transferencia">Transferencia</SelectItem>
-                  <SelectItem value="Tarjeta">Tarjeta</SelectItem>
-                  <SelectItem value="Pago Móvil">Pago Móvil</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Referencia (Opcional)</Label>
-              <Input
-                value={paymentReference}
-                onChange={(e) => setPaymentReference(e.target.value)}
-                placeholder="Nro. de transferencia, etc."
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label>Notas (Opcional)</Label>
-              <Textarea
-                value={paymentNotes}
-                onChange={(e) => setPaymentNotes(e.target.value)}
-                placeholder="Información adicional..."
-                className="bg-input border-border"
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsCreatePaymentDialogOpen(false);
-                  setPaymentConcept('');
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                className="bg-primary hover:bg-primary/90"
-                onClick={createPayment}
-                disabled={createPaymentMutation.isPending}
-              >
-                {createPaymentMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Registrando...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Registrar Pago
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Pagar Factura Dialog */}
-      <Dialog open={!!payingInvoice} onOpenChange={() => setPayingInvoice(null)}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-white">Pagar Factura</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              {payingInvoice?.invoice_number} — {user?.name || 'Usuario desconocido'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label className="text-gray-300">Monto (Bs)</Label>
-              <div className="text-2xl font-bold text-[#10f94e]">
-                Bs {Number(payingInvoice?.amount || 0).toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <Label className="text-gray-300">Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
-              <select
-                value={payMethod}
-                onChange={(e) => setPayMethod(e.target.value)}
-                className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-              >
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Tarjeta">Tarjeta</option>
-                <option value="Pago Móvil">Pago Móvil</option>
-              </select>
-            </div>
-            <div>
-              <Label className="text-gray-300">Referencia (Opcional)</Label>
-              <Input
-                value={payReference}
-                onChange={(e) => setPayReference(e.target.value)}
-                className="bg-gray-800 border-gray-700 text-white"
-                placeholder="Nro. de referencia"
-              />
-            </div>
-            <div>
-              <Label className="text-gray-300">Notas (Opcional)</Label>
-              <Textarea
-                value={payNotes}
-                onChange={(e) => setPayNotes(e.target.value)}
-                className="bg-gray-800 border-gray-700 text-white"
-                rows={2}
-              />
-            </div>
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setPayingInvoice(null)} className="border-gray-700 hover:bg-gray-800">
-                Cancelar
-              </Button>
-              <Button onClick={handlePayInvoice} disabled={payInvoice.isPending} className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold">
-                {payInvoice.isPending ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
-                ) : (
-                  <><CheckCircle className="w-4 h-4 mr-2" />Confirmar Pago</>
-                )}
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Add Physical Progress Dialog */}
       <Dialog open={isAddProgressDialogOpen} onOpenChange={setIsAddProgressDialogOpen}>
         <DialogContent className="bg-card border-border max-w-md">
@@ -1559,74 +1098,6 @@ setPaymentReference('');
         </DialogContent>
 </Dialog>
 
-      {/* Pago Adelantado Dialog */}
-      <Dialog open={advancePaymentOpen} onOpenChange={setAdvancePaymentOpen}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogHeader>
-            <DialogTitle>Pago Adelantado</DialogTitle>
-            <DialogDescription>
-              Pagar varias mensualidades por adelantado para {user.name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="advance-months-user">Meses a pagar <span className="text-[#ff3b5c]">*</span></Label>
-              <Input
-                id="advance-months-user"
-                type="number"
-                min="1"
-                max="12"
-                value={advanceMonths}
-                onChange={(e) => setAdvanceMonths(parseInt(e.target.value) || 1)}
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label htmlFor="advance-method-user">Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
-              <select
-                id="advance-method-user"
-                value={advanceMethod}
-                onChange={(e) => setAdvanceMethod(e.target.value)}
-                className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
-              >
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Tarjeta">Tarjeta</option>
-                <option value="Pago Móvil">Pago Móvil</option>
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="advance-reference-user">Referencia (Opcional)</Label>
-              <Input
-                id="advance-reference-user"
-                value={advanceReference}
-                onChange={(e) => setAdvanceReference(e.target.value)}
-                placeholder="Nro. de referencia, transferencia, etc."
-                className="bg-input border-border"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setAdvancePaymentOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold"
-                onClick={handleAdvancePayment}
-                disabled={payAdvance.isPending}
-              >
-                {payAdvance.isPending ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
-                ) : (
-                  <><Plus className="w-4 h-4 mr-2" />Confirmar Pago Adelantado</>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

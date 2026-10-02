@@ -20,6 +20,7 @@ import { Button } from '../components/ui/button';
 import { useAuth } from '../contexts/AuthContext';
 import { useDashboard, type DashboardData } from '../hooks/useDashboard';
 import { formatCompact, formatMoney, formatShortDate } from '../lib/dashboardHelpers';
+import { dueInWords, REMINDER_DAYS } from '../lib/billing';
 
 const GREEN = '#10f94e';
 const AXIS = '#9494a8';
@@ -181,22 +182,27 @@ function DashboardContent({ data, onNavigate }: { data: DashboardData; onNavigat
 
             <section>
               <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
-                <CalendarClock className="h-3.5 w-3.5 text-[#eab308]" aria-hidden /> Vencen en los próximos 7 días
+                <CalendarClock className="h-3.5 w-3.5 text-[#eab308]" aria-hidden /> Vencen en los próximos {REMINDER_DAYS} días
               </h3>
-              {rec.upcoming.length === 0 ? (
-                <EmptyLine>No hay vencimientos esta semana.</EmptyLine>
+              {data.renewals.length === 0 ? (
+                <EmptyLine>Nadie vence en estos días.</EmptyLine>
               ) : (
                 <ul className="divide-y divide-border">
-                  {rec.upcoming.slice(0, 5).map((inv) => (
+                  {data.renewals.slice(0, 5).map((r) => (
                     <ListRow
-                      key={inv.id}
-                      onClick={() => onNavigate(`/usuarios/${inv.user_id}`)}
-                      title={data.nameOf(inv.user_id)}
-                      detail={inv.daysLeft === 0 ? 'Vence hoy' : `${formatShortDate(inv.due)} · en ${inv.daysLeft} día${inv.daysLeft === 1 ? '' : 's'}`}
-                      amount={formatMoney(inv.amount)}
+                      key={r.user_id}
+                      onClick={() => onNavigate(`/usuarios/${r.user_id}`)}
+                      title={data.nameOf(r.user_id)}
+                      detail={`${dueInWords(r.daysLeft)} · ${formatShortDate(r.due)}`}
+                      amount={formatMoney(r.amount)}
                     />
                   ))}
                 </ul>
+              )}
+              {data.renewals.length > 0 && (
+                <button className="mt-2 text-xs text-[#10f94e] hover:underline" onClick={() => onNavigate('/facturacion?vista=por-vencer')}>
+                  Avisar a {data.renewals.length === 1 ? 'este socio' : `estos ${data.renewals.length} socios`}
+                </button>
               )}
             </section>
           </CardContent>

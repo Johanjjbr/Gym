@@ -1,1267 +1,662 @@
 /**
- * Página de Facturación unificada
- * Combina: Facturas + Registrar Cobro + Resumen/Morosos
- * Incluye impresión de facturas con window.print() nativo
+ * Facturación
+ *  - Indicadores fijos (no cambian con los filtros)
+ *  - Vista "Facturas": búsqueda, estado y mes, sin recargar la página
+ *  - Vista "Socios con deuda": una fila por socio, ordenada por atraso
+ *  - Un único flujo "Cobrar" (CollectPaymentDialog)
+ * Parámetros de URL: ?vista=deudores | por-vencer  ·  ?cobrar=<id de socio>
  */
-
-import { useState, useEffect, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import {
-  Search, Plus, DollarSign, Loader2, AlertCircle, Eye, Calendar,
-  Filter, Printer, X, Users, FileText, CreditCard, CheckCircle, Trash2, Clock, RotateCcw,
+  AlertCircle, AlertTriangle, CalendarClock, ChevronLeft, ChevronRight, Clock, CreditCard,
+  FileText, MoreHorizontal, Phone, Printer, RefreshCw, Search, Trash2, Wallet, X,
 } from 'lucide-react';
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate } from 'react-router';
-import { toast } from 'sonner';
-import { addMonths, format, startOfMonth, endOfMonth, isWithinInterval, parseISO, subMonths } from 'date-fns';
 
-import { useInvoices, useCreateInvoice, usePayInvoice, usePayAdvanceMonths, useDeleteInvoice, useProcessRecurringPayments } from '../hooks/useInvoices';
-
-const MONTHS_ES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-];
-import { useUsers } from '../hooks/useUsers';
-import { usePlans } from '../hooks/usePlans';
-import { supabase } from '../lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { useInvoices, useBillingMembers, usePaymentsSince, useProcessRecurringPayments } from '../hooks/useInvoices';
+import {
+  billingKpis, dueInWords, effectiveStatus, fmtDate, isOpen, membersWithDebt, monthLabel, overdueReminderText, REMINDER_DAYS,
+  statusCounts, upcomingRenewals, upcomingReminderText,
+  type InvoiceRow, type InvoiceStatus,
+} from '../lib/billing';
+import { DeleteInvoiceDialog, InvoicePrint, InvoiceRowMenu, NotifyButton, StatusBadge, useCanDeleteInvoice, useGymInfo } from '../components/billing/shared';
+import { formatMoney, monthStart, toDateOnly } from '../lib/dashboardHelpers';
+import { CollectPaymentDialog } from '../components/billing/CollectPaymentDialog';
+import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
-import { Label } from '../components/ui/label';
-import { Textarea } from '../components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '../components/ui/dialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../components/ui/alert-dialog';
-import { PrintInvoice } from '../../components/PrintInvoice';
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
-type TabType = 'facturas' | 'cobrar' | 'resumen';
-type FilterStatus = 'all' | 'Pagada' | 'Pendiente' | 'Vencida';
-type TimeFilter = 'all' | 'thisMonth' | 'lastMonth';
+type View = 'facturas' | 'deudores' | 'por-vencer';
+type StatusFilter = 'all' | InvoiceStatus;
 
-interface GymInfo {
-  name: string;
-  address?: string;
-  phone?: string;
-  email?: string;
-}
+const PAGE_SIZE = 25;
+
 
 export function Billing() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const today = toDateOnly(new Date());
 
-  // Tabs
-  const [activeTab, setActiveTab] = useState<TabType>('facturas');
+  const vista = params.get('vista');
+  const view: View = vista === 'deudores' || vista === 'por-vencer' ? vista : 'facturas';
+  const setView = (v: View) => {
+    const next = new URLSearchParams(params);
+    if (v === 'facturas') next.delete('vista');
+    else next.set('vista', v);
+    setParams(next, { replace: true });
+  };
 
-  // Filtros facturas
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  // ---- Datos
+  const invoicesQ = useInvoices();
+  const membersQ = useBillingMembers();
+  const paymentsQ = usePaymentsSince(monthStart(today));
+  const runBilling = useProcessRecurringPayments();
+  const canDelete = useCanDeleteInvoice();
 
-  // Modal pagar
-  const [payingInvoice, setPayingInvoice] = useState<any>(null);
-  const [payMethod, setPayMethod] = useState('Efectivo');
-  const [payReference, setPayReference] = useState('');
-  const [payNotes, setPayNotes] = useState('');
+  const invoices = (invoicesQ.data ?? []) as InvoiceRow[];
+  const members = membersQ.data ?? [];
+  const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+  const nameOf = (id: string) => memberById.get(id)?.name ?? 'Socio eliminado';
 
-  // Modal eliminar
-  const [invoiceToDelete, setInvoiceToDelete] = useState<any>(null);
+  // ---- Estado de UI
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [month, setMonth] = useState<string>('all'); // 'yyyy-MM' | 'all'
+  const [page, setPage] = useState(0);
 
-  // Modal detalles
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [collectFor, setCollectFor] = useState<string | null | undefined>(undefined); // undefined = cerrado
+  const [detail, setDetail] = useState<InvoiceRow | null>(null);
+  const [toDelete, setToDelete] = useState<InvoiceRow | null>(null);
+  const [toPrint, setToPrint] = useState<InvoiceRow | null>(null);
 
-  // Modal imprimir
-  const [printInvoice, setPrintInvoice] = useState<any>(null);
-
-  // Vista morosos
-  const [showOverdueUsers, setShowOverdueUsers] = useState(false);
-
-  // Gym info para impresión
-  const [gymInfo, setGymInfo] = useState<GymInfo>({ name: 'Gimnasio' });
-
-// Data
-  const { data: invoicesData, isLoading: loadingInvoices, error: invoicesError } = useInvoices({ status: filterStatus === 'all' ? undefined : filterStatus });
-  const { data: users, isLoading: loadingUsers } = useUsers();
-  const { data: plans = [] } = usePlans({ is_active: true });
-  const createInvoice = useCreateInvoice();
-  const payInvoice = usePayInvoice();
-  const payAdvance = usePayAdvanceMonths();
-  const deleteInvoice = useDeleteInvoice();
-  const processRecurringPayments = useProcessRecurringPayments();
-
-  // Cargar info del gimnasio
+  // ?cobrar=<id> abre el cobro con el socio elegido (desde Dashboard, ficha del socio, etc.)
   useEffect(() => {
-    const loadGymInfo = async () => {
-      try {
-        const { data } = await supabase
-          .from('gyms')
-          .select('name, address, phone, email, logo_url')
-          .eq('is_active', true)
-          .limit(1)
-          .maybeSingle();
-        if (data) setGymInfo(data);
-      } catch {
-        // fallback silencioso
-      }
-    };
-    loadGymInfo();
-  }, []);
-
-  // Form registro de cobro
-  const [cobroUserId, setCobroUserId] = useState('');
-  const [cobroAmount, setCobroAmount] = useState('');
-  const [cobroDate, setCobroDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [cobroDueDate, setCobroDueDate] = useState('');
-  const [cobroMethod, setCobroMethod] = useState('Efectivo');
-  const [cobroReference, setCobroReference] = useState('');
-  const [cobroConcept, setCobroConcept] = useState('');
-  const [cobroNotes, setCobroNotes] = useState('');
-const [cobroUserSearch, setCobroUserSearch] = useState('');
-  const [cobroUserDropdownOpen, setCobroUserDropdownOpen] = useState(false);
-  const [cobroErrors, setCobroErrors] = useState<Record<string, string>>({});
-  const [selectedUserPlan, setSelectedUserPlan] = useState('');
-  
-  // Pago adelantado
-  const [advancePaymentOpen, setAdvancePaymentOpen] = useState(false);
-  const [advanceUserId, setAdvanceUserId] = useState('');
-  const [advanceMonths, setAdvanceMonths] = useState(1);
-  const [advanceMethod, setAdvanceMethod] = useState('Efectivo');
-  const [advanceReference, setAdvanceReference] = useState('');
-
-  const handleAdvancePayment = () => {
-    if (!advanceUserId || !advanceMonths) {
-      toast.error('Selecciona usuario y meses');
-      return;
+    const id = params.get('cobrar');
+    if (id !== null) {
+      setCollectFor(id || null);
+      const next = new URLSearchParams(params);
+      next.delete('cobrar');
+      setParams(next, { replace: true });
     }
-    payAdvance.mutate(
-      { user_id: advanceUserId, months: advanceMonths, method: advanceMethod, reference: advanceReference || undefined },
-      {
-        onSuccess: () => {
-          setAdvancePaymentOpen(false);
-          setAdvanceUserId('');
-          setAdvanceMonths(1);
-          setAdvanceMethod('Efectivo');
-          setAdvanceReference('');
-        },
-      },
-    );
-  };
+  }, [params, setParams]);
 
-  // Calcular due_date = primer día del mes actual (mes que se paga)
-  useEffect(() => {
-    if (cobroDate) {
-      // parseISO interpreta yyyy-MM-dd en hora local (new Date(str) lo haría en UTC y
-      // un cobro del día 1 caería en el mes anterior en UTC-3 / UTC-4)
-      setCobroDueDate(format(startOfMonth(parseISO(cobroDate)), 'yyyy-MM-dd'));
-    }
-  }, [cobroDate]);
+  useEffect(() => setPage(0), [search, status, month]);
 
-  // Auto-sugerir monto según plan del usuario (usa plan_id para buscar precio real)
-  useEffect(() => {
-    if (cobroUserId && users) {
-      const user = users.find((u: any) => u.id === cobroUserId);
-      if (user) {
-        const planName = user.plan || user.membership_type || 'Mensual';
-        setSelectedUserPlan(planName);
-        
-        // Buscar plan por plan_id para obtener precio real
-        let amount = 300; // fallback
-        if (user.plan_id) {
-          const plan = plans.find(p => p.id === user.plan_id);
-          if (plan) {
-            amount = Number(plan.price);
-          }
-        } else if (planName) {
-          // Fallback: buscar por nombre si no hay plan_id
-          const plan = plans.find(p => p.name === planName);
-          if (plan) {
-            amount = Number(plan.price);
-          }
-        }
-        
-        setCobroAmount(String(amount));
-        if (!cobroConcept) {
-          setCobroConcept(`Mensualidad ${planName}`);
-        }
-      }
-    }
-  }, [cobroUserId, users, plans]);
+  // ---- Derivados
+  const kpis = useMemo(() => billingKpis(invoices, paymentsQ.data ?? [], today), [invoices, paymentsQ.data, today]);
+  // Solo deuda VENCIDA; lo que vence pronto está en "Por vencer"
+  const debtors = useMemo(() => membersWithDebt(invoices, today).filter((d) => d.overdueTotal > 0), [invoices, today]);
+  const renewals = useMemo(() => upcomingRenewals(members, invoices, today), [members, invoices, today]);
+  const renewalsTotal = renewals.reduce((s, r) => s + r.amount, 0);
+  const gym = useGymInfo();
+  const counts = useMemo(() => statusCounts(invoices, today), [invoices, today]);
+  const months = useMemo(
+    () => [...new Set(invoices.map((i) => i.due_date.slice(0, 7)))].sort().reverse(),
+    [invoices],
+  );
 
-  // Helpers
-  const getUserName = (userId: string) => {
-    const user = users?.find((u: any) => u.id === userId);
-    return user?.name || 'Usuario desconocido';
-  };
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return invoices
+      .filter((inv) => {
+        if (status !== 'all' && effectiveStatus(inv, today) !== status) return false;
+        if (month !== 'all' && inv.due_date.slice(0, 7) !== month) return false;
+        if (!term) return true;
+        const m = memberById.get(inv.user_id);
+        return (
+          m?.name.toLowerCase().includes(term) ||
+          m?.cedula?.toLowerCase().includes(term) ||
+          inv.invoice_number?.toLowerCase().includes(term) ||
+          inv.concept?.toLowerCase().includes(term)
+        );
+      })
+      .sort((a, b) => (a.due_date < b.due_date ? 1 : a.due_date > b.due_date ? -1 : (b.invoice_number ?? '').localeCompare(a.invoice_number ?? '')));
+  }, [invoices, status, month, search, memberById, today]);
 
-  const getUserById = (userId: string) => {
-    return users?.find((u: any) => u.id === userId);
-  };
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const hasFilters = status !== 'all' || month !== 'all' || search !== '';
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Pagada': return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
-      case 'Pendiente': return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
-      case 'Vencida': return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
-      case 'Activo': return 'bg-[#10f94e]/20 text-[#10f94e] border-[#10f94e]/30';
-      case 'Moroso': return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
-      default: return 'bg-muted text-muted-foreground';
-    }
-  };
+  const isInitialLoading = invoicesQ.isLoading || membersQ.isLoading;
+  const loadError = invoicesQ.error || membersQ.error;
 
-  const fmtDate = (d: string) => {
-    if (!d) return '-';
-    return new Date(d).toLocaleDateString('es-ES');
-  };
-
-  // Usuarios morosos
-  const overdueUsers = useMemo(() => {
-    if (!users) return [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return users.filter((user: any) => {
-      if (!user.next_payment) return false;
-      const np = new Date(user.next_payment);
-      np.setHours(0, 0, 0, 0);
-      return np < today;
-    });
-  }, [users]);
-
-  // Filtrado de facturas
-  const filteredInvoices = useMemo(() => {
-    if (!invoicesData) return [];
-    return invoicesData.filter((inv: any) => {
-      const user = users?.find((u: any) => u.id === inv.user_id);
-      const matchesSearch = !searchTerm || user?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-        || inv.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase())
-        || user?.cedula?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = filterStatus === 'all' || inv.status === filterStatus;
-
-      let matchesTime = true;
-      if (timeFilter === 'thisMonth') {
-        const d = parseISO(inv.due_date || inv.created_at);
-        matchesTime = isWithinInterval(d, { start: startOfMonth(new Date()), end: endOfMonth(new Date()) });
-      } else if (timeFilter === 'lastMonth') {
-        const lastMonth = subMonths(new Date(), 1);
-        const d = parseISO(inv.due_date || inv.created_at);
-        matchesTime = isWithinInterval(d, { start: startOfMonth(lastMonth), end: endOfMonth(lastMonth) });
-      }
-      return matchesSearch && matchesStatus && matchesTime;
-    });
-  }, [invoicesData, users, searchTerm, filterStatus, timeFilter]);
-
-  // Totales
-  const totals = useMemo(() => {
-    if (!invoicesData) return { total: 0, paid: 0, pending: 0, overdue: 0 };
-    const sum = (arr: any[]) => arr.reduce((s, i) => s + Number(i.amount), 0);
-    return {
-      total: sum(invoicesData),
-      paid: sum(invoicesData.filter((i: any) => i.status === 'Pagada')),
-      pending: sum(invoicesData.filter((i: any) => i.status === 'Pendiente')),
-      overdue: sum(invoicesData.filter((i: any) => i.status === 'Vencida')),
-    };
-  }, [invoicesData]);
-
-  const hasActiveFilters = filterStatus !== 'all' || timeFilter !== 'all' || searchTerm !== '';
-
-  // Acciones
-  const openPayDialog = (inv: any) => {
-    setPayingInvoice(inv);
-    setPayMethod('Efectivo');
-    setPayReference('');
-    setPayNotes('');
-  };
-
-  const handlePay = () => {
-    if (!payingInvoice) return;
-    payInvoice.mutate({
-      id: payingInvoice.id,
-      data: { method: payMethod, reference: payReference || undefined, notes: payNotes || undefined },
-    }, {
-      onSuccess: () => setPayingInvoice(null),
-    });
-  };
-
-  const handleDelete = () => {
-    if (!invoiceToDelete) return;
-    deleteInvoice.mutate(invoiceToDelete.id, {
-      onSuccess: () => setInvoiceToDelete(null),
-    });
-  };
-
-  const openPrint = (inv: any) => {
-    const user = getUserById(inv.user_id);
-    setPrintInvoice({
-      invoice: {
-        id: inv.id,
-        invoice_number: inv.invoice_number || 'S/N',
-        date: inv.created_at || inv.due_date,
-        due_date: inv.due_date,
-        status: inv.status,
-        amount: Number(inv.amount),
-        method: inv.method,
-        reference: inv.reference,
-        notes: inv.notes || inv.concept,
-        paid_at: inv.paid_at,
-      },
-      userInfo: {
-        name: user?.name || 'Usuario',
-        cedula: user?.cedula,
-        member_number: user?.member_number,
-        plan: user?.plan || user?.membership_type,
-        email: user?.email,
-        phone: user?.phone,
-      },
-    });
-  };
-
-  // Registrar cobro (crea factura + la paga)
-  const handleRegisterCobro = async () => {
-    const errors: Record<string, string> = {};
-    if (!cobroUserId) errors.user_id = 'Selecciona un usuario';
-    if (!cobroAmount || Number(cobroAmount) <= 0) errors.amount = 'Monto requerido';
-    if (!cobroDate) errors.date = 'Fecha requerida';
-    if (!cobroConcept.trim()) errors.concept = 'Concepto requerido';
-
-    setCobroErrors(errors);
-    if (Object.keys(errors).length > 0) return;
-
-    try {
-      // Obtener info del usuario para generar concept con plan + mes
-      const user = getUserById(cobroUserId);
-      const planName = user?.plan || user?.membership_type || user?.plans?.name || 'Mensual';
-      
-      // due_date = primer día del mes de cobroDate (mes que se está pagando), en hora local
-      const dueDate = startOfMonth(parseISO(cobroDate));
-      const dueDateStr = format(dueDate, 'yyyy-MM-dd');
-
-      const monthYear = `${MONTHS_ES[dueDate.getMonth()]} ${dueDate.getFullYear()}`;
-      const concept = `${planName} - ${monthYear}`;
-      const today = format(new Date(), 'yyyy-MM-dd');
-
-      // Una sola operación: salda la factura impaga de ese mes si existe, o la crea y la paga.
-      // next_payment / paid_until los recalcula la base de datos.
-      await createInvoice.mutateAsync({
-        user_id: cobroUserId,
-        plan_id: user?.plan_id || undefined,
-        concept,
-        amount: Number(cobroAmount),
-        due_date: dueDateStr,
-        status: 'Pagada',
-        method: cobroMethod,
-        reference: cobroReference || undefined,
-        notes: cobroNotes || undefined,
-        paid_at: cobroDate !== today ? cobroDate : undefined,
-      });
-
-      toast.success('Cobro registrado y factura generada');
-
-      // Reset form
-      setCobroUserId('');
-      setCobroAmount('');
-      setCobroConcept('');
-      setCobroNotes('');
-      setCobroReference('');
-      setSelectedUserPlan('');
-      setCobroErrors({});
-
-      // Cambiar a pestaña facturas
-      setActiveTab('facturas');
-    } catch (error: any) {
-      toast.error('Error al registrar cobro', { description: error.message });
-    }
-  };
-
-  const clearFilters = () => {
-    setFilterStatus('all');
-    setTimeFilter('all');
-    setSearchTerm('');
-  };
-
-  // Loading
-  if (loadingInvoices || loadingUsers) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 text-[#10f94e] animate-spin mx-auto" />
-          <p className="text-gray-400">Cargando facturación...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error
-  if (invoicesError) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-4xl mb-2">Facturación</h1>
-          <p className="text-muted-foreground">Gestión de cobros y mensualidades</p>
-        </div>
-        <Card className="bg-card border-[#ff3b5c]/30">
-          <CardContent className="pt-6">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="h-5 w-5 text-[#ff3b5c] mt-0.5" />
-              <div>
-                <p className="font-semibold text-[#ff3b5c]">Error al cargar facturas</p>
-                <p className="text-sm text-gray-400 mt-1">{invoicesError.message}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6" data-testid="billing-page">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 min-w-0" data-testid="billing-page">
+      {/* Cabecera */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-4xl mb-2">Facturación</h1>
-          <p className="text-muted-foreground">Gestión de cobros y mensualidades</p>
+          <h1 className="text-4xl mb-1">Facturación</h1>
+          <p className="text-muted-foreground">Cobros, mensualidades y deudas</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" aria-label="Más acciones" data-testid="btn-more">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem
+                disabled={runBilling.isPending}
+                onSelect={() => runBilling.mutate()}
+                data-testid="btn-procesar-recurrentes"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Ejecutar facturación ahora
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                Se ejecuta sola cada madrugada: marca vencidas, suspende y genera las facturas del mes.
+              </p>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
-            variant="outline"
-            className={`border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c]/10 ${showOverdueUsers ? 'bg-[#ff3b5c]/10' : ''}`}
-            onClick={() => { setShowOverdueUsers(!showOverdueUsers); if (!showOverdueUsers) setActiveTab('resumen'); }}
-            data-testid="btn-morosos"
+            className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-semibold"
+            onClick={() => setCollectFor(null)}
+            data-testid="btn-cobrar"
           >
-            <Users className="w-4 h-4 mr-2" />
-            Morosos ({overdueUsers.length})
-          </Button>
-          <Button
-            variant="outline"
-            className="border-[#0ea5e9] text-[#0ea5e9] hover:bg-[#0ea5e9]/10"
-            onClick={() => processRecurringPayments.mutate()}
-            disabled={processRecurringPayments.isPending}
-            data-testid="btn-procesar-recurrentes"
-          >
-            <Clock className="w-4 h-4 mr-2" />
-            {processRecurringPayments.isPending ? 'Procesando...' : 'Facturación Automática'}
-          </Button>
-          <Button
-            className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"
-            onClick={() => setActiveTab('cobrar')}
-            data-testid="btn-registrar-cobro"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Registrar Cobro
-          </Button>
-          <Button
-            variant="outline"
-            className="border-[#0ea5e9] text-[#0ea5e9] hover:bg-[#0ea5e9]/10"
-            onClick={() => { setAdvanceUserId(''); setAdvanceMonths(1); setAdvanceMethod('Efectivo'); setAdvanceReference(''); setAdvancePaymentOpen(true); }}
-            data-testid="btn-pago-adelantado"
-          >
-            <CreditCard className="w-4 h-4 mr-2" />
-            Pago Adelantado
+            <Wallet className="w-4 h-4 mr-2" />
+            Cobrar
           </Button>
         </div>
       </div>
 
-      {/* Tabs */}
+      {loadError && (
+        <Card className="border-[#ff3b5c]/30">
+          <CardContent className="p-4 flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-sm">
+              <AlertCircle className="h-4 w-4 text-[#ff3b5c]" /> No se pudo cargar la facturación: {(loadError as Error).message}
+            </span>
+            <Button size="sm" variant="outline" onClick={() => { invoicesQ.refetch(); membersQ.refetch(); }}>Reintentar</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Indicadores */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" data-testid="billing-kpis">
+        <Kpi
+          label="Cobrado este mes"
+          value={formatMoney(kpis.collectedThisMonth)}
+          hint={`${kpis.paymentsThisMonth} pago${kpis.paymentsThisMonth === 1 ? '' : 's'} · ${monthLabel(today)}`}
+          icon={Wallet}
+          tone="green"
+          loading={isInitialLoading || paymentsQ.isLoading}
+        />
+        <Kpi
+          label="Por cobrar"
+          value={formatMoney(kpis.openTotal)}
+          hint={`${kpis.openCount} factura${kpis.openCount === 1 ? '' : 's'} abierta${kpis.openCount === 1 ? '' : 's'}`}
+          icon={FileText}
+          tone="blue"
+          loading={isInitialLoading}
+          onClick={() => { setView('facturas'); setStatus('all'); }}
+        />
+        <Kpi
+          label="Vencido"
+          value={formatMoney(kpis.overdueTotal)}
+          hint={kpis.debtorCount ? `${kpis.debtorCount} socio${kpis.debtorCount === 1 ? '' : 's'} con deuda vencida` : 'Nadie tiene deuda vencida'}
+          icon={AlertTriangle}
+          tone={kpis.overdueTotal > 0 ? 'red' : 'muted'}
+          loading={isInitialLoading}
+          onClick={() => setView('deudores')}
+        />
+        <Kpi
+          label={`Vencen en ${REMINDER_DAYS} días`}
+          value={formatMoney(renewalsTotal)}
+          hint={renewals.length ? `${renewals.length} socio${renewals.length === 1 ? '' : 's'} por avisar` : 'Nadie vence en estos días'}
+          icon={CalendarClock}
+          tone={renewals.length ? 'amber' : 'muted'}
+          loading={isInitialLoading}
+          onClick={() => setView('por-vencer')}
+        />
+      </div>
+
+      {/* Vistas */}
       <div className="flex gap-1 bg-muted p-1 rounded-lg w-fit" role="tablist">
-        {([
-          { key: 'facturas', label: 'Facturas', icon: FileText },
-          { key: 'cobrar', label: 'Cobrar', icon: CreditCard },
-          { key: 'resumen', label: 'Resumen', icon: DollarSign },
-        ] as const).map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={activeTab === key}
-            data-testid={`tab-${key}`}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === key
-                ? 'bg-[#10f94e] text-black'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTab(key)}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </button>
-        ))}
+        <TabButton active={view === 'facturas'} onClick={() => setView('facturas')} testId="tab-facturas">
+          <FileText className="w-4 h-4" /> Facturas
+        </TabButton>
+        <TabButton active={view === 'deudores'} onClick={() => setView('deudores')} testId="tab-deudores">
+          <AlertTriangle className="w-4 h-4" /> Con deuda
+          {debtors.length > 0 && <span className="rounded-full bg-[#ff3b5c] px-1.5 text-[11px] text-white tabular-nums">{debtors.length}</span>}
+        </TabButton>
+        <TabButton active={view === 'por-vencer'} onClick={() => setView('por-vencer')} testId="tab-por-vencer">
+          <CalendarClock className="w-4 h-4" /> Por vencer
+          {renewals.length > 0 && <span className="rounded-full bg-[#eab308] px-1.5 text-[11px] text-black tabular-nums">{renewals.length}</span>}
+        </TabButton>
       </div>
 
-      {/* ============ TAB: FACTURAS ============ */}
-      {activeTab === 'facturas' && (
-        <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="bg-card border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-[#10f94e]/10">
-                    <DollarSign className="w-5 h-5 text-[#10f94e]" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Cobrado</p>
-                    <p className="text-xl font-bold text-[#10f94e]">Bs {totals.paid.toLocaleString()}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-[#eab308]/10">
-                    <Clock className="w-5 h-5 text-[#eab308]" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Pendiente</p>
-                    <p className="text-xl font-bold text-[#eab308]">Bs {totals.pending.toLocaleString()}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-[#ff3b5c]/10">
-                    <AlertCircle className="w-5 h-5 text-[#ff3b5c]" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Vencido</p>
-                    <p className="text-xl font-bold text-[#ff3b5c]">Bs {totals.overdue.toLocaleString()}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-500/10">
-                    <DollarSign className="w-5 h-5 text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Total</p>
-                    <p className="text-xl font-bold">Bs {totals.total.toLocaleString()}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Filtros */}
-          <Card className="bg-card border-border">
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                  <Input
-                    placeholder="Buscar por nombre o N° factura..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 bg-input border-border"
-                    data-testid="search-invoices"
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label className="text-sm text-muted-foreground mb-2 block">Estado</Label>
-                    <div className="flex gap-2 flex-wrap">
-                      {([
-                        { key: 'all', label: 'Todas', active: 'bg-[#10f94e] text-black' },
-                        { key: 'Pagada', label: 'Pagadas', active: 'bg-[#10f94e] text-black' },
-                        { key: 'Pendiente', label: 'Pendientes', active: 'bg-[#eab308] text-black' },
-                        { key: 'Vencida', label: 'Vencidas', active: 'bg-[#ff3b5c] text-white' },
-                      ] as const).map(({ key, label, active }) => (
-                        <Button
-                          key={key}
-                          size="sm"
-                          variant={filterStatus === key ? 'default' : 'outline'}
-                          onClick={() => setFilterStatus(key as FilterStatus)}
-                          className={filterStatus === key ? active : ''}
-                          data-testid={`filter-${key}`}
-                        >
-                          {label}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-sm text-muted-foreground mb-2 block">Período</Label>
-                    <div className="flex gap-2">
-                      {([
-                        { key: 'all', label: 'Todos' },
-                        { key: 'thisMonth', label: 'Este Mes' },
-                        { key: 'lastMonth', label: 'Mes Pasado' },
-                      ] as const).map(({ key, label }) => (
-                        <Button
-                          key={key}
-                          size="sm"
-                          variant={timeFilter === key ? 'default' : 'outline'}
-                          onClick={() => setTimeFilter(key as TimeFilter)}
-                          className={timeFilter === key ? 'bg-[#10f94e] text-black' : ''}
-                        >
-                          {label}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-end">
-                    {hasActiveFilters && (
-                      <Button size="sm" variant="outline" onClick={clearFilters} className="w-full">
-                        <X className="w-4 h-4 mr-2" />
-                        Limpiar
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {hasActiveFilters && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Filter className="w-4 h-4" />
-                    <span>Mostrando {filteredInvoices.length} de {invoicesData?.length || 0} facturas</span>
-                  </div>
-                )}
+      {view === 'facturas' ? (
+        <Card className="bg-card border-border min-w-0 overflow-hidden">
+          <CardContent className="p-0">
+            {/* Barra de filtros */}
+            <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center">
+              <div className="relative lg:w-80">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Socio, cédula, N° de factura…"
+                  className="pl-9"
+                  aria-label="Buscar facturas"
+                  data-testid="search-invoices"
+                />
               </div>
-            </CardContent>
-          </Card>
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por estado">
+                {([
+                  ['all', 'Todas', counts.all],
+                  ['Vencida', 'Vencidas', counts.Vencida],
+                  ['Pendiente', 'Pendientes', counts.Pendiente],
+                  ['Pagada', 'Pagadas', counts.Pagada],
+                ] as const).map(([key, label, n]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={status === key}
+                    onClick={() => setStatus(key)}
+                    data-testid={`filter-${key}`}
+                    className={`h-8 rounded-full border px-3 text-sm transition-colors ${
+                      status === key ? 'border-foreground/40 bg-foreground/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {label} <span className="tabular-nums opacity-70">{n}</span>
+                  </button>
+                ))}
+              </div>
+              <select
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="h-9 rounded-md border border-border bg-input px-3 text-sm lg:ml-auto"
+                aria-label="Filtrar por mes"
+                data-testid="filter-month"
+              >
+                <option value="all">Todos los meses</option>
+                {months.map((m) => (
+                  <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>
+                ))}
+              </select>
+            </div>
 
-          {/* Tabla facturas */}
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle>Facturas ({filteredInvoices.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {filteredInvoices.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">
-                    {hasActiveFilters ? 'No se encontraron facturas con los filtros aplicados' : 'No hay facturas registradas'}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full" data-testid="invoices-table">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-3 px-4 text-muted-foreground">Factura</th>
-                        <th className="text-left py-3 px-4 text-muted-foreground">Usuario</th>
-                        <th className="text-left py-3 px-4 text-muted-foreground">Concepto</th>
-                        <th className="text-left py-3 px-4 text-muted-foreground">Monto</th>
-                        <th className="text-left py-3 px-4 text-muted-foreground">Vencimiento</th>
-                        <th className="text-left py-3 px-4 text-muted-foreground">Estado</th>
-                        <th className="text-right py-3 px-4 text-muted-foreground">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredInvoices.map((inv: any) => (
-                        <tr key={inv.id} className="border-b border-border hover:bg-muted/50 transition-colors" data-testid="invoice-row">
-                          <td className="py-4 px-4 font-mono text-sm">{inv.invoice_number}</td>
-                          <td className="py-4 px-4">{getUserName(inv.user_id)}</td>
-                          <td className="py-4 px-4">{inv.concept || inv.plans?.name || '-'}</td>
-                          <td className="py-4 px-4">
-                            <span className="text-[#10f94e] font-semibold">Bs {Number(inv.amount).toLocaleString()}</span>
+            {hasFilters && (
+              <div className="flex items-center justify-between px-4 py-2 text-sm text-muted-foreground border-b border-border">
+                <span>Mostrando {filtered.length} de {invoices.length} facturas</span>
+                <button className="flex items-center gap-1 hover:text-foreground" onClick={() => { setSearch(''); setStatus('all'); setMonth('all'); }}>
+                  <X className="h-3.5 w-3.5" /> Limpiar filtros
+                </button>
+              </div>
+            )}
+
+            {/* Tabla */}
+            {isInitialLoading ? (
+              <TableSkeleton />
+            ) : filtered.length === 0 ? (
+              <div className="py-16 text-center text-muted-foreground">
+                <FileText className="mx-auto mb-3 h-10 w-10 opacity-50" />
+                {hasFilters ? 'Ninguna factura coincide con los filtros.' : 'Todavía no hay facturas.'}
+              </div>
+            ) : (
+              <div className="relative overflow-x-auto">
+                <table className="w-full min-w-[760px] text-sm" data-testid="invoices-table">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-4 py-3 font-medium">Socio</th>
+                      <th className="px-4 py-3 font-medium">Período</th>
+                      <th className="px-4 py-3 font-medium">Vence</th>
+                      <th className="px-4 py-3 font-medium">Estado</th>
+                      <th className="px-4 py-3 font-medium text-right">Monto</th>
+                      <th className="px-4 py-3"><span className="sr-only">Acciones</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((inv) => {
+                      const st = effectiveStatus(inv, today);
+                      const m = memberById.get(inv.user_id);
+                      return (
+                        <tr key={inv.id} className="border-b border-border last:border-0 hover:bg-muted/40" data-testid="invoice-row">
+                          <td className="px-4 py-3">
+                            <button className="text-left hover:underline" onClick={() => navigate(`/usuarios/${inv.user_id}`)}>
+                              <span className="block font-medium">{m?.name ?? 'Socio eliminado'}</span>
+                            </button>
+                            <span className="block text-xs text-muted-foreground font-mono">{inv.invoice_number}</span>
                           </td>
-                          <td className="py-4 px-4">{fmtDate(inv.due_date)}</td>
-                          <td className="py-4 px-4">
-                            <Badge variant="outline" className={getStatusColor(inv.status)}>
-                              {inv.status === 'Pagada' && <CheckCircle className="w-3 h-3 mr-1" />}
-                              {inv.status}
-                            </Badge>
+                          <td className="px-4 py-3">{inv.concept || '—'}</td>
+                          <td className="px-4 py-3 tabular-nums">{fmtDate(inv.due_date)}</td>
+                          <td className="px-4 py-3">
+                            <StatusBadge status={st} />
+                            {st === 'Pagada' && inv.paid_at && (
+                              <span className="block text-xs text-muted-foreground mt-0.5">{fmtDate(inv.paid_at)} · {inv.method}</span>
+                            )}
                           </td>
-                          <td className="py-4 px-4">
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(Number(inv.amount))}</td>
+                          <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1">
-                              {inv.status !== 'Pagada' && (
+                              {isOpen(inv) && (
                                 <Button
                                   size="sm"
-                                  className="bg-[#10f94e] text-black hover:bg-[#0ed145] font-bold"
-                                  onClick={() => openPayDialog(inv)}
+                                  className="bg-[#10f94e] text-black hover:bg-[#0ed145] h-8"
+                                  onClick={() => setCollectFor(inv.user_id)}
                                   data-testid={`pay-${inv.invoice_number}`}
                                 >
-                                  <CreditCard className="w-4 h-4 mr-1" />
-                                  Pagar
+                                  Cobrar
                                 </Button>
                               )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="hover:bg-blue-500/10 hover:text-blue-400"
-                                onClick={() => openPrint(inv)}
-                                aria-label="Imprimir factura"
-                                title="Imprimir factura"
-                                data-testid={`print-${inv.invoice_number}`}
-                              >
-                                <Printer className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="hover:bg-[#10f94e]/10 hover:text-[#10f94e]"
-                                onClick={() => { setSelectedInvoice(inv); setIsDetailsOpen(true); }}
-                                aria-label="Ver detalles"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="hover:bg-[#ff3b5c]/10 hover:text-[#ff3b5c]"
-                                onClick={() => setInvoiceToDelete(inv)}
-                                aria-label="Eliminar factura"
-                              >
-                                <Trash2 className="w-4 h-4" />
+                              <InvoiceRowMenu
+                                inv={inv}
+                                canDelete={canDelete(inv)}
+                                onView={() => setDetail(inv)}
+                                onPrint={() => setToPrint(inv)}
+                                onDelete={() => setToDelete(inv)}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {pageCount > 1 && (
+              <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm text-muted-foreground">
+                <span>
+                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} de {filtered.length}
+                </span>
+                <div className="flex gap-1">
+                  <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="Página anterior">
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= pageCount - 1} onClick={() => setPage((p) => p + 1)} aria-label="Página siguiente">
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : view === 'deudores' ? (
+        <Card className="bg-card border-border min-w-0 overflow-hidden">
+          <CardContent className="p-0">
+            {isInitialLoading ? (
+              <TableSkeleton />
+            ) : debtors.length === 0 ? (
+              <div className="py-16 text-center text-muted-foreground">Ningún socio tiene deuda vencida.</div>
+            ) : (
+              <div className="relative overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm" data-testid="debtors-table">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-4 py-3 font-medium">Socio</th>
+                      <th className="px-4 py-3 font-medium">Debe desde</th>
+                      <th className="px-4 py-3 font-medium">Atraso</th>
+                      <th className="px-4 py-3 font-medium text-right">Total adeudado</th>
+                      <th className="px-4 py-3"><span className="sr-only">Acciones</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {debtors.map((d) => {
+                      const m = memberById.get(d.user_id);
+                      return (
+                        <tr key={d.user_id} className="border-b border-border last:border-0 hover:bg-muted/40" data-testid="debtor-row">
+                          <td className="px-4 py-3">
+                            <button className="text-left font-medium hover:underline" onClick={() => navigate(`/usuarios/${d.user_id}`)}>
+                              {nameOf(d.user_id)}
+                            </button>
+                            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {m?.status && m.status !== 'Activo' && <span className="text-[#ff3b5c]">{m.status}</span>}
+                              {m?.phone && (
+                                <a href={`tel:${m.phone}`} className="inline-flex items-center gap-1 hover:text-foreground">
+                                  <Phone className="h-3 w-3" aria-hidden /> {m.phone}
+                                </a>
+                              )}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {monthLabel(d.oldestDue)}
+                            <span className="block text-xs text-muted-foreground">{d.count} factura{d.count === 1 ? '' : 's'}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {d.daysLate > 0 ? (
+                              <span className={d.daysLate > 30 ? 'text-[#ff3b5c] font-medium' : 'text-[#eab308]'}>
+                                {d.daysLate} día{d.daysLate === 1 ? '' : 's'}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">Por vencer</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(d.total)}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-2">
+                              <NotifyButton phone={m?.phone} message={overdueReminderText(nameOf(d.user_id), d, gym.name, formatMoney)} />
+                              <Button size="sm" className="bg-[#10f94e] text-black hover:bg-[#0ed145] h-8" onClick={() => setCollectFor(d.user_id)}>
+                                Cobrar
                               </Button>
                             </div>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* ============ TAB: COBRAR ============ */}
-      {activeTab === 'cobrar' && (
-        <Card className="bg-card border-border max-w-2xl">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-[#10f94e]" />
-              Registrar Cobro de Mensualidad
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Registra un cobro y genera la factura automáticamente. El próximo vencimiento se calcula +1 mes.
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="bg-card border-border min-w-0 overflow-hidden">
+          <CardContent className="p-0">
+            <p className="border-b border-border px-4 py-3 text-sm text-muted-foreground">
+              Socios activos cuya mensualidad vence en los próximos {REMINDER_DAYS} días. Avísales para que paguen a tiempo:
+              el día siguiente al vencimiento quedan suspendidos.
             </p>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="space-y-4"
-              onSubmit={(e) => { e.preventDefault(); handleRegisterCobro(); }}
-              data-testid="cobro-form"
-            >
-              {/* Usuario */}
-              <div className="space-y-2 relative">
-                <Label htmlFor="cobro-user-search">Usuario <span className="text-[#ff3b5c]">*</span></Label>
-                <div className="relative">
-                  <input
-                    id="cobro-user-search"
-                    type="text"
-                    value={cobroUserSearch}
-                    onChange={(e) => setCobroUserSearch(e.target.value)}
-                    placeholder="Buscar por nombre o DNI..."
-                    className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
-                    data-testid="search-user"
-                    onFocus={() => setCobroUserDropdownOpen(true)}
-                    onBlur={() => setTimeout(() => setCobroUserDropdownOpen(false), 150)}
-                  />
-                  {cobroUserDropdownOpen && (
-                    <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-auto">
-                      {users
-                        ?.filter((user: any) =>
-                          user.name.toLowerCase().includes(cobroUserSearch.toLowerCase()) ||
-                          user.cedula?.toLowerCase().includes(cobroUserSearch.toLowerCase())
-                        )
-                        .map((user: any) => (
-                          <button
-                            key={user.id}
-                            type="button"
-                            onClick={() => {
-                              setCobroUserId(user.id);
-                              setCobroUserSearch(user.name);
-                              setCobroUserDropdownOpen(false);
-                            }}
-                            className="w-full px-3 py-2 text-left hover:bg-accent text-sm"
-                          >
-                            <div className="font-medium">{user.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              DNI: {user.cedula || 'N/A'} - {user.plan || user.membership_type || 'Sin plan'}
+            {isInitialLoading ? (
+              <TableSkeleton />
+            ) : renewals.length === 0 ? (
+              <div className="py-16 text-center text-muted-foreground">Nadie vence en los próximos {REMINDER_DAYS} días.</div>
+            ) : (
+              <div className="relative overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm" data-testid="renewals-table">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-4 py-3 font-medium">Socio</th>
+                      <th className="px-4 py-3 font-medium">Vence</th>
+                      <th className="px-4 py-3 font-medium">Período</th>
+                      <th className="px-4 py-3 font-medium text-right">Monto</th>
+                      <th className="px-4 py-3"><span className="sr-only">Acciones</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {renewals.map((r) => {
+                      const m = memberById.get(r.user_id);
+                      return (
+                        <tr key={r.user_id} className="border-b border-border last:border-0 hover:bg-muted/40" data-testid="renewal-row">
+                          <td className="px-4 py-3">
+                            <button className="text-left font-medium hover:underline" onClick={() => navigate(`/usuarios/${r.user_id}`)}>
+                              {nameOf(r.user_id)}
+                            </button>
+                            {m?.phone && (
+                              <a href={`tel:${m.phone}`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                                <Phone className="h-3 w-3" aria-hidden /> {m.phone}
+                              </a>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={r.daysLeft === 0 ? 'text-[#ff3b5c] font-medium' : 'text-[#eab308]'}>{dueInWords(r.daysLeft)}</span>
+                            <span className="block text-xs text-muted-foreground tabular-nums">{fmtDate(r.due)}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {r.label}
+                            <span className="block text-xs text-muted-foreground">{m?.plans?.name}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(r.amount)}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-2">
+                              <NotifyButton phone={m?.phone} message={upcomingReminderText(nameOf(r.user_id), r, gym.name, formatMoney)} />
+                              <Button size="sm" variant="outline" className="h-8" onClick={() => setCollectFor(r.user_id)}>
+                                Cobrar
+                              </Button>
                             </div>
-                          </button>
-                        ))}
-                    </div>
-                  )}
-                </div>
-                <input
-                  type="hidden"
-                  value={cobroUserId}
-                  onChange={(e) => setCobroUserId(e.target.value)}
-                />
-                {cobroErrors.user_id && <p className="text-xs text-[#ff3b5c]">{cobroErrors.user_id}</p>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-
-              {/* Info plan */}
-              {selectedUserPlan && (
-                <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                  <p className="text-sm text-blue-400">
-                    Membresía: <strong>{selectedUserPlan}</strong>
-                  </p>
-                </div>
-              )}
-
-              {/* Monto */}
-              <div className="space-y-2">
-                <Label htmlFor="cobro-amount">Monto (Bs) <span className="text-[#ff3b5c]">*</span></Label>
-                <Input
-                  id="cobro-amount"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={cobroAmount}
-                  onChange={(e) => setCobroAmount(e.target.value)}
-                  placeholder="300.00"
-                  data-testid="input-amount"
-                />
-                {cobroErrors.amount && <p className="text-xs text-[#ff3b5c]">{cobroErrors.amount}</p>}
-              </div>
-
-              {/* Fechas */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="cobro-date">Fecha de Pago <span className="text-[#ff3b5c]">*</span></Label>
-                  <Input
-                    id="cobro-date"
-                    type="date"
-                    value={cobroDate}
-                    onChange={(e) => setCobroDate(e.target.value)}
-                    data-testid="input-date"
-                  />
-                  {cobroErrors.date && <p className="text-xs text-[#ff3b5c]">{cobroErrors.date}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cobro-due" className="flex items-center gap-2">
-                    Próximo Vencimiento <Calendar className="h-3 w-3 text-[#10f94e]" />
-                  </Label>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      id="cobro-due"
-                      type="date"
-                      value={cobroDueDate}
-                      readOnly
-                      className="opacity-70 flex-1"
-                      data-testid="input-due-date"
-                    />
-                    {cobroDueDate && (
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">
-                        {(() => {
-                          const d = new Date(cobroDueDate + 'T00:00:00');
-                          return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                        })()}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Concepto */}
-              <div className="space-y-2">
-                <Label htmlFor="cobro-concept">Concepto <span className="text-[#ff3b5c]">*</span></Label>
-                <Input
-                  id="cobro-concept"
-                  value={cobroConcept}
-                  onChange={(e) => setCobroConcept(e.target.value)}
-                  placeholder="Mensualidad Mensual"
-                  data-testid="input-concept"
-                />
-                {cobroErrors.concept && <p className="text-xs text-[#ff3b5c]">{cobroErrors.concept}</p>}
-              </div>
-
-              {/* Método */}
-              <div className="space-y-2">
-                <Label htmlFor="cobro-method">Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
-                <select
-                  id="cobro-method"
-                  value={cobroMethod}
-                  onChange={(e) => setCobroMethod(e.target.value)}
-                  className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
-                  data-testid="select-method"
-                >
-                  <option value="Efectivo">Efectivo</option>
-                  <option value="Transferencia">Transferencia</option>
-                  <option value="Tarjeta">Tarjeta</option>
-                  <option value="Pago Móvil">Pago Móvil</option>
-                </select>
-              </div>
-
-              {/* Referencia */}
-              <div className="space-y-2">
-                <Label htmlFor="cobro-ref">Referencia (opcional)</Label>
-                <Input
-                  id="cobro-ref"
-                  value={cobroReference}
-                  onChange={(e) => setCobroReference(e.target.value)}
-                  placeholder="Nro. de referencia"
-                />
-              </div>
-
-              {/* Notas */}
-              <div className="space-y-2">
-                <Label htmlFor="cobro-notes">Notas (opcional)</Label>
-                <Textarea
-                  id="cobro-notes"
-                  value={cobroNotes}
-                  onChange={(e) => setCobroNotes(e.target.value)}
-                  rows={2}
-                  placeholder="Información adicional..."
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={createInvoice.isPending || payInvoice.isPending}
-                className="w-full bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold"
-                data-testid="btn-submit-cobro"
-              >
-                {createInvoice.isPending || payInvoice.isPending ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</>
-                ) : (
-                  <><CheckCircle className="w-4 h-4 mr-2" />Registrar Cobro y Generar Factura</>
-                )}
-              </Button>
-            </form>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {/* ============ TAB: RESUMEN ============ */}
-      {activeTab === 'resumen' && (
-        <>
-          {/* Usuarios morosos */}
-          <Card className="bg-card border-[#ff3b5c]/30">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-[#ff3b5c]">
-                <AlertCircle className="w-5 h-5" />
-                Usuarios con Pagos Vencidos ({overdueUsers.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {overdueUsers.length > 0 ? (
-                <div className="space-y-3" data-testid="overdue-users">
-                  {overdueUsers.map((user: any) => (
-                    <div
-                      key={user.id}
-                      className="flex items-center justify-between p-4 bg-[#ff3b5c]/5 border border-[#ff3b5c]/20 rounded-lg hover:bg-[#ff3b5c]/10 transition-colors cursor-pointer"
-                      onClick={() => navigate(`/usuarios/${user.id}`)}
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <p className="font-semibold">{user.name}</p>
-                          <Badge variant="outline" className={getStatusColor('Moroso')}>
-                            Moroso
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4 text-sm text-muted-foreground">
-                          <div>
-                            <span className="block text-xs">Plan</span>
-                            <span className="text-white">{user.plan || user.membership_type || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="block text-xs">Teléfono</span>
-                            <span className="text-white">{user.phone || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="block text-xs">Vencimiento</span>
-                            <span className="text-[#ff3b5c] font-semibold">
-                              {fmtDate(user.next_payment)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        size="sm"
-                        className="bg-[#10f94e] text-black hover:bg-[#0ed145]"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCobroUserId(user.id);
-                          setActiveTab('cobrar');
-                        }}
-                      >
-                        Registrar Cobro
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <CheckCircle className="h-8 w-8 mx-auto mb-2 text-[#10f94e]" />
-                  <p>No hay usuarios con pagos vencidos</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      {/* ---- Diálogos ---- */}
+      <CollectPaymentDialog
+        open={collectFor !== undefined}
+        onOpenChange={(o) => !o && setCollectFor(undefined)}
+        members={members}
+        invoices={invoices}
+        initialUserId={collectFor ?? null}
+      />
 
-          {/* Resumen general */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="bg-card border-border">
-              <CardContent className="p-6 text-center">
-                <DollarSign className="w-8 h-8 text-[#10f94e] mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Total Cobrado</p>
-                <p className="text-3xl font-bold text-[#10f94e]">Bs {totals.paid.toLocaleString()}</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-card border-border">
-              <CardContent className="p-6 text-center">
-                <AlertCircle className="w-8 h-8 text-[#ff3b5c] mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Vencido</p>
-                <p className="text-3xl font-bold text-[#ff3b5c]">Bs {totals.overdue.toLocaleString()}</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-card border-border">
-              <CardContent className="p-6 text-center">
-                <Users className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Total General</p>
-                <p className="text-3xl font-bold">Bs {totals.total.toLocaleString()}</p>
-              </CardContent>
-            </Card>
-          </div>
-        </>
-      )}
-
-      {/* ============ DIALOGS ============ */}
-
-      {/* Pagar Factura */}
-      <Dialog open={!!payingInvoice} onOpenChange={() => setPayingInvoice(null)}>
-        <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-white">Pagar Factura</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              {payingInvoice?.invoice_number} — {getUserName(payingInvoice?.user_id)}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label className="text-gray-300">Monto (Bs)</Label>
-              <div className="text-2xl font-bold text-[#10f94e]">
-                Bs {Number(payingInvoice?.amount || 0).toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <Label className="text-gray-300">Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
-              <select
-                value={payMethod}
-                onChange={(e) => setPayMethod(e.target.value)}
-                className="w-full h-10 px-3 rounded-md bg-gray-800 border border-gray-700 text-white"
-                data-testid="select-pay-method"
-              >
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Tarjeta">Tarjeta</option>
-                <option value="Pago Móvil">Pago Móvil</option>
-              </select>
-            </div>
-            <div>
-              <Label className="text-gray-300">Referencia (opcional)</Label>
-              <Input
-                value={payReference}
-                onChange={(e) => setPayReference(e.target.value)}
-                className="bg-gray-800 border-gray-700 text-white"
-                placeholder="Nro. de referencia"
-              />
-            </div>
-            <div>
-              <Label className="text-gray-300">Notas (opcional)</Label>
-              <Textarea
-                value={payNotes}
-                onChange={(e) => setPayNotes(e.target.value)}
-                className="bg-gray-800 border-gray-700 text-white"
-                rows={2}
-              />
-            </div>
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setPayingInvoice(null)} className="border-gray-700 hover:bg-gray-800">
-                Cancelar
-              </Button>
-              <Button onClick={handlePay} disabled={payInvoice.isPending} className="bg-[#10f94e] hover:bg-[#0ed145] text-black font-bold">
-                {payInvoice.isPending ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
-                ) : (
-                  <><CheckCircle className="w-4 h-4 mr-2" />Confirmar Pago</>
+      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
+        <DialogContent className="bg-card border-border sm:max-w-md">
+          {detail && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3">
+                  Factura {detail.invoice_number} <StatusBadge status={effectiveStatus(detail, today)} />
+                </DialogTitle>
+                <DialogDescription>{nameOf(detail.user_id)}</DialogDescription>
+              </DialogHeader>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <Field label="Período" value={detail.concept || '—'} wide />
+                <Field label="Monto" value={formatMoney(Number(detail.amount))} />
+                <Field label="Vence" value={fmtDate(detail.due_date)} />
+                {detail.paid_at && <Field label="Pagada el" value={fmtDate(detail.paid_at)} />}
+                {detail.method && <Field label="Método" value={detail.method} />}
+                {detail.reference && <Field label="Referencia" value={detail.reference} />}
+                {detail.notes && <Field label="Notas" value={detail.notes} wide />}
+              </dl>
+              <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+                {canDelete(detail) && (
+                  <Button variant="ghost" className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10 mr-auto" onClick={() => setToDelete(detail)}>
+                    <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+                  </Button>
                 )}
-              </Button>
-            </DialogFooter>
-          </div>
+                <Button variant="outline" onClick={() => setToPrint(detail)}>
+                  <Printer className="h-4 w-4 mr-2" /> Imprimir
+                </Button>
+                {isOpen(detail) && (
+                  <Button className="bg-[#10f94e] text-black hover:bg-[#0ed145]" onClick={() => { setCollectFor(detail.user_id); setDetail(null); }}>
+                    <CreditCard className="h-4 w-4 mr-2" /> Cobrar
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
-      {/* Detalles Factura */}
-      {selectedInvoice && (
-        <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-          <DialogContent className="bg-gray-900 border-gray-700 max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="text-white">Detalles de Factura</DialogTitle>
-              <DialogDescription className="text-gray-400">
-                {selectedInvoice.invoice_number}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Usuario</p>
-                  <p className="text-white">{getUserName(selectedInvoice.user_id)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Estado</p>
-                  <Badge variant="outline" className={getStatusColor(selectedInvoice.status)}>
-                    {selectedInvoice.status}
-                  </Badge>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-sm text-gray-400 mb-1">Monto</p>
-                  <p className="text-3xl text-[#10f94e] font-bold">
-                    Bs {Number(selectedInvoice.amount).toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Concepto</p>
-                  <p className="text-white">{selectedInvoice.concept || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Vencimiento</p>
-                  <p className="text-white">{fmtDate(selectedInvoice.due_date)}</p>
-                </div>
-                {selectedInvoice.method && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-1">Método</p>
-                    <p className="text-white">{selectedInvoice.method}</p>
-                  </div>
-                )}
-                {selectedInvoice.paid_at && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-1">Pagado el</p>
-                    <p className="text-white">{fmtDate(selectedInvoice.paid_at)}</p>
-                  </div>
-                )}
-              </div>
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-700">
-                <Button onClick={() => openPrint(selectedInvoice)} className="bg-[#10f94e] hover:bg-[#0ed145] text-black">
-                  <Printer className="w-4 h-4 mr-2" />
-                  Imprimir
-                </Button>
-                <Button variant="outline" onClick={() => setIsDetailsOpen(false)} className="border-gray-700 hover:bg-gray-800">
-                  Cerrar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+      <DeleteInvoiceDialog
+        invoice={toDelete}
+        memberName={toDelete ? nameOf(toDelete.user_id) : ''}
+        onClose={() => setToDelete(null)}
+        onDeleted={() => setDetail(null)}
+      />
+
+      <InvoicePrint
+        invoice={toPrint}
+        onClose={() => setToPrint(null)}
+        member={(() => {
+          const m = toPrint ? memberById.get(toPrint.user_id) : undefined;
+          return m && { name: m.name, cedula: m.cedula, member_number: m.member_number, plan: m.plans?.name, phone: m.phone };
+        })()}
+      />
+
+      {runBilling.isPending && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-border bg-popover px-4 py-2 text-sm shadow-lg flex items-center gap-2">
+          <Clock className="h-4 w-4 animate-spin" /> Ejecutando facturación…
+        </div>
       )}
-
-      {/* Eliminar Factura */}
-      <AlertDialog open={!!invoiceToDelete} onOpenChange={() => setInvoiceToDelete(null)}>
-        <AlertDialogContent className="bg-gray-900 border-gray-700">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-white">Eliminar Factura</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-400">
-              ¿Estás seguro de eliminar la factura {invoiceToDelete?.invoice_number}? Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel className="border-gray-700 hover:bg-gray-800 text-white">Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={deleteInvoice.isPending}
-              className="bg-[#ff3b5c] hover:bg-[#ff3b5c]/90 text-white font-bold"
-            >
-              {deleteInvoice.isPending ? 'Eliminando...' : 'Eliminar'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {printInvoice && (
-        <PrintInvoice
-          invoice={printInvoice.invoice}
-          gymInfo={gymInfo}
-          userInfo={printInvoice.userInfo}
-          isOpen={!!printInvoice}
-          onClose={() => setPrintInvoice(null)}
-        />
-      )}
-
-      {/* Pago Adelantado Dialog */}
-      <Dialog open={advancePaymentOpen} onOpenChange={setAdvancePaymentOpen}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogHeader>
-            <DialogTitle>Pago Adelantado</DialogTitle>
-            <DialogDescription>
-              Pagar varias mensualidades por adelantado
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="advance-user">Usuario <span className="text-[#ff3b5c]">*</span></Label>
-              <select
-                id="advance-user"
-                value={advanceUserId}
-                onChange={(e) => setAdvanceUserId(e.target.value)}
-                className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
-                data-testid="advance-select-user"
-              >
-                <option value="">Seleccionar usuario</option>
-                {users?.map((user: any) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name} - {user.plan || user.membership_type || 'Sin plan'}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="advance-months">Meses a pagar <span className="text-[#ff3b5c]">*</span></Label>
-              <Input
-                id="advance-months"
-                type="number"
-                min="1"
-                max="12"
-                value={advanceMonths}
-                onChange={(e) => setAdvanceMonths(parseInt(e.target.value) || 1)}
-                className="bg-input border-border"
-              />
-            </div>
-            <div>
-              <Label htmlFor="advance-method">Método de Pago <span className="text-[#ff3b5c]">*</span></Label>
-              <select
-                id="advance-method"
-                value={advanceMethod}
-                onChange={(e) => setAdvanceMethod(e.target.value)}
-                className="w-full h-10 px-3 rounded-md bg-input border border-border text-foreground"
-              >
-                <option value="Efectivo">Efectivo</option>
-                <option value="Transferencia">Transferencia</option>
-                <option value="Tarjeta">Tarjeta</option>
-                <option value="Pago Móvil">Pago Móvil</option>
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="advance-reference">Referencia (Opcional)</Label>
-              <Input
-                id="advance-reference"
-                value={advanceReference}
-                onChange={(e) => setAdvanceReference(e.target.value)}
-                placeholder="Nro. de referencia"
-                className="bg-input border-border"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setAdvancePaymentOpen(false)}>
-                Cancelar
-              </Button>
-              <Button
-                className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold"
-                onClick={handleAdvancePayment}
-                disabled={payAdvance.isPending}
-              >
-                {payAdvance.isPending ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando...</>
-                ) : (
-                  <><Plus className="w-4 h-4 mr-2" />Confirmar Pago Adelantado</>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+
+const TONES = {
+  green: 'text-[#10f94e] bg-[#10f94e]/10',
+  blue: 'text-[#3b82f6] bg-[#3b82f6]/10',
+  red: 'text-[#ff3b5c] bg-[#ff3b5c]/10',
+  amber: 'text-[#eab308] bg-[#eab308]/10',
+  muted: 'text-muted-foreground bg-muted',
+};
+
+function Kpi({
+  label, value, hint, icon: Icon, tone, loading, onClick,
+}: {
+  label: string; value: string; hint: string; icon: typeof Wallet; tone: keyof typeof TONES; loading?: boolean; onClick?: () => void;
+}) {
+  const Wrapper = onClick ? 'button' : 'div';
+  return (
+    <Wrapper
+      onClick={onClick}
+      className={`rounded-xl border border-border bg-card p-4 text-left transition-colors ${onClick ? 'hover:border-foreground/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm text-muted-foreground">{label}</p>
+          {loading ? (
+            <div className="mt-2 h-8 w-28 animate-pulse rounded bg-muted" />
+          ) : (
+            <p className="mt-1 text-2xl font-semibold tabular-nums truncate">{value}</p>
+          )}
+          <p className="mt-1 text-xs text-muted-foreground">{loading ? ' ' : hint}</p>
+        </div>
+        <span className={`rounded-lg p-2 ${TONES[tone]}`}>
+          <Icon className="h-4 w-4" aria-hidden />
+        </span>
+      </div>
+    </Wrapper>
+  );
+}
+
+function TabButton({ active, onClick, testId, children }: { active: boolean; onClick: () => void; testId: string; children: ReactNode }) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      data-testid={testId}
+      className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+        active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={wide ? 'col-span-2' : ''}>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="space-y-2 p-4" aria-busy="true">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="h-10 animate-pulse rounded bg-muted/60" />
+      ))}
+    </div>
+  );
+}
+

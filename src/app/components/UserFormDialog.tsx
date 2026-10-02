@@ -25,6 +25,8 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
+import { Switch } from './ui/switch';
+import { toast } from 'sonner';
 import { Loader2, Calendar } from 'lucide-react';
 
 interface UserFormDialogProps {
@@ -188,6 +190,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
     defaultValues: {
       status: 'Activo',
       start_date: new Date().toISOString().split('T')[0],
+      is_free_user: false,
     },
   });
 
@@ -270,12 +273,14 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
         notes: user.notes || '',
         medical_notes: user.medical_notes || '',
         member_number: user.member_number || '',
+        is_free_user: user.is_free_user === true,
       });
     } else if (!open) {
       // Limpiar formulario al cerrar
       reset({
         status: 'Activo',
         start_date: new Date().toISOString().split('T')[0],
+        is_free_user: false,
       });
       setCalculatedBMI(null);
     }
@@ -512,6 +517,30 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                   )}
                 </div>
               </div>
+
+              <Controller
+                name="is_free_user"
+                control={control}
+                render={({ field }) => (
+                  <div className="flex items-start justify-between gap-4 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+                    <div>
+                      <Label htmlFor="is_free_user" className="text-gray-200">Exento de pago</Label>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {field.value
+                          ? 'No se le generan facturas ni se le suspende por falta de pago. Las facturas pendientes que ya tenga no se borran.'
+                          : 'Se le factura según su plan. Si estaba exento, la factura del mes se genera en el próximo proceso nocturno o al cobrarle.'}
+                      </p>
+                    </div>
+                    <Switch
+                      id="is_free_user"
+                      checked={field.value === true}
+                      onCheckedChange={field.onChange}
+                      disabled={isSubmitting}
+                      data-testid="switch-free-user"
+                    />
+                  </div>
+                )}
+              />
             </div>
 
             {/* Información Adicional */}

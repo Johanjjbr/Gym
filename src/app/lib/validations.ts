@@ -127,6 +127,9 @@ plan: z.string()
     .max(1000, 'Notas médicas demasiado largas')
     .optional()
     .or(z.literal('')),
+
+  /** Exento de pago: no se le generan facturas ni se le suspende por deuda. */
+  is_free_user: z.boolean().optional(),
 });
 
 export type UserFormData = z.infer<typeof userSchema>;

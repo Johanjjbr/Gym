@@ -23,6 +23,7 @@ import {
   type OpenInvoiceRow,
   type PaymentRow,
 } from '../lib/dashboardHelpers';
+import { upcomingRenewals, type InvoiceRow, type RenewalMember } from '../lib/billing';
 
 // Cuelga de statsKeys.dashboard: cualquier pago/factura que invalide las
 // estadísticas (invalidateBilling) también refresca el dashboard.
@@ -37,11 +38,11 @@ export async function fetchDashboard(now: Date = new Date()) {
   const attendanceSince = addDays(today, -(ATTENDANCE_DAYS - 1));
 
   const [usersRes, invoicesRes, paymentsRes, attendanceRes] = await Promise.all([
-    supabase.from('users').select('id, name, status, created_at'),
+    supabase.from('users').select('id, name, status, created_at, is_free_user, plans(id, name, price, duration_days)'),
     supabase
       .from('invoices')
-      .select('id, user_id, amount, due_date, status, concept')
-      .in('status', ['Pendiente', 'Vencida']),
+      // Todas: las pagadas hacen falta para calcular el próximo vencimiento
+      .select('id, user_id, amount, due_date, status, concept'),
     supabase
       .from('payments')
       .select('id, user_id, amount, date, method')
@@ -63,13 +64,16 @@ export async function fetchDashboard(now: Date = new Date()) {
   const payments = (paymentsRes.data ?? []) as PaymentRow[];
   const attendance = attendanceByDay((attendanceRes.data ?? []) as AttendanceRow[], today, ATTENDANCE_DAYS);
   const names = new Map(users.map((u) => [u.id, u.name]));
+  const invoices = (invoicesRes.data ?? []) as OpenInvoiceRow[];
 
   return {
     today,
     members: memberSummary(users, today),
     revenue: revenueMonthToDate(payments, today),
     revenueTrend: revenueByMonth(payments, today, REVENUE_MONTHS),
-    receivables: receivables((invoicesRes.data ?? []) as OpenInvoiceRow[], today),
+    receivables: receivables(invoices, today),
+    // Próximos vencimientos (aunque la factura todavía no exista)
+    renewals: upcomingRenewals((usersRes.data ?? []) as unknown as RenewalMember[], invoices as InvoiceRow[], today),
     attendance,
     todayAttendance: attendance[attendance.length - 1]?.count ?? 0,
     recentPayments: payments.slice(0, 6),

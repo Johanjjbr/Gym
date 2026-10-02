@@ -62,7 +62,7 @@ describe('getMonthStatuses', () => {
       [
         { status: 'Pagada', due_date: '2026-08-01T00:00:00' },
         { status: 'Vencida', due_date: '2026-09-01T00:00:00' },
-        { status: 'Pendiente', due_date: '2026-10-01T00:00:00' },
+        { status: 'Pendiente', due_date: '2026-10-20T00:00:00' }, // vence más adelante en el mes
         { status: 'Pagada', due_date: '2026-11-01T00:00:00' }, // adelantado
       ],
       2026,
@@ -105,5 +105,26 @@ describe('getMonthStatuses', () => {
   it('tolera entradas inválidas', () => {
     expect(() => getMonthStatuses(null as any, 2026, now)).not.toThrow()
     expect(getMonthStatuses([{ status: 'Pagada', due_date: 'x' }], 2026, now)).toHaveLength(12)
+  })
+})
+
+describe('getMonthStatuses - reglas de la ficha del socio', () => {
+  const now = new Date(2026, 9, 15) // 15-oct-2026
+
+  it('una pendiente con fecha pasada se muestra vencida (igual que el proceso nocturno)', () => {
+    const st = getMonthStatuses([{ status: 'Pendiente', due_date: '2026-10-01T00:00:00' }], 2026, now)
+    expect(st[9]).toBe('Vencido')
+  })
+
+  it('los meses anteriores al alta no figuran como "Sin factura"', () => {
+    const st = getMonthStatuses([], 2026, now, '2026-08-24T00:00:00')
+    expect(st.slice(0, 7).every((s) => s === 'Antes del alta')).toBe(true)
+    expect(st[7]).toBe('Sin factura') // agosto: mes del alta
+    expect(st[11]).toBe('Futuro')
+  })
+
+  it('una factura existente se muestra aunque sea anterior al alta', () => {
+    const st = getMonthStatuses([{ status: 'Pagada', due_date: '2026-07-01T00:00:00' }], 2026, now, '2026-08-24')
+    expect(st[6]).toBe('Pagado')
   })
 })

@@ -1,172 +1,125 @@
 import { test, expect, Page } from '@playwright/test';
 
 /**
- * Tests E2E para la página de Facturación unificada
- * Cubre: navegación, pestañas, filtros, registro de cobro, impresión
+ * Tests E2E de Facturación (estructura nueva):
+ * indicadores, vistas Facturas / Socios con deuda, filtros y flujo único "Cobrar".
+ * Los tests de cobro NO confirman el pago (no escriben en la base).
  */
 
-// Helper para hacer login como staff
 async function loginAsStaff(page: Page) {
   await page.goto('/login');
-  await page.fill('input[type="email"]', 'admin@gymteques.com');
-  await page.fill('input[type="password"]', 'Admin123!');
+  await page.fill('input[type="email"]', process.env.E2E_EMAIL ?? 'admin@gymteques.com');
+  await page.fill('input[type="password"]', process.env.E2E_PASSWORD ?? 'Admin123!');
   await page.click('button[type="submit"]');
   await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 10000 });
 }
 
-test.describe('Página de Facturación', () => {
+test.describe('Facturación', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsStaff(page);
+    await page.goto('/facturacion');
+    await expect(page.getByTestId('billing-page')).toBeVisible();
   });
 
-  test('debe cargar la página de facturación', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    await expect(page).toHaveURL('/facturacion');
-    await expect(page.getByTestId('billing-page')).toBeVisible();
+  test('muestra cabecera, indicadores y la acción principal', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'Facturación' })).toBeVisible();
+    await expect(page.getByTestId('billing-kpis')).toContainText('Cobrado este mes');
+    await expect(page.getByTestId('billing-kpis')).toContainText('Por cobrar');
+    await expect(page.getByTestId('btn-cobrar')).toBeVisible();
   });
 
-  test('debe mostrar las 3 pestañas', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    await expect(page.getByTestId('tab-facturas')).toBeVisible();
-    await expect(page.getByTestId('tab-cobrar')).toBeVisible();
-    await expect(page.getByTestId('tab-resumen')).toBeVisible();
-  });
-
-  test('debe cambiar entre pestañas', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    // Pestaña facturas activa por defecto
+  test('cambia entre Facturas y Socios con deuda (y lo refleja en la URL)', async ({ page }) => {
     await expect(page.getByTestId('tab-facturas')).toHaveAttribute('aria-selected', 'true');
-
-    // Cambiar a cobrar
-    await page.getByTestId('tab-cobrar').click();
-    await expect(page.getByTestId('tab-cobrar')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('cobro-form')).toBeVisible();
-
-    // Cambiar a resumen
-    await page.getByTestId('tab-resumen').click();
-    await expect(page.getByTestId('tab-resumen')).toHaveAttribute('aria-selected', 'true');
-
-    // Volver a facturas
+    await page.getByTestId('tab-deudores').click();
+    await expect(page.getByTestId('tab-deudores')).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/vista=deudores/);
     await page.getByTestId('tab-facturas').click();
-    await expect(page.getByTestId('tab-facturas')).toHaveAttribute('aria-selected', 'true');
+    await expect(page).not.toHaveURL(/vista=deudores/);
   });
 
-  test('debe mostrar la tabla de facturas', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    await expect(page.getByTestId('invoices-table')).toBeVisible();
+  test('la vista Por vencer lista a quienes vencen en 3 días con botón para avisar', async ({ page }) => {
+    await page.getByTestId('tab-por-vencer').click();
+    await expect(page).toHaveURL(/vista=por-vencer/);
+    const row = page.getByTestId('renewal-row').first();
+    if (await row.isVisible().catch(() => false)) {
+      await expect(row.getByRole('link', { name: /Avisar/ }).or(row.getByRole('button', { name: /Copiar aviso/ }))).toBeVisible();
+    } else {
+      await expect(page.getByText(/Nadie vence en los próximos 3 días/)).toBeVisible();
+    }
   });
 
-  test('debe mostrar el formulario de cobro', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    await page.getByTestId('tab-cobrar').click();
-
-    await expect(page.getByTestId('cobro-form')).toBeVisible();
-    await expect(page.getByTestId('select-user')).toBeVisible();
-    await expect(page.getByTestId('input-amount')).toBeVisible();
-    await expect(page.getByTestId('input-date')).toBeVisible();
-    await expect(page.getByTestId('input-concept')).toBeVisible();
-    await expect(page.getByTestId('select-method')).toBeVisible();
-    await expect(page.getByTestId('btn-submit-cobro')).toBeVisible();
-  });
-
-  test('debe mostrar botón de morosos', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    await expect(page.getByTestId('btn-morosos')).toBeVisible();
-    await expect(page.getByTestId('btn-registrar-cobro')).toBeVisible();
-  });
-
-  test('debe buscar facturas por nombre', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    await page.getByTestId('search-invoices').fill('Juan');
-
-    // Verificar que el indicador de filtros activos aparece
-    await expect(page.getByText(/Mostrando \d+ de \d+ facturas/)).toBeVisible();
-  });
-
-  test('debe filtrar por estado', async ({ page }) => {
-    await page.goto('/facturacion');
-
+  test('los indicadores no cambian al filtrar', async ({ page }) => {
+    const kpis = page.getByTestId('billing-kpis');
+    const before = await kpis.innerText();
     await page.getByTestId('filter-Pagada').click();
-    await expect(page.getByTestId('filter-Pagada')).toHaveClass(/bg-\[#10f94e\]/);
-
-    await page.getByTestId('filter-Vencida').click();
-    await expect(page.getByTestId('filter-Vencida')).toHaveClass(/bg-\[#ff3b5c\]/);
+    await expect(page.getByTestId('filter-Pagada')).toHaveAttribute('aria-pressed', 'true');
+    expect(await kpis.innerText()).toBe(before);
   });
 
-  test('debe mostrar el diálogo de pago al hacer clic en Pagar', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    // Esperar a que haya facturas pendientes con botón Pagar
-    const payButton = page.locator('[data-testid^="pay-"]').first();
-    if (await payButton.isVisible().catch(() => false)) {
-      await payButton.click();
-      await expect(page.getByText('Pagar Factura')).toBeVisible();
-      await expect(page.getByTestId('select-pay-method')).toBeVisible();
-    }
+  test('la búsqueda muestra el contador de resultados', async ({ page }) => {
+    await page.getByTestId('search-invoices').fill('zzzz-no-existe');
+    await expect(page.getByText(/Mostrando 0 de \d+ facturas/)).toBeVisible();
+    await page.getByText('Limpiar filtros').click();
+    await expect(page.getByTestId('search-invoices')).toHaveValue('');
   });
 
-  test('debe abrir el modal de impresión', async ({ page }) => {
-    await page.goto('/facturacion');
-
-    const printButton = page.locator('[data-testid^="print-"]').first();
-    if (await printButton.isVisible().catch(() => false)) {
-      await printButton.click();
-      await expect(page.getByText(/Vista Previa de Factura/)).toBeVisible();
-      await expect(page.getByRole('button', { name: /Imprimir/ })).toBeVisible();
-    }
+  test('el menú de una factura permite imprimir', async ({ page }) => {
+    const menu = page.locator('[data-testid^="menu-"]').first();
+    test.skip(!(await menu.isVisible().catch(() => false)), 'No hay facturas');
+    await menu.click();
+    await page.locator('[data-testid^="print-"]').first().click();
+    await expect(page.getByText(/Vista Previa de Factura/)).toBeVisible();
   });
 });
 
-test.describe('Registro de Cobro', () => {
+test.describe('Cobrar', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsStaff(page);
     await page.goto('/facturacion');
-    await page.getByTestId('tab-cobrar').click();
   });
 
-  test('debe mostrar errores de validación si el formulario está vacío', async ({ page }) => {
-    await page.getByTestId('btn-submit-cobro').click();
-
-    await expect(page.getByText('Selecciona un usuario')).toBeVisible();
-    await expect(page.getByText('Monto requerido')).toBeVisible();
-    await expect(page.getByText('Concepto requerido')).toBeVisible();
+  test('sin socio elegido no se puede confirmar', async ({ page }) => {
+    await page.getByTestId('btn-cobrar').click();
+    await expect(page.getByTestId('collect-dialog')).toBeVisible();
+    await expect(page.getByTestId('search-member')).toBeFocused();
+    await expect(page.getByTestId('btn-confirm-collect')).toBeDisabled();
   });
 
-  test('debe calcular próximo vencimiento automáticamente', async ({ page }) => {
-    const dateInput = page.getByTestId('input-date');
-    const dueInput = page.getByTestId('input-due-date');
-
-    // Verificar que tiene valor
-    const dateValue = await dateInput.inputValue();
-    const dueValue = await dueInput.inputValue();
-
-    expect(dateValue).toBeTruthy();
-    expect(dueValue).toBeTruthy();
-
-    // Verificar que due_date es un mes después
-    const date = new Date(dateValue);
-    const due = new Date(dueValue);
-    expect(due.getMonth() - date.getMonth()).toBe(1);
+  test('al elegir un socio muestra la vista previa y el total', async ({ page }) => {
+    await page.getByTestId('btn-cobrar').click();
+    await page.getByTestId('search-member').press('Enter'); // primer resultado (los que deben van primero)
+    const blocked = page.getByRole('alert');
+    if (await blocked.isVisible().catch(() => false)) return; // exento o sin plan: no hay vista previa
+    await expect(page.getByTestId('payment-preview')).toBeVisible();
+    await expect(page.getByTestId('payment-total')).toContainText('Bs');
+    await expect(page.getByTestId('btn-confirm-collect')).toBeEnabled();
   });
-});
 
-test.describe('Navegación', () => {
-  test('debe navegar desde el sidebar', async ({ page }) => {
-    await loginAsStaff(page);
+  test('sumar períodos actualiza la vista previa', async ({ page }) => {
+    await page.getByTestId('btn-cobrar').click();
+    await page.getByTestId('search-member').press('Enter');
+    test.skip(!(await page.getByTestId('payment-preview').isVisible().catch(() => false)), 'Socio sin plan cobrable');
+    const rows = page.getByTestId('payment-preview').locator('li');
+    const n = await rows.count();
+    await page.getByRole('button', { name: 'Más' }).click();
+    await expect(rows).toHaveCount(n + 1);
+    await expect(page.getByTestId('periods-count')).toHaveText(String(n + 1));
+  });
 
-    const sidebarLink = page.getByRole('link', { name: 'Facturación' });
-    await expect(sidebarLink).toBeVisible();
-    await sidebarLink.click();
+  test('desde Socios con deuda abre el cobro con el socio elegido', async ({ page }) => {
+    await page.getByTestId('tab-deudores').click();
+    const row = page.getByTestId('debtor-row').first();
+    test.skip(!(await row.isVisible().catch(() => false)), 'Nadie tiene deuda');
+    await row.getByRole('button', { name: 'Cobrar' }).click();
+    await expect(page.getByTestId('selected-member')).toBeVisible();
+  });
 
-    await expect(page).toHaveURL('/facturacion');
-    await expect(page.getByTestId('billing-page')).toBeVisible();
+  test('no permite fecha de pago futura', async ({ page }) => {
+    await page.getByTestId('btn-cobrar').click();
+    await page.getByTestId('search-member').press('Enter');
+    const date = page.getByTestId('input-paid-on');
+    test.skip(!(await date.isVisible().catch(() => false)), 'Socio sin plan cobrable');
+    const max = await date.getAttribute('max');
+    expect(max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
