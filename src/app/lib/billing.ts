@@ -25,7 +25,13 @@ export interface InvoiceRow {
   voided_at?: string | null;
   void_reason?: string | null;
   /** Cómo se cobró (embebido desde payments vía payment_id) */
-  payments?: { currency?: string | null; amount_original?: number | string | null; exchange_rate?: number | string | null } | null;
+  payments?: {
+    currency?: string | null;
+    amount_original?: number | string | null;
+    exchange_rate?: number | string | null;
+    created_at?: string | null;
+    staff?: { name?: string | null } | null;
+  } | null;
 }
 
 export interface PlanRow {

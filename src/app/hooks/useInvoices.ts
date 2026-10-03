@@ -21,7 +21,7 @@ export function useInvoices(params?: InvoiceParams) {
     queryFn: async () => {
       let query = supabase
         .from('invoices')
-        .select('*, plans(name), payments(currency, amount_original, exchange_rate)')
+        .select('*, plans(name), payments(currency, amount_original, exchange_rate, created_at, staff:staff!payments_created_by_fkey(name))')
         .order('created_at', { ascending: false });
 
       if (params?.user_id) query = query.eq('user_id', params.user_id);
@@ -43,7 +43,7 @@ export function useUserInvoices(userId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('invoices')
-        .select('*, plans(name), payments(currency, amount_original, exchange_rate)')
+        .select('*, plans(name), payments(currency, amount_original, exchange_rate, created_at, staff:staff!payments_created_by_fkey(name))')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       if (error) throw error;

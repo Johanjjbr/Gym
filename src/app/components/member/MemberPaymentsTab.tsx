@@ -9,7 +9,7 @@ import { ExternalLink, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { PaymentCalendar } from '../PaymentCalendar';
-import { InvoicePrint, InvoiceRowMenu, StatusBadge, useCanVoidInvoice, VoidInvoiceButton, VoidInvoiceDialog } from '../billing/shared';
+import { InvoiceDetailDialog, InvoicePrint, InvoiceRowMenu, StatusBadge, useCanVoidInvoice, VoidInvoiceButton, VoidInvoiceDialog } from '../billing/shared';
 import type { MemberAccount } from '../../hooks/useMemberAccount';
 import { effectiveStatus, fmtDate, monthLabel, paidThrough, type InvoiceRow } from '../../lib/billing';
 import { formatMoney } from '../../lib/dashboardHelpers';
@@ -31,7 +31,8 @@ export function MemberPaymentsTab({ account, invoices, loading }: { account: Mem
     [invoices],
   );
   const rows = showAll ? sorted : sorted.slice(0, INITIAL_ROWS);
-  const printMember = member && { name: member.name, cedula: member.cedula, member_number: member.member_number, plan: plan?.name, phone: member.phone };
+  const printMember = member ?? null;
+  const [detail, setDetail] = useState<InvoiceRow | null>(null);
 
   return (
     <div className="space-y-6">
@@ -92,7 +93,7 @@ export function MemberPaymentsTab({ account, invoices, loading }: { account: Mem
                   {rows.map((inv) => {
                     const st = effectiveStatus(inv, today);
                     return (
-                      <tr key={inv.id} className="border-b border-border last:border-0 hover:bg-muted/40">
+                      <tr key={inv.id} className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/40" onClick={() => setDetail(inv)}>
                         <td className="px-4 py-3">
                           <span className="block">{inv.concept || monthLabel(inv.due_date.slice(0, 10))}</span>
                           <span className="block font-mono text-xs text-muted-foreground">{inv.invoice_number}</span>
@@ -113,11 +114,12 @@ export function MemberPaymentsTab({ account, invoices, loading }: { account: Mem
                         </td>
                         <td className={`px-4 py-3 text-right font-semibold tabular-nums ${st === 'Anulada' ? 'text-muted-foreground line-through' : ''}`}>{formatMoney(Number(inv.amount))}</td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
+                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                             {canVoid(inv) && <VoidInvoiceButton inv={inv} onVoid={() => setToDelete(inv)} />}
                             <InvoiceRowMenu
                               inv={inv}
                               canVoid={canVoid(inv)}
+                              onView={() => setDetail(inv)}
                               onPrint={() => setToPrint(inv)}
                               onVoid={() => setToDelete(inv)}
                             />
@@ -140,7 +142,15 @@ export function MemberPaymentsTab({ account, invoices, loading }: { account: Mem
         </CardContent>
       </Card>
 
-      <InvoicePrint invoice={toPrint} member={printMember || undefined} onClose={() => setToPrint(null)} />
+      <InvoiceDetailDialog
+        invoice={detail}
+        member={printMember as any}
+        onClose={() => setDetail(null)}
+        onPrint={(inv) => { setDetail(null); setToPrint(inv); }}
+        onVoid={(inv) => { setDetail(null); setToDelete(inv); }}
+        canVoid={!!detail && canVoid(detail)}
+      />
+      <InvoicePrint invoice={toPrint} member={(printMember as any) || undefined} onClose={() => setToPrint(null)} />
       <VoidInvoiceDialog invoice={toDelete} memberName={member?.name ?? 'El socio'} onClose={() => setToDelete(null)} />
     </div>
   );

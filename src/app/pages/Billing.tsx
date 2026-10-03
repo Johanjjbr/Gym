@@ -20,7 +20,7 @@ import {
   statusCounts, upcomingRenewals, upcomingReminderText,
   type InvoiceRow, type InvoiceStatus,
 } from '../lib/billing';
-import { InvoicePrint, InvoiceRowMenu, NotifyButton, StatusBadge, useCanVoidInvoice, useGymInfo, VoidInvoiceButton, VoidInvoiceDialog } from '../components/billing/shared';
+import { InvoiceDetailDialog, InvoicePrint, InvoiceRowMenu, NotifyButton, StatusBadge, useCanVoidInvoice, useGymInfo, VoidInvoiceButton, VoidInvoiceDialog } from '../components/billing/shared';
 import { DailyPayments } from '../components/billing/DailyPayments';
 import { formatMoney, monthStart, toDateOnly } from '../lib/dashboardHelpers';
 import { cashBreakdown, formatBs, moneyWithBs, paidAmountLabel } from '../lib/currency';
@@ -343,9 +343,9 @@ export function Billing() {
                       const st = effectiveStatus(inv, today);
                       const m = memberById.get(inv.user_id);
                       return (
-                        <tr key={inv.id} className="border-b border-border last:border-0 hover:bg-muted/40" data-testid="invoice-row">
+                        <tr key={inv.id} className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/40" onClick={() => setDetail(inv)} data-testid="invoice-row">
                           <td className="px-4 py-3">
-                            <button className="text-left hover:underline" onClick={() => navigate(`/usuarios/${inv.user_id}`)}>
+                            <button className="text-left hover:underline" onClick={(e) => { e.stopPropagation(); navigate(`/usuarios/${inv.user_id}`); }}>
                               <span className="block font-medium">{m?.name ?? 'Socio eliminado'}</span>
                             </button>
                             <span className="block text-xs text-muted-foreground font-mono">{inv.invoice_number}</span>
@@ -375,7 +375,7 @@ export function Billing() {
                                 type="button"
                                 className="hover:text-[#10f94e]"
                                 title="Copiar referencia"
-                                onClick={() => navigator.clipboard?.writeText(inv.reference!).then(() => toast.success('Referencia copiada'), () => {})}
+                                onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(inv.reference!).then(() => toast.success('Referencia copiada'), () => {}); }}
                               >
                                 {inv.reference}
                               </button>
@@ -385,7 +385,7 @@ export function Billing() {
                           </td>
                           <td className={`px-4 py-3 text-right font-semibold tabular-nums ${st === 'Anulada' ? 'text-muted-foreground line-through' : ''}`}>{formatMoney(Number(inv.amount))}</td>
                           <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-1">
+                            <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                               {isOpen(inv) && (
                                 <Button
                                   size="sm"
@@ -574,52 +574,16 @@ export function Billing() {
         initialUserId={collectFor ?? null}
       />
 
-      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
-        <DialogContent className="bg-card border-border sm:max-w-md">
-          {detail && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-3">
-                  Factura {detail.invoice_number} <StatusBadge status={effectiveStatus(detail, today)} />
-                </DialogTitle>
-                <DialogDescription>{nameOf(detail.user_id)}</DialogDescription>
-              </DialogHeader>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <Field label="Motivo" value={detail.concept || '—'} wide />
-                <Field label="Monto" value={formatMoney(Number(detail.amount))} />
-                <Field label="Vence" value={fmtDate(detail.due_date)} />
-                {detail.paid_at && <Field label="Pagada el" value={fmtDate(detail.paid_at)} />}
-                {detail.method && <Field label="Método" value={detail.method} />}
-                {detail.status === 'Pagada' && <Field label="Cobrado" value={paidAmountLabel(Number(detail.amount), detail.payments)} />}
-                {detail.reference && <Field label="Referencia" value={detail.reference} />}
-                {detail.invoice_number && <Field label="N° de factura" value={detail.invoice_number} />}
-                {detail.notes && <Field label="Notas" value={detail.notes} wide />}
-                {detail.status === 'Anulada' && (
-                  <>
-                    <Field label="Anulada el" value={fmtDate(detail.voided_at)} />
-                    <Field label="Motivo de anulación" value={detail.void_reason || '—'} wide />
-                  </>
-                )}
-              </dl>
-              <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-                {canVoid(detail) && (
-                  <Button variant="ghost" className="text-[#ff3b5c] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10 mr-auto" onClick={() => setToDelete(detail)} data-testid="detail-void">
-                    <Trash2 className="h-4 w-4 mr-2" /> Anular factura
-                  </Button>
-                )}
-                <Button variant="outline" onClick={() => setToPrint(detail)}>
-                  <Printer className="h-4 w-4 mr-2" /> Imprimir
-                </Button>
-                {isOpen(detail) && (
-                  <Button className="bg-[#10f94e] text-black hover:bg-[#0ed145]" onClick={() => { setCollectFor(detail.user_id); setDetail(null); }}>
-                    <CreditCard className="h-4 w-4 mr-2" /> Cobrar
-                  </Button>
-                )}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      <InvoiceDetailDialog
+        invoice={detail}
+        member={detail ? (memberById.get(detail.user_id) as any) : null}
+        onClose={() => setDetail(null)}
+        onPrint={(inv) => { setDetail(null); setToPrint(inv); }}
+        onVoid={(inv) => setToDelete(inv)}
+        canVoid={!!detail && canVoid(detail)}
+        onCollect={(inv) => { setCollectFor(inv.user_id); setDetail(null); }}
+        onOpenMember={(id) => navigate(`/usuarios/${id}`)}
+      />
 
       <VoidInvoiceDialog
         invoice={toDelete}
@@ -631,10 +595,7 @@ export function Billing() {
       <InvoicePrint
         invoice={toPrint}
         onClose={() => setToPrint(null)}
-        member={(() => {
-          const m = toPrint ? memberById.get(toPrint.user_id) : undefined;
-          return m && { name: m.name, cedula: m.cedula, member_number: m.member_number, plan: m.plans?.name, phone: m.phone };
-        })()}
+        member={toPrint ? (memberById.get(toPrint.user_id) as any) : undefined}
       />
 
       {runBilling.isPending && (

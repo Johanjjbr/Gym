@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { X, Printer } from 'lucide-react';
 import { Button } from '../app/components/ui/button';
-import { formatDate, formatCurrency } from '../lib/format';
+import { formatDate, formatCurrency, formatMonthYear, safeFileName } from '../lib/format';
 
 interface GymInfo {
   name: string;
@@ -33,7 +33,7 @@ interface InvoiceData {
   invoice_number: string;
   date: string;
   due_date: string;
-  status: 'Pagada' | 'Pendiente' | 'Vencida';
+  status: 'Pagada' | 'Pendiente' | 'Vencida' | 'Anulada';
   amount: number;
   method?: string;
   reference?: string;
@@ -42,6 +42,12 @@ interface InvoiceData {
   paid_at?: string;
   /** Si se cobró en bolívares: "Bs 4.906,00 · tasa 245,30" */
   paid_label?: string;
+  /** Período que cubre: "24 oct – 23 nov" */
+  period?: string;
+  /** Concepto de la factura ("Premium Plus · 24 oct – 23 nov") */
+  concept?: string;
+  /** Nombre del archivo al guardar como PDF (sin extensión) */
+  file_name?: string;
 }
 
 interface PrintInvoiceProps {
@@ -64,18 +70,25 @@ export function PrintInvoice({
   const [isPrinting, setIsPrinting] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Nombre con el que se guarda el PDF: socio + mes pagado
+  const fileName = safeFileName(invoice.file_name ?? `Factura - ${userInfo.name} - ${formatMonthYear(invoice.due_date)}`);
+
   const handlePrint = () => {
     const iframe = iframeRef.current;
     if (!iframe) return;
 
     setIsPrinting(true);
     const doPrint = () => {
+      // El navegador usa el título del documento como nombre del PDF
+      const previousTitle = document.title;
+      document.title = fileName;
       try {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
       } catch (error) {
         console.error('Error printing:', error);
       }
+      setTimeout(() => { document.title = previousTitle; }, 1000);
       setIsPrinting(false);
       onPrintComplete?.();
     };
@@ -89,8 +102,8 @@ export function PrintInvoice({
 
   const getPrintHTML = () => {
     const items = invoice.items || [{
-      concept: invoice.notes || 'Mensualidad',
-      description: `${userInfo.plan || 'Plan'} - ${formatDate(invoice.date)} al ${formatDate(invoice.due_date)}`,
+      concept: invoice.concept || userInfo.plan || 'Mensualidad',
+      description: invoice.period ? `Período: ${invoice.period}` : `${userInfo.plan || 'Plan'} · vence el ${formatDate(invoice.due_date)}`,
       quantity: 1,
       unit_price: invoice.amount,
       total: invoice.amount,
@@ -105,7 +118,7 @@ export function PrintInvoice({
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Factura ${invoice.invoice_number}</title>
+  <title>${fileName}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; color: #1f2937; line-height: 1.4; padding: 20mm; }
@@ -123,6 +136,7 @@ export function PrintInvoice({
     .status-pagada { background: #dcfce7; color: #166534; }
     .status-pendiente { background: #fef3c7; color: #92400e; }
     .status-vencida { background: #fee2e2; color: #991b1b; }
+    .status-anulada { background: #f3f4f6; color: #6b7280; text-decoration: line-through; }
     .parties { display: flex; justify-content: space-between; margin-bottom: 24px; gap: 24px; }
     .party { flex: 1; }
     .party h4 { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
@@ -172,6 +186,10 @@ export function PrintInvoice({
       <h4>Fecha de Vencimiento</h4>
       <p>${formatDate(invoice.due_date)}</p>
     </div>
+    ${invoice.period ? `<div class="meta-block">
+      <h4>Período</h4>
+      <p>${invoice.period}</p>
+    </div>` : ''}
     <div class="meta-block">
       <h4>Estado</h4>
       <span class="status-badge status-${invoice.status.toLowerCase()}">${invoice.status}</span>

@@ -2,7 +2,8 @@
  * Piezas de facturación compartidas por la página Facturación y la ficha del socio.
  */
 import { useEffect, useState } from 'react';
-import { Ban, Copy, Eye, MessageCircle, MoreHorizontal, Printer, Trash2 } from 'lucide-react';
+import { Ban, Copy, CreditCard, Eye, MessageCircle, MoreHorizontal, Printer, Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -17,8 +18,8 @@ import { PrintInvoice } from '../../../components/PrintInvoice';
 import { supabase } from '../../lib/supabase';
 import { useVoidInvoice } from '../../hooks/useInvoices';
 import { useModulePermissions } from '../../hooks/useModulePermissions';
-import { effectiveStatus, fmtDate, isOpen, whatsappNumber, whatsappUrl, type InvoiceRow, type InvoiceStatus } from '../../lib/billing';
-import { formatMoney, toDateOnly } from '../../lib/dashboardHelpers';
+import { anchorDate, billingDayOf, effectiveStatus, fmtDate, isOpen, monthLabel, periodLabel, whatsappNumber, whatsappUrl, type InvoiceRow, type InvoiceStatus } from '../../lib/billing';
+import { daysBetween, formatMoney, toDateOnly } from '../../lib/dashboardHelpers';
 import { paidAmountLabel } from '../../lib/currency';
 
 const STATUS_STYLE: Record<InvoiceStatus, string> = {
@@ -201,17 +202,41 @@ export function useGymInfo() {
 }
 
 export interface PrintMember {
+  id?: string;
   name: string;
   cedula?: string | null;
   member_number?: string | null;
-  plan?: string | null;
   phone?: string | null;
+  start_date?: string | null;
+  billing_day?: number | null;
+  plans?: { name: string; duration_days: number; type?: string | null } | null;
+  /** Nombre del plan si no viene `plans` */
+  plan?: string | null;
+}
+
+/** Período que cubre la factura según el plan y el día de pago del socio. */
+export function invoicePeriod(invoice: InvoiceRow, member?: PrintMember | null): string | null {
+  const due = invoice.due_date.slice(0, 10);
+  // Las facturas guardan el período en el concepto: "Premium Plus · 24 oct – 23 nov"
+  const fromConcept = invoice.concept?.split(' · ')[1];
+  if (fromConcept) return fromConcept;
+  if (!member?.plans) return null;
+  // Día de pago del socio, salvo que la factura venza otro día (facturas antiguas)
+  const day = billingDayOf(member);
+  const useDay = anchorDate(due, day) === due ? day : Number(due.slice(8, 10));
+  return periodLabel(due, member.plans.duration_days, useDay, member.plans.type);
+}
+
+/** "Factura - Kevin Raga - Octubre 2026" (socio + mes pagado) */
+export function invoiceFileName(invoice: InvoiceRow, memberName: string): string {
+  return `Factura - ${memberName} - ${monthLabel(invoice.due_date.slice(0, 10))}`;
 }
 
 export function InvoicePrint({ invoice, member, onClose }: { invoice: InvoiceRow | null; member: PrintMember | undefined; onClose: () => void }) {
   const gymInfo = useGymInfo();
   if (!invoice) return null;
   const today = toDateOnly(new Date());
+  const name = member?.name ?? 'Socio';
   return (
     <PrintInvoice
       isOpen
@@ -226,18 +251,154 @@ export function InvoicePrint({ invoice, member, onClose }: { invoice: InvoiceRow
         amount: Number(invoice.amount),
         method: invoice.method ?? undefined,
         reference: invoice.reference ?? undefined,
-        notes: invoice.notes || invoice.concept || undefined,
+        concept: invoice.concept ?? undefined,
+        period: invoicePeriod(invoice, member) ?? undefined,
+        notes: [invoice.notes, invoice.status === 'Anulada' && invoice.void_reason ? `Anulada: ${invoice.void_reason}` : null].filter(Boolean).join('\n') || undefined,
         paid_at: invoice.paid_at ?? undefined,
         paid_label: invoice.payments?.currency === 'VES' ? paidAmountLabel(Number(invoice.amount), invoice.payments) : undefined,
+        file_name: invoiceFileName(invoice, name),
       }}
       userInfo={{
-        name: member?.name ?? 'Socio',
+        name,
         cedula: member?.cedula ?? undefined,
         member_number: member?.member_number ?? undefined,
-        plan: member?.plan ?? undefined,
+        plan: member?.plans?.name ?? member?.plan ?? undefined,
         phone: member?.phone ?? undefined,
       }}
     />
+  );
+}
+
+/**
+ * Detalle completo de la factura (lo mismo que se imprime, en pantalla):
+ * socio, período, fechas, monto, cómo y quién la cobró, notas y anulación.
+ */
+export function InvoiceDetailDialog({
+  invoice, member, onClose, onPrint, onVoid, onCollect, canVoid, onOpenMember,
+}: {
+  invoice: InvoiceRow | null;
+  member?: PrintMember | null;
+  onClose: () => void;
+  onPrint: (inv: InvoiceRow) => void;
+  onVoid?: (inv: InvoiceRow) => void;
+  onCollect?: (inv: InvoiceRow) => void;
+  canVoid?: boolean;
+  onOpenMember?: (userId: string) => void;
+}) {
+  const today = toDateOnly(new Date());
+  if (!invoice) return null;
+  const st = effectiveStatus(invoice, today);
+  const period = invoicePeriod(invoice, member);
+  const pay = invoice.payments;
+  const issued = invoice.created_at ? fmtDate(invoice.created_at) : null;
+  const daysLate = st === 'Vencida' ? daysBetween(invoice.due_date.slice(0, 10), today) : 0;
+  const planName = member?.plans?.name ?? member?.plan ?? invoice.concept?.split(' · ')[0];
+
+  return (
+    <Dialog open={!!invoice} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="bg-card border-border sm:max-w-lg max-h-[92vh] overflow-y-auto" data-testid="invoice-detail">
+        <DialogHeader>
+          <DialogTitle className="flex flex-wrap items-center gap-3">
+            Factura {invoice.invoice_number ?? ''} <StatusBadge status={st} />
+          </DialogTitle>
+          <DialogDescription>{invoice.concept ?? (period ? `${planName ?? 'Mensualidad'} · ${period}` : 'Mensualidad')}</DialogDescription>
+        </DialogHeader>
+
+        {/* Monto y estado */}
+        <div className="flex items-end justify-between rounded-lg border border-border bg-muted/30 p-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Monto</p>
+            <p className={`text-3xl font-semibold tabular-nums ${st === 'Anulada' ? 'line-through text-muted-foreground' : ''}`}>{formatMoney(Number(invoice.amount))}</p>
+            {st === 'Pagada' && pay?.currency === 'VES' && (
+              <p className="text-sm text-muted-foreground tabular-nums">Cobrado {paidAmountLabel(Number(invoice.amount), pay)}</p>
+            )}
+          </div>
+          <p className={`text-right text-sm ${st === 'Vencida' ? 'text-[#ff3b5c]' : st === 'Pagada' ? 'text-[#10f94e]' : 'text-muted-foreground'}`}>
+            {st === 'Pagada' && invoice.paid_at ? `Pagada el ${fmtDate(invoice.paid_at)}`
+              : st === 'Vencida' ? `Vencida hace ${daysLate} día${daysLate === 1 ? '' : 's'}`
+              : st === 'Pendiente' ? (invoice.due_date.slice(0, 10) === today ? 'Vence hoy' : `Vence el ${fmtDate(invoice.due_date)}`)
+              : 'Anulada'}
+          </p>
+        </div>
+
+        <DetailSection title="Socio">
+          <DetailField label="Nombre" wide>
+            {onOpenMember ? (
+              <button type="button" className="text-left hover:underline" onClick={() => onOpenMember(invoice.user_id)}>{member?.name ?? 'Socio'}</button>
+            ) : (member?.name ?? 'Socio')}
+          </DetailField>
+          {member?.cedula && <DetailField label="Cédula">{member.cedula}</DetailField>}
+          {member?.member_number && <DetailField label="N° de socio">{member.member_number}</DetailField>}
+          {member?.phone && <DetailField label="Teléfono">{member.phone}</DetailField>}
+          {planName && <DetailField label="Plan">{planName}</DetailField>}
+        </DetailSection>
+
+        <DetailSection title="Factura">
+          {period && <DetailField label="Período" wide>{period}</DetailField>}
+          <DetailField label="Vence">{fmtDate(invoice.due_date)}</DetailField>
+          {issued && <DetailField label="Emitida">{issued}</DetailField>}
+          {invoice.invoice_number && <DetailField label="N° de factura">{invoice.invoice_number}</DetailField>}
+        </DetailSection>
+
+        {(st === 'Pagada' || invoice.method) && (
+          <DetailSection title="Pago">
+            {invoice.paid_at && <DetailField label="Pagado el">{fmtDate(invoice.paid_at)}</DetailField>}
+            {invoice.method && <DetailField label="Método">{invoice.method}</DetailField>}
+            {invoice.reference && <DetailField label="Referencia">{invoice.reference}</DetailField>}
+            {pay && (
+              <DetailField label="Cobrado">{paidAmountLabel(Number(invoice.amount), pay)}</DetailField>
+            )}
+            {pay?.staff?.name && <DetailField label="Registró">{pay.staff.name}</DetailField>}
+          </DetailSection>
+        )}
+
+        {(invoice.notes || st === 'Anulada') && (
+          <DetailSection title={st === 'Anulada' ? 'Notas y anulación' : 'Notas'}>
+            {invoice.notes && <DetailField label="Notas" wide>{invoice.notes}</DetailField>}
+            {st === 'Anulada' && (
+              <>
+                <DetailField label="Anulada el">{fmtDate(invoice.voided_at)}</DetailField>
+                <DetailField label="Motivo" wide>{invoice.void_reason || '—'}</DetailField>
+              </>
+            )}
+          </DetailSection>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+          {canVoid && onVoid && (
+            <Button variant="ghost" className="mr-auto text-[#ff3b5c] hover:bg-[#ff3b5c]/10 hover:text-[#ff3b5c]" onClick={() => onVoid(invoice)} data-testid="detail-void">
+              <Trash2 className="mr-2 h-4 w-4" /> Anular factura
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => onPrint(invoice)} data-testid="detail-print">
+            <Printer className="mr-2 h-4 w-4" /> Imprimir / PDF
+          </Button>
+          {isOpen(invoice) && onCollect && (
+            <Button className="bg-[#10f94e] text-black hover:bg-[#0ed145]" onClick={() => onCollect(invoice)}>
+              <CreditCard className="mr-2 h-4 w-4" /> Cobrar
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h4>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">{children}</dl>
+    </section>
+  );
+}
+
+function DetailField({ label, wide, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={wide ? 'col-span-2' : ''}>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="break-words">{children}</dd>
+    </div>
   );
 }
 
