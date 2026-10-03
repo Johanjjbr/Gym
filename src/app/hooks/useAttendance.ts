@@ -11,6 +11,7 @@ import type { AttendanceRecord } from '../lib/attendanceStats';
 import { localTime, type DayRecord } from '../lib/attendanceDay';
 import { addDays, toDateOnly } from '../lib/dashboardHelpers';
 import type { AttendanceFormData, CheckinFormData } from '../lib/validations';
+import { getBranchScope, scopeToBranch } from './useOrgContext';
 
 // Keys para el caché
 export const attendanceKeys = {
@@ -130,11 +131,11 @@ export function useMemberAttendance(userId: string | undefined, sinceDays = 400)
  */
 export function useAttendanceDay(date: string) {
   return useQuery({
-    queryKey: ['attendance', 'day', date],
+    queryKey: ['attendance', 'day', date, getBranchScope()],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await scopeToBranch(supabase
         .from('attendance')
-        .select('id, user_id, date, time, type, source, users(name, member_number)')
+        .select('id, user_id, date, time, type, source, users(name, member_number)'))
         .eq('date', date)
         .order('time', { ascending: true });
       if (error) throw new Error(error.message);
@@ -149,11 +150,11 @@ export function useAttendanceDay(date: string) {
 /** Entradas de los últimos `days` días (sin hoy) para el promedio diario. */
 export function useAttendanceTrend(today: string, days = 28) {
   return useQuery({
-    queryKey: ['attendance', 'trend', today, days],
+    queryKey: ['attendance', 'trend', today, days, getBranchScope()],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await scopeToBranch(supabase
         .from('attendance')
-        .select('user_id, date')
+        .select('user_id, date'))
         .eq('type', 'Entrada')
         .gte('date', addDays(today, -days))
         .lt('date', today);

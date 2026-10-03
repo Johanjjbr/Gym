@@ -2,6 +2,7 @@
  * Piezas de facturación compartidas por la página Facturación y la ficha del socio.
  */
 import { useEffect, useState } from 'react';
+import { useOrgContext } from '../../hooks/useOrgContext';
 import { Ban, Copy, CreditCard, Eye, MessageCircle, MoreHorizontal, Printer, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
@@ -190,15 +191,25 @@ export function VoidInvoiceDialog({
   );
 }
 
-interface GymInfo { name: string; address?: string; phone?: string; email?: string; logo_url?: string }
+interface GymInfo { name: string; address?: string; phone?: string; email?: string; logo_url?: string; rif?: string }
 
-export function useGymInfo() {
-  const [gym, setGym] = useState<GymInfo>({ name: 'Gimnasio' });
-  useEffect(() => {
-    supabase.from('gyms').select('name, address, phone, email, logo_url').eq('is_active', true).limit(1).maybeSingle()
-      .then(({ data }) => data && setGym(data));
-  }, []);
-  return gym;
+/**
+ * Encabezado de facturas, recibos y mensajes: nombre, RIF y logo de la empresa,
+ * dirección y teléfono de la sede con la que se trabaja.
+ */
+export function useGymInfo(): GymInfo {
+  const { data: ctx } = useOrgContext();
+  if (!ctx) return { name: 'Gimnasio' };
+  const org = ctx.organization;
+  const branch = ctx.branches.find((b) => b.id === ctx.current_gym_id) ?? ctx.branches[0];
+  return {
+    name: org.name,
+    rif: org.rif ?? undefined,
+    address: branch?.address ?? undefined,
+    phone: branch?.phone || org.phone || undefined,
+    email: org.email ?? undefined,
+    logo_url: org.logo_url ?? undefined,
+  };
 }
 
 export interface PrintMember {

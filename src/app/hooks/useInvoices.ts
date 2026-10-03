@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { caracasDayUtcRange, type DayPayment } from '../lib/dailyPayments';
 import { supabase } from '../lib/supabase';
 import { statsKeys } from './useStats';
+import { getBranchScope, scopeToBranch } from './useOrgContext';
 
 export const invoiceKeys = {
   all: ['invoices'] as const,
@@ -354,11 +355,11 @@ export function useBillingMember(id: string | undefined) {
 /** Pagos recibidos desde una fecha (yyyy-MM-dd). */
 export function usePaymentsSince(since: string) {
   return useQuery({
-    queryKey: ['payments', since],
+    queryKey: ['payments', since, getBranchScope()],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await scopeToBranch(supabase
         .from('payments')
-        .select('id, user_id, amount, date, method, currency, amount_original')
+        .select('id, user_id, amount, date, method, currency, amount_original'))
         .eq('status', 'Pagado')
         .gte('date', since)
         .order('date', { ascending: false });
@@ -435,7 +436,7 @@ export function useVoidInvoice() {
 /** Pagos de un día (por fecha de pago) + los registrados ese día con fecha anterior. */
 export function useDailyPayments(day: string) {
   return useQuery({
-    queryKey: ['payments', 'day', day],
+    queryKey: ['payments', 'day', day, getBranchScope()],
     queryFn: async () => {
       const select =
         'id, user_id, member_name, amount, date, created_at, method, status, currency, amount_original, exchange_rate, ' +
@@ -444,9 +445,9 @@ export function useDailyPayments(day: string) {
       const next = addDaysIso(day, 1);
       const { from, to } = caracasDayUtcRange(day);
       const [byDate, late] = await Promise.all([
-        supabase.from('payments').select(select).in('status', ['Pagado', 'Anulado'])
+        scopeToBranch(supabase.from('payments').select(select)).in('status', ['Pagado', 'Anulado'])
           .gte('date', day).lt('date', next).order('date', { ascending: true }),
-        supabase.from('payments').select(select).in('status', ['Pagado', 'Anulado'])
+        scopeToBranch(supabase.from('payments').select(select)).in('status', ['Pagado', 'Anulado'])
           .gte('created_at', from).lt('created_at', to).lt('date', day).order('date', { ascending: true }),
       ]);
       const failed = [byDate, late].find((r) => r.error);

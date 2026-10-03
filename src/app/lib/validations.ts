@@ -250,8 +250,8 @@ export const staffSchema = z.object({
     .min(2, 'El nombre debe tener al menos 2 caracteres')
     .max(100, 'El nombre es demasiado largo'),
   
-  role: z.enum(['Administrador', 'Entrenador', 'Recepción'], {
-    errorMap: () => ({ message: 'Rol debe ser Administrador, Entrenador o Recepción' })
+  role: z.enum(['Dueño', 'Administrador', 'Entrenador', 'Recepción'], {
+    errorMap: () => ({ message: 'Rol debe ser Dueño, Administrador, Entrenador o Recepción' })
   }),
   
   phone: z.string()

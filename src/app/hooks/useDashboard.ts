@@ -27,6 +27,7 @@ import {
 } from '../lib/dashboardHelpers';
 import { cashBreakdown } from '../lib/currency';
 import { upcomingRenewals, type InvoiceRow, type RenewalMember } from '../lib/billing';
+import { getBranchScope, scopeToBranch } from './useOrgContext';
 
 // Cuelga de statsKeys.dashboard: cualquier pago/factura que invalide las
 // estadísticas (invalidateBilling) también refresca el dashboard.
@@ -46,15 +47,15 @@ export async function fetchDashboard(now: Date = new Date()) {
       .from('invoices')
       // Todas: las pagadas hacen falta para calcular el próximo vencimiento
       .select('id, user_id, amount, due_date, status, concept, invoice_number, reference, notes, payment_id'),
-    supabase
+    scopeToBranch(supabase
       .from('payments')
-      .select('id, user_id, member_name, amount, date, method, currency, amount_original')
+      .select('id, user_id, member_name, amount, date, method, currency, amount_original'))
       .eq('status', 'Pagado')
       .gte('date', revenueSince)
       .order('date', { ascending: false }),
-    supabase
+    scopeToBranch(supabase
       .from('attendance')
-      .select('date, user_id')
+      .select('date, user_id'))
       .eq('type', 'Entrada')
       .gte('date', attendanceSince)
       .lte('date', today),
@@ -90,7 +91,7 @@ export type DashboardData = Awaited<ReturnType<typeof fetchDashboard>>;
 
 export function useDashboard() {
   return useQuery({
-    queryKey: dashboardKey,
+    queryKey: [...dashboardKey, getBranchScope()],
     queryFn: () => fetchDashboard(),
     staleTime: 1000 * 60,
     refetchInterval: 1000 * 60 * 5,

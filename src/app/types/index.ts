@@ -1,4 +1,4 @@
-export type UserRole = 'Administrador' | 'Entrenador' | 'Recepción' | 'Usuario';
+export type UserRole = 'Dueño' | 'Administrador' | 'Entrenador' | 'Recepción' | 'Usuario';
 
 export type PermissionAction = 'view' | 'create' | 'edit' | 'delete';
 

@@ -19,16 +19,15 @@ const MODULES = [
   { path: '/facturacion', label: 'Facturación' },
   { path: '/planes', label: 'Planes' },
   { path: '/personal', label: 'Personal' },
-  { path: '/gimnasios', label: 'Gimnasios' },
+  { path: '/gimnasios', label: 'Mi empresa' },
   { path: '/asistencia', label: 'Asistencia' },
   { path: '/rutinas', label: 'Rutinas' },
   { path: '/ejercicios', label: 'Ejercicios' },
-  { path: '/mi-entrenamiento', label: 'Mi Entrenamiento' },
   { path: '/reportes', label: 'Reportes' },
   { path: '/admin/permisos', label: 'Admin Permisos' },
 ];
 
-const ROLES: UserRole[] = ['Administrador', 'Entrenador', 'Recepción', 'Usuario'];
+const ROLES: UserRole[] = ['Dueño', 'Administrador', 'Entrenador', 'Recepción', 'Usuario'];
 
 const PERMISSION_ACTIONS: { key: 'can_view' | 'can_create' | 'can_edit' | 'can_delete'; label: string }[] = [
   { key: 'can_view', label: 'Ver' },
@@ -323,6 +322,7 @@ export function AdminPermissions() {
 
 function getRoleBadgeColor(role: UserRole): string {
   switch (role) {
+    case 'Dueño': return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
     case 'Administrador': return 'bg-destructive/20 text-destructive border-destructive/30';
     case 'Entrenador': return 'bg-primary/20 text-primary border-primary/30';
     case 'Recepción': return 'bg-[#3b82f6]/20 text-[#3b82f6] border-[#3b82f6]/30';

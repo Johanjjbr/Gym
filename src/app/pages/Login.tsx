@@ -19,7 +19,6 @@ export function Login() {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showCredentials, setShowCredentials] = useState(false);
 
   const { login, user } = useAuth();
   const navigate = useNavigate();
@@ -184,18 +183,6 @@ export function Login() {
     return `GM-${timestamp}`;
   };
 
-  const fillCredentials = (role: 'admin' | 'trainer' | 'reception' | 'user') => {
-    const credentials = {
-      admin: { email: 'admin@gymteques.com', password: 'Admin123!' },
-      trainer: { email: 'trainer@gymteques.com', password: 'Trainer123!' },
-      reception: { email: 'recepcion@gymteques.com', password: 'Recepcion123!' },
-      user: { email: 'usuario@gymteques.com', password: 'User123!' },
-    };
-
-    setEmail(credentials[role].email);
-    setPassword(credentials[role].password);
-    setShowCredentials(false);
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
@@ -368,80 +355,6 @@ export function Login() {
               )}
             </Button>
           </form>
-
-          {mode === 'login' && import.meta.env.DEV && (
-            <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => setShowCredentials(!showCredentials)}
-                className="w-full text-sm text-gray-400 hover:text-gray-300 transition-colors"
-              >
-                {showCredentials ? '− Ocultar' : '+ Mostrar'} credenciales de prueba
-              </button>
-
-              {showCredentials && (
-                <div className="space-y-2 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-                  <p className="text-xs text-gray-400 mb-3">Haz clic para usar:</p>
-                  
-                  <button
-                    type="button"
-                    onClick={() => fillCredentials('user')}
-                    className="w-full text-left p-3 bg-gray-900/70 hover:bg-gray-900 rounded border border-gray-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-[#10f94e]" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">Usuario Regular</p>
-                        <p className="text-xs text-gray-400">usuario@gymteques.com</p>
-                      </div>
-                    </div>
-                  </button>
-                  
-                  <button
-                    type="button"
-                    onClick={() => fillCredentials('admin')}
-                    className="w-full text-left p-3 bg-gray-900/70 hover:bg-gray-900 rounded border border-gray-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-red-500" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">Administrador</p>
-                        <p className="text-xs text-gray-400">admin@gymteques.com</p>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => fillCredentials('trainer')}
-                    className="w-full text-left p-3 bg-gray-900/70 hover:bg-gray-900 rounded border border-gray-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-blue-500" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">Entrenador</p>
-                        <p className="text-xs text-gray-400">trainer@gymteques.com</p>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => fillCredentials('reception')}
-                    className="w-full text-left p-3 bg-gray-900/70 hover:bg-gray-900 rounded border border-gray-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">Recepción</p>
-                        <p className="text-xs text-gray-400">recepcion@gymteques.com</p>
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
 
           <div className="text-center pt-4 border-t border-gray-700">
             <p className="text-xs text-gray-500">

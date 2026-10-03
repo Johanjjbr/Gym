@@ -10,7 +10,6 @@ import { Attendance } from './pages/Attendance';
 import { Reports } from './pages/Reports';
 import { Routines } from './pages/Routines';
 import { RoutineBuilder } from './pages/RoutineBuilder';
-import { MyWorkout } from './pages/MyWorkout';
 import { MyProfile } from './pages/MyProfile';
 import { MyTraining } from './pages/MyTraining';
 import { MyProgress } from './pages/MyProgress';
@@ -26,7 +25,8 @@ import { AdminPermissions } from './pages/AdminPermissions';
 import { Exercises } from './pages/Exercises';
 import { ExerciseDetailPage } from './pages/ExerciseDetailPage';
 import { Plans } from './pages/Plans';
-import { GymSettings } from './pages/GymSettings';
+import { CompanyPage } from './pages/Company';
+import { PlatformPage } from './pages/Platform';
 
 export const router = createBrowserRouter([
   // Ruta pública - Login
@@ -93,10 +93,10 @@ export const router = createBrowserRouter([
       { path: 'rutinas/:id/editar', Component: RoutineBuilder },
       { path: 'ejercicios', Component: Exercises },
       { path: 'ejercicios/:id', Component: ExerciseDetailPage },
-      { path: 'mi-entrenamiento', Component: MyWorkout },
       { path: 'reportes', Component: Reports },
       { path: 'admin/permisos', Component: AdminPermissions },
-      { path: 'gimnasios', Component: GymSettings },
+      { path: 'gimnasios', Component: CompanyPage },
+      { path: 'plataforma', Component: PlatformPage },
     //   { path: 'migrar-rutinas', Component: MigrateRoutines },
     ],
   },

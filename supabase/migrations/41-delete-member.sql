@@ -38,14 +38,14 @@ BEGIN
   SELECT * INTO v_staff FROM staff WHERE auth_user_id = auth.uid();
   IF NOT FOUND OR NOT (
        COALESCE(v_staff.is_super_admin, false)
-    OR v_staff.role = 'Administrador'
+    OR v_staff.role IN ('Dueño', 'Administrador')
     OR EXISTS (SELECT 1 FROM role_module_permissions
                WHERE role = v_staff.role AND module_path = '/usuarios' AND can_delete)
   ) THEN
     RAISE EXCEPTION 'No tienes permiso para eliminar socios';
   END IF;
 
-  SELECT * INTO u FROM users WHERE id = p_user_id FOR UPDATE;
+  SELECT * INTO u FROM users WHERE id = p_user_id AND organization_id = v_staff.organization_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Socio no encontrado';
   END IF;

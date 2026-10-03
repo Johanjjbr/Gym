@@ -13,12 +13,8 @@ export function useVerifyActivationToken(token: string) {
         throw new Error('Token no proporcionado');
       }
 
-      // Buscar el usuario con este token de activación
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, name, email, is_activated, activation_token')
-        .eq('activation_token', token)
-        .maybeSingle();
+      // Buscar el socio dueño del token (función segura: no expone la tabla users)
+      const { data, error } = await supabase.rpc('activation_lookup', { p_token: token });
 
       if (error) {
         console.error('Error verificando token:', error);
@@ -53,11 +49,7 @@ export function useActivateAccount() {
   return useMutation({
     mutationFn: async ({ token, password }: { token: string; password: string }) => {
       // 1. Verificar que el token existe y obtener el usuario
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, email, name, is_activated')
-        .eq('activation_token', token)
-        .maybeSingle();
+      const { data: userData, error: userError } = await supabase.rpc('activation_lookup', { p_token: token });
 
       if (userError || !userData) {
         throw new Error('Token de activación inválido');
@@ -85,20 +77,16 @@ export function useActivateAccount() {
         throw new Error('Error al crear la cuenta: ' + authError.message);
       }
 
-      // 3. Actualizar el usuario en la tabla users
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          is_activated: true,
-          activation_token: null, // Limpiar el token después de usarlo
-          auth_user_id: authData.user?.id, // Guardar referencia al user de Auth
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userData.id);
+      // 3. Enlazar la cuenta con el socio (función segura en la base)
+      if (!authData.user?.id) throw new Error('No se pudo crear la cuenta');
+      const { error: updateError } = await supabase.rpc('activation_complete', {
+        p_token: token,
+        p_auth_user_id: authData.user.id,
+      });
 
       if (updateError) {
         console.error('Error actualizando usuario:', updateError);
-        throw new Error('Error al activar la cuenta');
+        throw new Error(updateError.message || 'Error al activar la cuenta');
       }
 
       return {

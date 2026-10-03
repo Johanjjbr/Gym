@@ -26,7 +26,7 @@ export interface AuthResponse {
   staff: {
     id: string;
     name: string;
-    role: 'Administrador' | 'Entrenador' | 'Recepción';
+    role: 'Dueño' | 'Administrador' | 'Entrenador' | 'Recepción';
     email: string;
     phone: string;
     shift: string;
@@ -218,7 +218,7 @@ export const auth = {
     email: string;
     password: string;
     name: string;
-    role: 'Administrador' | 'Entrenador' | 'Recepción';
+    role: 'Dueño' | 'Administrador' | 'Entrenador' | 'Recepción';
     phone: string;
     shift: string;
   }): Promise<any> => {
@@ -536,6 +536,7 @@ export const staff = {
     role: string;
     phone: string;
     shift: string;
+    gym_id?: string | null;
   }) => {
     return apiRequest('/staff', {
       method: 'POST',

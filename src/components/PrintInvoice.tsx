@@ -3,12 +3,19 @@ import { X, Printer } from 'lucide-react';
 import { Button } from '../app/components/ui/button';
 import { formatDate, formatCurrency, formatMonthYear, safeFileName } from '../lib/format';
 
+/** Escapa texto para insertarlo en el HTML de impresión. */
+const esc = (v: unknown) =>
+  String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+/** Solo logos guardados por el sistema (data URL de imagen). */
+const logoOk = (v?: string) => !!v && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(v);
+
 interface GymInfo {
   name: string;
   address?: string;
   phone?: string;
   email?: string;
   logo_url?: string;
+  rif?: string;
 }
 
 interface UserInfo {
@@ -124,6 +131,8 @@ export function PrintInvoice({
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; color: #1f2937; line-height: 1.4; padding: 20mm; }
     @page { margin: 15mm; size: A4; }
     .header { display: flex; justify-content: space-between; margin-bottom: 24px; border-bottom: 2px solid #1f2937; padding-bottom: 16px; }
+    .gym-brand { display: flex; align-items: center; gap: 14px; }
+    .gym-logo { width: 64px; height: 64px; object-fit: contain; }
     .gym-info h1 { font-size: 28px; font-weight: 700; color: #1f2937; margin-bottom: 4px; }
     .gym-info p { font-size: 11px; color: #6b7280; margin: 2px 0; }
     .invoice-title { text-align: right; }
@@ -165,11 +174,15 @@ export function PrintInvoice({
 </head>
 <body>
   <div class="header">
-    <div class="gym-info">
-      <h1>${gymInfo.name}</h1>
-      ${gymInfo.address ? `<p>${gymInfo.address}</p>` : ''}
-      ${gymInfo.phone ? `<p>Tel: ${gymInfo.phone}</p>` : ''}
-      ${gymInfo.email ? `<p>Email: ${gymInfo.email}</p>` : ''}
+    <div class="gym-brand">
+      ${logoOk(gymInfo.logo_url) ? `<img class="gym-logo" src="${gymInfo.logo_url}" alt="" />` : ''}
+      <div class="gym-info">
+        <h1>${esc(gymInfo.name)}</h1>
+        ${gymInfo.rif ? `<p>RIF: ${esc(gymInfo.rif)}</p>` : ''}
+        ${gymInfo.address ? `<p>${esc(gymInfo.address)}</p>` : ''}
+        ${gymInfo.phone ? `<p>Tel: ${esc(gymInfo.phone)}</p>` : ''}
+        ${gymInfo.email ? `<p>Email: ${esc(gymInfo.email)}</p>` : ''}
+      </div>
     </div>
     <div class="invoice-title">
       <h2>FACTURA</h2>
@@ -252,7 +265,7 @@ export function PrintInvoice({
   ` : ''}
 
   <div class="footer">
-    <p><strong>${gymInfo.name}</strong> - Sistema de Gestión de Gimnasio</p>
+    <p><strong>${esc(gymInfo.name)}</strong> - Sistema de Gestión de Gimnasio</p>
     <p>Esta factura fue generada automáticamente el ${formatDate(new Date().toISOString().split('T')[0])}</p>
     <p>Gracias por su preferencia</p>
   </div>

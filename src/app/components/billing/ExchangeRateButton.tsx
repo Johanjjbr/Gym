@@ -76,7 +76,7 @@ export function ExchangeRateDialog({ open, onOpenChange }: { open: boolean; onOp
   const save = useSaveRate();
   const { user } = useAuth();
   // Administración y Recepción cargan y corrigen la tasa (la base lo valida igual)
-  const isAdmin = user?.role === 'Administrador' || user?.role === 'Recepción' || !!(user as any)?.is_super_admin;
+  const isAdmin = user?.role === 'Dueño' || user?.role === 'Administrador' || user?.role === 'Recepción' || !!(user as any)?.is_super_admin;
 
   const [date, setDate] = useState(cur.today);
   const [text, setText] = useState('');

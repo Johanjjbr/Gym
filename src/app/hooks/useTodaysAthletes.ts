@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { User } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { scopeToBranch } from './useOrgContext';
 
 // Tipos de datos que esperamos de la base de datos
 interface AttendanceRecord {
@@ -61,7 +62,7 @@ export const useTodaysAthletes = () => {
         { data: routines, error: routinesError },
       ] = await Promise.all([
         supabase.from('users').select('*'),
-        supabase.from('attendance').select('user_id').eq('date', today),
+        scopeToBranch(supabase.from('attendance').select('user_id')).eq('date', today),
         supabase.from('user_routine_assignments').select('*').eq('is_active', true),
         supabase.from('workout_sessions').select('*'),
         supabase.from('routine_templates').select('id, name'),

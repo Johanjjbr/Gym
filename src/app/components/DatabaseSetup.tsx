@@ -92,7 +92,7 @@ const runSeed = async () => {
                     <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="font-semibold text-white">Administrador</p>
-                      <p className="text-gray-400">admin@gymteques.com / Admin123!</p>
+                      <p className="text-gray-400">admin@gymteques.com</p>
                       <p className="text-gray-500 text-xs mt-1">Acceso total al sistema</p>
                     </div>
                   </div>
@@ -101,7 +101,7 @@ const runSeed = async () => {
                     <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="font-semibold text-white">Entrenador</p>
-                      <p className="text-gray-400">trainer@gymteques.com / Trainer123!</p>
+                      <p className="text-gray-400">trainer@gymteques.com</p>
                       <p className="text-gray-500 text-xs mt-1">Gestión de rutinas y seguimiento</p>
                     </div>
                   </div>
@@ -110,7 +110,7 @@ const runSeed = async () => {
                     <div className="w-2 h-2 rounded-full bg-[#10f94e] mt-1.5 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="font-semibold text-white">Recepción</p>
-                      <p className="text-gray-400">recepcion@gymteques.com / Recepcion123!</p>
+                      <p className="text-gray-400">recepcion@gymteques.com</p>
                       <p className="text-gray-500 text-xs mt-1">Pagos y control de asistencia</p>
                     </div>
                   </div>

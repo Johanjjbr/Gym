@@ -12,8 +12,11 @@ import {
   Building2,
   Package,
   Shield,
-  Settings,
+  Globe,
 } from 'lucide-react';
+import { BranchSwitcher } from './layout/BranchSwitcher';
+import { useOrgContext } from '../hooks/useOrgContext';
+import { isPlatformHome, PLATFORM_PATHS } from '../lib/orgContext';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useModulePermissions } from '../hooks/useModulePermissions';
@@ -24,13 +27,14 @@ export const menuItems = [
   { icon: CreditCard, label: 'Facturación', path: '/facturacion' },
   { icon: Package, label: 'Planes', path: '/planes' },
   { icon: UserCog, label: 'Personal', path: '/personal' },
-  { icon: Settings, label: 'Gimnasios', path: '/gimnasios' },
+  { icon: Building2, label: 'Mi empresa', path: '/gimnasios' },
   { icon: QrCode, label: 'Asistencia', path: '/asistencia' },
   { icon: ClipboardList, label: 'Rutinas', path: '/rutinas' },
   { icon: Dumbbell, label: 'Ejercicios', path: '/ejercicios' },
-  { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/mi-entrenamiento' },
   { icon: FileText, label: 'Reportes', path: '/reportes' },
   { icon: Shield, label: 'Admin Permisos', path: '/admin/permisos' },
+  // Solo súper admin (no está en role_module_permissions)
+  { icon: Globe, label: 'Plataforma', path: '/plataforma' },
 ];
 
 export function Sidebar() {
@@ -45,7 +49,11 @@ export function Sidebar() {
   };
 
   // Mientras cargan los permisos no se muestra ningún item (evita mostrar y luego ocultar)
-  const filteredMenuItems = isLoading ? [] : menuItems.filter((item) => canViewModule(item.path));
+  const { data: orgCtx } = useOrgContext();
+  const platformHome = isPlatformHome(orgCtx);
+  const filteredMenuItems = isLoading
+    ? []
+    : menuItems.filter((item) => canViewModule(item.path) && (!platformHome || PLATFORM_PATHS.includes(item.path)));
 
   const getInitials = (name: string) => {
     return name
@@ -60,19 +68,11 @@ export function Sidebar() {
     <div className="w-64 h-screen bg-[#0f0f16] border-r border-border flex flex-col fixed left-0 top-0">
       {/* Logo */}
       <div className="p-6 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-            <Dumbbell className="w-6 h-6 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-xl tracking-tight">GYM Lagunetica</h1>
-            <p className="text-xs text-muted-foreground">Los Teques</p>
-          </div>
-        </div>
+        <BranchSwitcher />
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4">
+      <nav className="flex-1 overflow-y-auto p-4">
         <ul className="space-y-1">
           {filteredMenuItems.map((item) => {
             const Icon = item.icon;

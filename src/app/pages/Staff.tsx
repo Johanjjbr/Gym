@@ -21,6 +21,8 @@ import {
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { useAuth } from '../contexts/AuthContext';
+import { useOrgContext } from '../hooks/useOrgContext';
 
 type StaffFormData = {
   name: string;
@@ -30,9 +32,17 @@ type StaffFormData = {
   shift: string;
   status: 'Activo' | 'Inactivo' | 'Vacaciones';
   password?: string;
+  gym_id?: string | null;
 };
 
 export function StaffPage() {
+  const { user: me } = useAuth();
+  // Solo el Dueño (o el súper admin) puede nombrar otro Dueño
+  const canAssignOwner = me?.role === 'Dueño' || me?.is_super_admin === true;
+  const { data: orgCtx } = useOrgContext();
+  const branches = orgCtx?.branches ?? [];
+  const multiBranch = branches.length > 1;
+  const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name ?? '—';
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<any | null>(null);
@@ -124,6 +134,8 @@ export function StaffPage() {
 
   const getRoleColor = (role: string) => {
     switch (role) {
+      case 'Dueño':
+        return 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/30';
       case 'Administrador':
         return 'bg-[#ff3b5c]/20 text-[#ff3b5c] border-[#ff3b5c]/30';
       case 'Entrenador':
@@ -235,6 +247,9 @@ export function StaffPage() {
                 <div className="pt-3 border-t border-border">
                   <p className="text-sm text-muted-foreground mb-1">Turno</p>
                   <p className="text-sm">{staffMember.shift}</p>
+                  {multiBranch && (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">Sede: {branchName(staffMember.gym_id)}</p>
+                  )}
                 </div>
                 <div className="flex items-center justify-between pt-2">
                   <Badge variant="outline" className={getStatusColor(staffMember.status)}>
@@ -339,6 +354,7 @@ export function StaffPage() {
                     <SelectValue placeholder="Seleccionar rol" />
                   </SelectTrigger>
                   <SelectContent>
+                    {canAssignOwner && <SelectItem value="Dueño">Dueño</SelectItem>}
                     <SelectItem value="Administrador">Administrador</SelectItem>
                     <SelectItem value="Entrenador">Entrenador</SelectItem>
                     <SelectItem value="Recepción">Recepción</SelectItem>
@@ -402,6 +418,21 @@ export function StaffPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {multiBranch && (
+                <div className="col-span-2">
+                  <Label>Sede</Label>
+                  <Select onValueChange={(value) => setValueEdit('gym_id', value)} defaultValue={watchEdit('gym_id') ?? undefined}>
+                    <SelectTrigger className="bg-input border-border" aria-label="Sede">
+                      <SelectValue placeholder="Seleccionar sede" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">Recepción y entrenadores trabajan solo en su sede.</p>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-4">
@@ -493,6 +524,7 @@ export function StaffPage() {
                     <SelectValue placeholder="Seleccionar rol" />
                   </SelectTrigger>
                   <SelectContent>
+                    {canAssignOwner && <SelectItem value="Dueño">Dueño</SelectItem>}
                     <SelectItem value="Administrador">Administrador</SelectItem>
                     <SelectItem value="Entrenador">Entrenador</SelectItem>
                     <SelectItem value="Recepción">Recepción</SelectItem>
@@ -556,6 +588,21 @@ export function StaffPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {multiBranch && (
+                <div className="col-span-2">
+                  <Label>Sede</Label>
+                  <Select onValueChange={(value) => setValueCreate('gym_id', value)} defaultValue={watchCreate('gym_id') ?? orgCtx?.current_gym_id ?? undefined}>
+                    <SelectTrigger className="bg-input border-border" aria-label="Sede">
+                      <SelectValue placeholder="Seleccionar sede" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">Recepción y entrenadores trabajan solo en su sede.</p>
+                </div>
+              )}
 
               <div className="col-span-2">
                 <Label htmlFor="create-password">Contraseña *</Label>
