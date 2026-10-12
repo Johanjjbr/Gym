@@ -9,8 +9,8 @@ const menuItems = [
   { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/usuario/mi-entrenamiento' },
   { icon: User, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
   { icon: TrendingUp, label: 'Progreso Físico', path: '/usuario/progreso' },
-  { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
-  { icon: CreditCard, label: 'Mis Pagos', path: '/usuario/pagos' },
+  { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia', gymOnly: true },
+  { icon: CreditCard, label: 'Mis Pagos', path: '/usuario/pagos', gymOnly: true },
 ];
 
 export function UserLayout() {
@@ -18,6 +18,11 @@ export function UserLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Usuario independiente (sin gimnasio): sin asistencia ni pagos
+  const isIndependent = user?.isIndependent === true;
+  const visibleItems = menuItems.filter((item) => !(isIndependent && item.gymOnly));
+  const brandName = isIndependent ? 'GymStars' : 'GYM Lagunetica';
+  const brandSubtitle = isIndependent ? 'Entrena en casa' : 'Los Teques';
 
   const handleLogout = async () => {
     await logout();
@@ -49,7 +54,7 @@ export function UserLayout() {
                 <Dumbbell className="w-5 h-5 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold tracking-tight">GYM Lagunetica</h1>
+                <h1 className="text-lg font-semibold tracking-tight">{brandName}</h1>
               </div>
             </div>
             <button
@@ -86,8 +91,8 @@ export function UserLayout() {
                 <Dumbbell className="w-6 h-6 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-xl tracking-tight">GYM Lagunetica</h1>
-                <p className="text-xs text-muted-foreground">Los Teques</p>
+                <h1 className="text-xl tracking-tight">{brandName}</h1>
+                <p className="text-xs text-muted-foreground">{brandSubtitle}</p>
               </div>
             </div>
           </div>
@@ -98,7 +103,7 @@ export function UserLayout() {
           {/* Navigation */}
           <nav className="flex-1 p-4 overflow-y-auto">
             <ul className="space-y-1">
-              {menuItems.map((item) => {
+              {visibleItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
                 
@@ -134,7 +139,7 @@ export function UserLayout() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{user?.name || 'Usuario'}</p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {user?.memberNumber || 'Miembro'}
+                  {user?.memberNumber || (isIndependent ? 'Entrena en casa' : 'Miembro')}
                 </p>
               </div>
               <button 

@@ -71,116 +71,56 @@ export function Login() {
     setIsLoading(true);
 
     try {
-      // 1. Generar número de miembro único
-      const memberNumber = await generateUniqueMemberNumber();
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-      // 2. Crear cuenta en Supabase Auth
+      // 1. Crear la cuenta. Los datos quedan en el metadata por si el email
+      //    debe confirmarse antes de poder crear el perfil.
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email,
-        password: password,
+        email: email.trim().toLowerCase(),
+        password,
         options: {
-          emailRedirectTo: undefined,
           data: {
-            name: name,
-            role: 'Usuario',
+            name: name.trim(),
+            phone: phone.trim() || null,
+            timezone,
+            signup_kind: 'independent',
           },
         },
       });
 
-      if (authError) {
-        throw new Error(authError.message);
+      if (authError) throw new Error(authError.message);
+      if (!authData.user) throw new Error('Error al crear la cuenta');
+
+      // 2. Sin sesión = Supabase pide confirmar el email primero. El perfil se
+      //    crea solo en el primer inicio de sesión (AuthContext).
+      if (!authData.session) {
+        toast.success('¡Cuenta creada! Revisa tu email para confirmarla y luego inicia sesión.');
+        setMode('login');
+        setPassword('');
+        setConfirmPassword('');
+        return;
       }
 
-      if (!authData.user) {
-        throw new Error('Error al crear la cuenta');
+      // 3. Con sesión: crear el perfil de usuario independiente (sin gimnasio)
+      const { error: profileError } = await supabase.rpc('register_independent_user', {
+        p_name: name.trim(),
+        p_phone: phone.trim() || null,
+        p_timezone: timezone,
+      });
+      if (profileError) {
+        await supabase.auth.signOut();
+        throw new Error(profileError.message);
       }
 
-      // 3. Crear registro en la tabla users
-      const { error: userError } = await supabase
-        .from('users')
-        .insert([{
-          name: name,
-          email: email,
-          phone: phone || null,
-          member_number: memberNumber,
-          status: 'Inactivo',
-          start_date: new Date().toISOString(),
-          is_activated: true,
-          auth_user_id: authData.user.id,
-          created_at: new Date().toISOString(),
-        }]);
-
-      if (userError) {
-        // Si falla la inserción del usuario, no intentar eliminar porque puede causar errores
-        console.error('Error al crear usuario en DB:', userError);
-        throw new Error('Error al crear el perfil de usuario. Por favor contacta al administrador.');
-      }
-
-      toast.success(`¡Cuenta creada exitosamente! Tu número de miembro es: ${memberNumber}`);
-      
-      // Cambiar a modo login y prellenar el email
-      setMode('login');
-      setPassword('');
-      setConfirmPassword('');
-      setName('');
-      setPhone('');
-      
+      toast.success(`¡Bienvenido a GymStars, ${name.trim().split(' ')[0]}!`);
+      // Carga el perfil y redirige a la zona de usuario
+      await login(email.trim().toLowerCase(), password);
     } catch (error: any) {
       console.error('Error en registro:', error);
       setError(error.message || 'Error al crear la cuenta');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Función para generar número de miembro único
-  const generateUniqueMemberNumber = async (): Promise<string> => {
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    while (attempts < maxAttempts) {
-      try {
-        // Obtener el último número de miembro registrado
-        const { data: lastMember, error } = await supabase
-          .from('users')
-          .select('member_number')
-          .order('member_number', { ascending: false })
-          .limit(1)
-          .single();
-
-        let nextNumber = 1;
-
-        if (!error && lastMember && lastMember.member_number) {
-          // Extraer el número del formato GM-XXXX
-          const match = lastMember.member_number.match(/GM-(\d+)/);
-          if (match) {
-            nextNumber = parseInt(match[1], 10) + 1;
-          }
-        }
-
-        // Formatear con ceros a la izquierda (GM-0001, GM-0002, etc.)
-        const memberNumber = `GM-${String(nextNumber).padStart(4, '0')}`;
-
-        // Verificar que no exista (doble verificación por seguridad)
-        const { data: existing } = await supabase
-          .from('users')
-          .select('member_number')
-          .eq('member_number', memberNumber)
-          .single();
-
-        if (!existing) {
-          return memberNumber;
-        }
-
-        attempts++;
-      } catch (error) {
-        attempts++;
-      }
-    }
-
-    // Si después de varios intentos no se pudo generar, usar timestamp
-    const timestamp = Date.now().toString().slice(-4);
-    return `GM-${timestamp}`;
   };
 
 
