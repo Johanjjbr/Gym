@@ -1,0 +1,17 @@
+{
+  "name": "GymStars",
+  "short_name": "GymStars",
+  "description": "Entrena en casa o en tu gimnasio: rutina de hoy, metas y racha.",
+  "lang": "es",
+  "start_url": "/usuario",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

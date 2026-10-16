@@ -1,23 +1,48 @@
-import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { User, Dumbbell, LogOut, Activity, CreditCard, Calendar, TrendingUp, Menu, X } from 'lucide-react';
+import { Outlet, Link, Navigate, useLocation, useNavigate } from 'react-router';
+import { User, Dumbbell, LogOut, CreditCard, Calendar, TrendingUp, Menu, X, Home, Play } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { ModuleGuard, ProtectedRoute } from '../components/ProtectedRoute';
 import { useState } from 'react';
 
-const menuItems = [
-  { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/usuario/mi-entrenamiento' },
+type MenuItem = { icon: typeof User; label: string; path: string; gymOnly?: boolean; independentOnly?: boolean };
+
+const menuItems: MenuItem[] = [
+  { icon: Home, label: 'Hoy', path: '/usuario/hoy', independentOnly: true },
+  { icon: Play, label: 'Entrenar', path: '/usuario/entrenar', independentOnly: true },
+  { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/usuario/mi-entrenamiento', gymOnly: true },
   { icon: User, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
   { icon: TrendingUp, label: 'Progreso Físico', path: '/usuario/progreso' },
-  { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia' },
-  { icon: CreditCard, label: 'Mis Pagos', path: '/usuario/pagos' },
+  { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia', gymOnly: true },
+  { icon: CreditCard, label: 'Mis Pagos', path: '/usuario/pagos', gymOnly: true },
 ];
+
+/** Barra inferior en el teléfono (quien entrena por su cuenta). */
+const bottomItems: MenuItem[] = [
+  { icon: Home, label: 'Hoy', path: '/usuario/hoy' },
+  { icon: Play, label: 'Entrenar', path: '/usuario/entrenar' },
+  { icon: TrendingUp, label: 'Progreso', path: '/usuario/progreso' },
+  { icon: User, label: 'Perfil', path: '/usuario/mi-perfil' },
+];
+
+/** /usuario -> la pantalla de inicio que corresponde. */
+export function UserHome() {
+  const { user } = useAuth();
+  return <Navigate to={user?.isIndependent ? '/usuario/hoy' : '/usuario/mi-entrenamiento'} replace />;
+}
 
 export function UserLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Usuario independiente (sin gimnasio): sin asistencia ni pagos
+  const isIndependent = user?.isIndependent === true;
+  const visibleItems = menuItems.filter((item) => (isIndependent ? !item.gymOnly : !item.independentOnly));
+  // En el entrenamiento y el cuestionario la barra inferior estorba
+  const showBottomNav = isIndependent && !['/usuario/entrenar', '/usuario/bienvenida'].includes(location.pathname);
+  const brandName = isIndependent ? 'GymStars' : 'GYM Lagunetica';
+  const brandSubtitle = isIndependent ? 'Entrena en casa' : 'Los Teques';
 
   const handleLogout = async () => {
     await logout();
@@ -49,7 +74,7 @@ export function UserLayout() {
                 <Dumbbell className="w-5 h-5 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold tracking-tight">GYM Lagunetica</h1>
+                <h1 className="text-lg font-semibold tracking-tight">{brandName}</h1>
               </div>
             </div>
             <button
@@ -86,8 +111,8 @@ export function UserLayout() {
                 <Dumbbell className="w-6 h-6 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-xl tracking-tight">GYM Lagunetica</h1>
-                <p className="text-xs text-muted-foreground">Los Teques</p>
+                <h1 className="text-xl tracking-tight">{brandName}</h1>
+                <p className="text-xs text-muted-foreground">{brandSubtitle}</p>
               </div>
             </div>
           </div>
@@ -98,7 +123,7 @@ export function UserLayout() {
           {/* Navigation */}
           <nav className="flex-1 p-4 overflow-y-auto">
             <ul className="space-y-1">
-              {menuItems.map((item) => {
+              {visibleItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
                 
@@ -134,7 +159,7 @@ export function UserLayout() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{user?.name || 'Usuario'}</p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {user?.memberNumber || 'Miembro'}
+                  {user?.memberNumber || (isIndependent ? 'Entrena en casa' : 'Miembro')}
                 </p>
               </div>
               <button 
@@ -151,14 +176,49 @@ export function UserLayout() {
         {/* Main Content */}
         <main className={cn(
           "transition-all duration-300",
-          "pt-16 lg:pt-0", // Padding top para móvil (header height)
+          "p-4 sm:p-6 lg:p-8",
+          "pt-20 lg:pt-8", // Espacio para el encabezado del teléfono
           "lg:ml-64", // Margin left para desktop (sidebar width)
-          "p-4 sm:p-6 lg:p-8"
+          showBottomNav && "pb-24 lg:pb-8"
         )}>
-          <ModuleGuard>
-            <Outlet />
-          </ModuleGuard>
+          {/* /usuario no es un módulo con permiso: solo redirige al inicio que corresponde */}
+          {location.pathname.replace(/\/+$/, '') === '/usuario' ? (
+            <UserHome />
+          ) : (
+            <ModuleGuard>
+              <Outlet />
+            </ModuleGuard>
+          )}
         </main>
+
+        {showBottomNav && (
+          <nav
+            className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-[#0f0f16]/95 backdrop-blur pb-[env(safe-area-inset-bottom)]"
+            data-testid="bottom-nav"
+          >
+            <ul className="grid grid-cols-4">
+              {bottomItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.path;
+                return (
+                  <li key={item.path}>
+                    <Link
+                      to={item.path}
+                      className={cn(
+                        "flex flex-col items-center gap-1 py-2.5 text-[11px]",
+                        isActive ? "text-primary" : "text-muted-foreground"
+                      )}
+                      aria-current={isActive ? 'page' : undefined}
+                    >
+                      <Icon className="h-5 w-5" />
+                      {item.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        )}
       </div>
     </ProtectedRoute>
   );

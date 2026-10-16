@@ -18,7 +18,10 @@ interface AuthUser {
   status: string;
   memberNumber?: string;
   gym_id?: string | null;
+  organization_id?: string | null;
   is_super_admin?: boolean;
+  /** Socio sin gimnasio (entrena en casa): organization_id vacío. */
+  isIndependent?: boolean;
 }
 
 interface AuthContextType {
@@ -63,11 +66,24 @@ async function loadProfile(session: Session): Promise<AuthUser | null> {
     };
   }
 
-  const { data: member } = await supabase
-    .from('users')
-    .select('id, name, email, phone, member_number, status, gym_id')
-    .eq('auth_user_id', authUserId)
-    .maybeSingle();
+  const selectMember = () =>
+    supabase
+      .from('users')
+      .select('id, name, email, phone, member_number, status, gym_id, organization_id')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle();
+
+  let { data: member } = await selectMember();
+
+  // Registro de usuario independiente pendiente (p. ej. si el email se
+  // confirmó después del alta): se crea el perfil al primer inicio de sesión.
+  if (!member && session.user.user_metadata?.signup_kind === 'independent') {
+    const { error } = await supabase.rpc('register_independent_user', {
+      p_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+    if (error) throw new Error(error.message);
+    ({ data: member } = await selectMember());
+  }
 
   if (member) {
     return {
@@ -79,9 +95,11 @@ async function loadProfile(session: Session): Promise<AuthUser | null> {
       phone: member.phone || '',
       shift: '',
       status: member.status || 'Activo',
-      memberNumber: member.member_number,
+      memberNumber: member.member_number ?? undefined,
       gym_id: member.gym_id,
+      organization_id: member.organization_id,
       is_super_admin: false,
+      isIndependent: !member.organization_id,
     };
   }
 

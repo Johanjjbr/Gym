@@ -1,6 +1,9 @@
 import { createBrowserRouter } from 'react-router';
 import { Layout } from './pages/Layout';
-import { UserLayout } from './pages/UserLayout';
+import { UserLayout, UserHome } from './pages/UserLayout';
+import { Today } from './pages/Today';
+import { HomeWorkout } from './pages/HomeWorkout';
+import { Onboarding } from './pages/Onboarding';
 import { Dashboard } from './pages/Dashboard';
 import { Users } from './pages/Users';
 import { UserDetail } from './pages/UserDetail';
@@ -18,9 +21,6 @@ import { MyPayments } from './pages/MyPayments';
 import { Login } from './pages/Login';
 import { Activate } from './pages/Activate';
 import { DatabaseDiagnostic } from './pages/DatabaseDiagnostic';
-import { RoutineDiagnostic } from './pages/RoutineDiagnostic';
-import { MigrateRoutines } from './pages/MigrateRoutines';
-import { RoutineAssignmentDebug } from './pages/RoutineAssignmentDebug';
 import { AdminPermissions } from './pages/AdminPermissions';
 import { Exercises } from './pages/Exercises';
 import { ExerciseDetailPage } from './pages/ExerciseDetailPage';
@@ -34,6 +34,11 @@ export const router = createBrowserRouter([
     path: '/login',
     Component: Login,
   },
+  // Ruta pública - Crear cuenta (entrenar por tu cuenta)
+  {
+    path: '/registro',
+    Component: Login,
+  },
   // Ruta pública - Activación de cuenta
   {
     path: '/activar/:token',
@@ -44,36 +49,20 @@ export const router = createBrowserRouter([
     path: '/diagnostico-db',
     Component: DatabaseDiagnostic,
   },
-  // Ruta de migración de rutinas (accesible directamente)
-  {
-    path: '/migrar-rutinas',
-    Component: MigrateRoutines,
-  },
   // Rutas para usuarios regulares
   {
     path: '/usuario',
     Component: UserLayout,
     children: [
-      { 
-        index: true, 
-        loader: () => {
-          // Redirect a mi-entrenamiento cuando acceden a /usuario
-          return new Response(null, {
-            status: 302,
-            headers: {
-              Location: '/usuario/mi-entrenamiento'
-            }
-          });
-        }
-      },
+      { index: true, Component: UserHome },
+      { path: 'hoy', Component: Today },
+      { path: 'entrenar', Component: HomeWorkout },
+      { path: 'bienvenida', Component: Onboarding },
       { path: 'mi-entrenamiento', Component: MyTraining },
       { path: 'mi-perfil', Component: MyProfile },
       { path: 'progreso', Component: MyProgress },
       { path: 'asistencia', Component: MyAttendance },
       { path: 'pagos', Component: MyPayments },
-      { path: 'diagnostico-rutina', Component: RoutineDiagnostic },
-      { path: 'migrar-rutinas', Component: MigrateRoutines },
-      { path: 'debug-asignaciones', Component: RoutineAssignmentDebug },
     ],
   },
 // Rutas protegidas - Staff (Con Layout administrativo)

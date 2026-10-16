@@ -297,10 +297,9 @@ export function MyTraining() {
             <Button
               variant="outline"
               className="border-[#ff3b5c] text-[#ff3b5c] hover:bg-[#ff3b5c] hover:text-white"
-              onClick={() => navigate('/diagnostico-rutinas')}
+              onClick={() => window.location.reload()}
             >
-              <Bug className="w-4 h-4 mr-2" />
-              Ver Diagnóstico
+              Reintentar
             </Button>
           </CardContent>
         </Card>
@@ -942,4 +941,4 @@ export function MyTraining() {
       </Card>
     </div>
   );
-}
+}

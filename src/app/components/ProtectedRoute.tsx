@@ -44,7 +44,7 @@ export function ProtectedRoute({ children, allowedRoles, modulePath, checkModule
 
   if (allowedRoles && !hasRole(allowedRoles)) {
     // Está logueado pero en el área equivocada: llevarlo a la suya
-    return <Navigate to={user?.role === 'Usuario' ? '/usuario/mi-entrenamiento' : '/'} replace />;
+    return <Navigate to={user?.role === 'Usuario' ? '/usuario' : '/'} replace />;
   }
 
   if (!checkModule) return <>{children}</>;
@@ -83,7 +83,7 @@ export function ModuleGuard({ children, fallbackPaths = [] }: { children: ReactN
 function AccessDenied() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const home = user?.role === 'Usuario' ? '/usuario/mi-entrenamiento' : '/';
+  const home = user?.role === 'Usuario' ? '/usuario' : '/';
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-4">
       <div className="text-center space-y-4 max-w-md">
