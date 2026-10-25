@@ -12,7 +12,7 @@ import type { InvoiceRow } from '../lib/billing';
 export const membersOverviewKey = ['users', 'overview'] as const;
 
 const MEMBER_FIELDS =
-  'id, name, email, phone, cedula, member_number, status, is_free_user, plan_id, plan, paid_until, next_payment, start_date, billing_day, billing_start, created_at, plans(id, name, price, duration_days, type)';
+  'id, name, email, phone, cedula, member_number, status, is_free_user, plan_id, plan, paid_until, next_payment, start_date, billing_day, billing_start, created_at, birth_date, guardian_name, guardian_cedula, guardian_phone, guardian_relationship, plans(id, name, price, duration_days, type)';
 
 export function useMembersOverview() {
   return useQuery({

@@ -21,6 +21,7 @@ import { billingDayOf, dueInWords, fmtDate, monthLabel, paidThrough } from '../.
 import { formatMoney } from '../../lib/dashboardHelpers';
 import { lastVisitInWords, type AttendanceSummary, type Visit } from '../../lib/attendanceStats';
 import { addDays } from '../../lib/dashboardHelpers';
+import { MinorBadge } from './MinorBadge';
 
 export type ProfileTab = 'info' | 'pagos' | 'asistencia' | 'rutinas' | 'progreso';
 
@@ -77,6 +78,7 @@ export function MemberProfileHeader(p: Props) {
               <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_PILL[user.status] ?? STATUS_PILL.Inactivo}`}>
                 {user.status}
               </span>
+              <MinorBadge user={user} />
               {account.exempt && (
                 <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">Exento de pago</span>
               )}

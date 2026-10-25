@@ -12,6 +12,8 @@ import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { matchesSearch, type MemberRow } from '../../lib/members';
+import { isMinor, missingGuardian } from '../../lib/minors';
+import { MinorBadge } from '../member/MinorBadge';
 import { checkinDecision, parseMemberCode, sourceLabel, time12, type DayRecord, type Session } from '../../lib/attendanceDay';
 import { useRegisterAttendance } from '../../hooks/useAttendance';
 import { toast } from 'sonner';
@@ -65,6 +67,14 @@ export function CheckInPanel({ rows, inside, recent = [], loading, onCollect }: 
       {
         onSuccess: () => {
           if (d.tone === 'warn' && d.action === 'Entrada' && d.message) toast.warning(row.user.name, { description: d.message });
+          // Menor de edad: avisar para que su entrenador lo supervise
+          if (d.action === 'Entrada' && isMinor(row.user.birth_date) === true) {
+            toast.info(`${row.user.name} es menor de edad`, {
+              description: missingGuardian(row.user)
+                ? 'Debe entrenar con supervisión. Faltan los datos de su representante.'
+                : 'Debe entrenar con supervisión de su entrenador.',
+            });
+          }
           reset();
         },
         onSettled: () => setPendingId(null),
@@ -181,6 +191,7 @@ export function CheckInPanel({ rows, inside, recent = [], loading, onCollect }: 
                       <div className="min-w-0">
                         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
                           <span className="truncate">{u.name}</span>
+                          <MinorBadge user={u} />
                           {s && <span className="shrink-0 rounded-full bg-[#10f94e]/15 px-2 py-0.5 text-[11px] text-[#10f94e]">Dentro desde {time12(s.checkIn)}</span>}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">

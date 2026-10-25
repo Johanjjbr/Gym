@@ -3,6 +3,7 @@
  * estado de pago, última visita, filtros rápidos, búsqueda y orden.
  */
 import { membersWithDebt, nextDueFor, REMINDER_DAYS, type InvoiceRow, type PlanRow } from './billing';
+import { isMinor } from './minors';
 import { daysBetween, type DateStr } from './dashboardHelpers';
 
 export interface MemberListUser {
@@ -22,6 +23,11 @@ export interface MemberListUser {
   billing_day?: number | null;
   billing_start?: string | null;
   created_at?: string | null;
+  birth_date?: string | null;
+  guardian_name?: string | null;
+  guardian_cedula?: string | null;
+  guardian_phone?: string | null;
+  guardian_relationship?: string | null;
   plans?: PlanRow | null;
 }
 
@@ -85,7 +91,7 @@ export function buildMemberRows(
   });
 }
 
-export type QuickFilter = 'todos' | 'activos' | 'deuda' | 'vencen' | 'suspendidos' | 'inactivos';
+export type QuickFilter = 'todos' | 'activos' | 'deuda' | 'vencen' | 'suspendidos' | 'inactivos' | 'menores';
 
 export const QUICK_FILTERS: { key: QuickFilter; label: string }[] = [
   { key: 'todos', label: 'Todos' },
@@ -94,6 +100,7 @@ export const QUICK_FILTERS: { key: QuickFilter; label: string }[] = [
   { key: 'vencen', label: 'Vencen pronto' },
   { key: 'suspendidos', label: 'Suspendidos' },
   { key: 'inactivos', label: 'Inactivos' },
+  { key: 'menores', label: 'Menores' },
 ];
 
 export function matchesQuick(r: MemberRow, f: QuickFilter): boolean {
@@ -103,12 +110,13 @@ export function matchesQuick(r: MemberRow, f: QuickFilter): boolean {
     case 'vencen': return r.payment === 'due-soon';
     case 'suspendidos': return r.user.status === 'Suspendido';
     case 'inactivos': return r.user.status === 'Inactivo';
+    case 'menores': return isMinor(r.user.birth_date) === true;
     default: return true;
   }
 }
 
 export function quickCounts(rows: MemberRow[]): Record<QuickFilter, number> {
-  const c = { todos: 0, activos: 0, deuda: 0, vencen: 0, suspendidos: 0, inactivos: 0 } as Record<QuickFilter, number>;
+  const c = { todos: 0, activos: 0, deuda: 0, vencen: 0, suspendidos: 0, inactivos: 0, menores: 0 } as Record<QuickFilter, number>;
   for (const r of rows) for (const f of QUICK_FILTERS) if (matchesQuick(r, f.key)) c[f.key]++;
   return c;
 }

@@ -33,6 +33,12 @@ export interface Athlete {
     currentDay: number;
   };
   progress?: number; // Porcentaje de completitud
+  /** Para el distintivo de menor de edad */
+  birth_date?: string | null;
+  guardian_name?: string | null;
+  guardian_cedula?: string | null;
+  guardian_phone?: string | null;
+  guardian_relationship?: string | null;
 }
 
 // Función para obtener la fecha actual en formato YYYY-MM-DD
@@ -40,6 +46,14 @@ const getToday = () => {
   const today = new Date();
   return today.toISOString().split('T')[0];
 };
+
+const minorFields = (u: any) => ({
+  birth_date: u.birth_date ?? null,
+  guardian_name: u.guardian_name ?? null,
+  guardian_cedula: u.guardian_cedula ?? null,
+  guardian_phone: u.guardian_phone ?? null,
+  guardian_relationship: u.guardian_relationship ?? null,
+});
 
 // Hook principal
 export const useTodaysAthletes = () => {
@@ -102,7 +116,7 @@ export const useTodaysAthletes = () => {
         const assignment = assignments.find((a: UserRoutineAssignment) => a.user_id === user.id);
         
         if (!assignment) {
-          return { id: user.id, name: user.name, photo: user.photo };
+          return { id: user.id, name: user.name, photo: user.photo, ...minorFields(user) };
         }
 
         const routine = routines.find(r => r.id === assignment.routine_id);
@@ -130,6 +144,7 @@ export const useTodaysAthletes = () => {
             currentDay: currentDay,
           } : undefined,
           progress: Math.round(progress),
+          ...minorFields(user),
         };
       });
 

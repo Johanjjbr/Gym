@@ -9,6 +9,8 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Dumbbell, Loader2, AlertCircle, UserPlus, LogIn } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { birthDateError, maskDate, parseDateInput } from '../lib/memberFields';
+import { isMinor, todayIso } from '../lib/minors';
 
 export function Login() {
   const location = useLocation();
@@ -18,6 +20,9 @@ export function Login() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [birth, setBirth] = useState('');
+  const birthIso = parseDateInput(birth);
+  const signupMinor = mode === 'register' && isMinor(birthIso) === true;
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -69,6 +74,12 @@ export function Login() {
       return;
     }
 
+    const birthMsg = birth.trim() ? birthDateError(birth, todayIso()) : 'Escribe tu fecha de nacimiento';
+    if (birthMsg) {
+      setError(birthMsg);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -83,6 +94,7 @@ export function Login() {
           data: {
             name: name.trim(),
             phone: phone.trim() || null,
+            birth_date: birthIso,
             timezone,
             signup_kind: 'independent',
           },
@@ -107,6 +119,7 @@ export function Login() {
         p_name: name.trim(),
         p_phone: phone.trim() || null,
         p_timezone: timezone,
+        p_birth_date: birthIso,
       });
       if (profileError) {
         await supabase.auth.signOut();
@@ -252,6 +265,31 @@ export function Login() {
                   disabled={isLoading}
                   className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
                 />
+              </div>
+            )}
+
+            {mode === 'register' && (
+              <div className="space-y-2">
+                <Label htmlFor="birth" className="text-gray-300">
+                  Fecha de nacimiento
+                </Label>
+                <Input
+                  id="birth"
+                  inputMode="numeric"
+                  placeholder="DD/MM/AAAA"
+                  maxLength={10}
+                  value={birth}
+                  onChange={(e) => setBirth(maskDate(e.target.value))}
+                  disabled={isLoading}
+                  required
+                  className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
+                  data-testid="signup-birth"
+                />
+                {signupMinor && (
+                  <p className="rounded-md border border-[#eab308]/40 bg-[#eab308]/10 px-3 py-2 text-xs text-[#eab308]" data-testid="signup-minor-warning">
+                    Eres menor de edad: entrena siempre acompañado y con permiso de tu padre, madre o representante.
+                  </p>
+                )}
               </div>
             )}
 

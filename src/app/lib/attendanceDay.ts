@@ -12,7 +12,10 @@ export interface DayRecord {
   time: string; // HH:mm:ss
   type: 'Entrada' | 'Salida' | string;
   source?: string | null;
-  users?: { name?: string | null; member_number?: string | null } | null;
+  users?: {
+    name?: string | null; member_number?: string | null; birth_date?: string | null;
+    guardian_name?: string | null; guardian_cedula?: string | null; guardian_phone?: string | null; guardian_relationship?: string | null;
+  } | null;
 }
 
 export interface Session {
@@ -20,6 +23,8 @@ export interface Session {
   userId: string;
   name: string;
   memberNumber: string | null;
+  /** Datos para el distintivo de menor de edad */
+  member?: DayRecord['users'];
   checkIn: string; // HH:mm
   checkOut: string | null;
   /** Minutos dentro (si ya salió) */
@@ -61,6 +66,7 @@ export function pairSessions(records: DayRecord[]): Session[] {
           userId,
           name: r.users?.name ?? 'Socio',
           memberNumber: r.users?.member_number ?? null,
+          member: r.users ?? null,
           checkIn: hhmm(r.time),
           checkOut: null,
           minutes: null,

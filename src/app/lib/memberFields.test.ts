@@ -106,6 +106,25 @@ describe('userSchema (registro completo)', () => {
     });
     expect(msg.birth_date).toMatch(/Revisa el año/);
   });
+  it('menor de edad: exige representante', () => {
+    const r = userSchema.safeParse({ ...base, birth_date: `01/01/${new Date().getFullYear() - 10}` });
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(r.error.issues.map((i) => i.path[0])).toEqual(
+      expect.arrayContaining(['guardian_name', 'guardian_cedula', 'guardian_phone', 'guardian_relationship']),
+    );
+  });
+  it('menor de edad con representante: normaliza sus datos', () => {
+    const r = userSchema.safeParse({
+      ...base, birth_date: `01/01/${new Date().getFullYear() - 10}`,
+      guardian_name: ' maría  pérez ', guardian_cedula: 'V-12.345.678', guardian_phone: '04121234567', guardian_relationship: 'Madre',
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data).toMatchObject({ guardian_name: 'maría pérez', guardian_cedula: '12345678', guardian_phone: '0412-1234567' });
+  });
+  it('adulto: no pide representante', () => {
+    expect(userSchema.safeParse({ ...base, birth_date: '12/05/1990' }).success).toBe(true);
+  });
 });
 
 describe('próximo pago sugerido (socios migrados)', () => {

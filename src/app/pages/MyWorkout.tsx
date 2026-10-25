@@ -6,6 +6,8 @@ import { Progress } from '../components/ui/progress';
 import { Skeleton } from '../components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { UserCheck, Dumbbell, AlertTriangle } from 'lucide-react';
+import { MinorBadge } from '../components/member/MinorBadge';
+import { isMinor } from '../lib/minors';
 
 const getInitials = (name: string) => {
   return name
@@ -17,13 +19,16 @@ const getInitials = (name: string) => {
 };
 
 const AthleteCard = ({ athlete }: { athlete: Athlete }) => (
-  <div className="flex items-center gap-4 p-4 bg-card rounded-lg border border-border">
+  <div className={`flex items-center gap-4 p-4 bg-card rounded-lg border ${isMinor(athlete.birth_date) ? 'border-[#3b82f6]/50' : 'border-border'}`}>
     <Avatar className="w-12 h-12">
       <AvatarImage src={athlete.photo} alt={athlete.name} />
       <AvatarFallback>{getInitials(athlete.name)}</AvatarFallback>
     </Avatar>
     <div className="flex-1">
-      <h4 className="font-semibold text-lg">{athlete.name}</h4>
+      <h4 className="flex flex-wrap items-center gap-2 font-semibold text-lg">
+        {athlete.name}
+        <MinorBadge user={athlete} />
+      </h4>
       {athlete.routine ? (
         <div className="text-sm text-muted-foreground">
           <span>{athlete.routine.name}</span>
@@ -102,7 +107,8 @@ export function MyWorkout() {
             </Alert>
           ) : athletes && athletes.length > 0 ? (
             <div className="space-y-4">
-              {athletes.map((athlete) => (
+              {/* Menores primero: requieren supervisión */}
+              {[...athletes].sort((a, b) => Number(isMinor(b.birth_date) === true) - Number(isMinor(a.birth_date) === true)).map((athlete) => (
                 <AthleteCard key={athlete.id} athlete={athlete} />
               ))}
             </div>

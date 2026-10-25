@@ -9,6 +9,7 @@ import { cn } from '../components/ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { todaysDay, useDayExercises, useMyStats } from '../hooks/useHomeWorkout';
 import { greeting, percent, streakLabel, weekLabel } from '../lib/homeWorkout';
+import { isMinor } from '../lib/minors';
 
 export function Today() {
   const { user } = useAuth();
@@ -41,6 +42,14 @@ export function Today() {
           {doneToday ? 'Ya entrenaste hoy. ¡Bien hecho!' : 'Esto es lo que toca hoy.'}
         </p>
       </div>
+
+      {isMinor(user?.birth_date) === true && (
+        <p className="rounded-xl border border-[#eab308]/40 bg-[#eab308]/10 px-4 py-3 text-sm text-[#eab308]" data-testid="minor-notice">
+          {user?.isIndependent
+            ? 'Eres menor de edad: entrena acompañado de un adulto y con permiso de tu representante.'
+            : 'Eres menor de edad: entrena siempre con la supervisión de tu entrenador.'}
+        </p>
+      )}
 
       {/* Entrenamiento de hoy */}
       {stats.routine ? (

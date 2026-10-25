@@ -54,7 +54,7 @@ describe('buildMemberRows', () => {
   });
 
   it('cuenta los filtros rápidos', () => {
-    expect(quickCounts(rows)).toEqual({ todos: 7, activos: 5, deuda: 2, vencen: 1, suspendidos: 1, inactivos: 1 });
+    expect(quickCounts(rows)).toEqual({ todos: 7, activos: 5, deuda: 2, vencen: 1, suspendidos: 1, inactivos: 1, menores: 0 });
   });
 
   it('ordena por estado de pago (deudores primero, el más atrasado arriba)', () => {

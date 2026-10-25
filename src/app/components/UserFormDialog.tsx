@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronDown, HeartPulse, IdCard, Info, Loader2, Phone, UserRound } from 'lucide-react';
+import { Baby, ChevronDown, HeartPulse, IdCard, Info, Loader2, Phone, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { userSchema, type UserFormData, type UserFormInput } from '../lib/validations';
 import { useCreateUser, useUpdateUser } from '../hooks/useUsers';
@@ -25,6 +25,7 @@ import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { formatMoney, toDateOnly } from '../lib/dashboardHelpers';
 import { ageOn, birthDateError, maskDate, normalizeHeight, parseDateInput, suggestedFirstDue, toDisplayDate } from '../lib/memberFields';
+import { ADULT_AGE, GUARDIAN_RELATIONSHIPS } from '../lib/minors';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -97,6 +98,10 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
             notes: user.notes ?? '',
             medical_notes: user.medical_notes ?? '',
             is_free_user: user.is_free_user === true,
+            guardian_name: user.guardian_name ?? '',
+            guardian_cedula: user.guardian_cedula ?? '',
+            guardian_phone: user.guardian_phone ?? '',
+            guardian_relationship: user.guardian_relationship ?? '',
           }
         : { status: 'Activo', start_date: today, billing_start: today, is_free_user: false, gender: '', plan_id: '' },
     [user, today],
@@ -129,7 +134,9 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
       : `Primer pago el ${firstDue.split('-').reverse().join('/')}; luego el día ${Number(firstDue.slice(8, 10))} de cada mes`;
   const billingDayChanged = isEdit && !!watch('billing_day') && String(watch('billing_day')) !== String(defaults.billing_day ?? '');
   const birthIso = parseDateInput(birthText);
-  const birthHint = birthIso && !birthDateError(birthText, today) ? `${ageOn(birthIso, today)} años` : 'Opcional';
+  const birthAge = birthIso && !birthDateError(birthText, today) ? ageOn(birthIso, today) : null;
+  const isMinorMember = birthAge !== null && birthAge < ADULT_AGE;
+  const birthHint = birthAge !== null ? `${birthAge} años${isMinorMember ? ' · menor de edad' : ''}` : 'Opcional';
 
   const onSubmit = async (data: UserFormData) => {
     // 1) Duplicados con mensaje claro
@@ -163,6 +170,13 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
       notes: emptyToNull(data.notes?.trim()),
       medical_notes: emptyToNull(data.medical_notes?.trim()),
     };
+    // Representante: solo se envía si es menor (si deja de serlo, se conserva lo que había)
+    if (isMinorMember) {
+      payload.guardian_name = data.guardian_name ?? null;
+      payload.guardian_cedula = data.guardian_cedula ?? null;
+      payload.guardian_phone = data.guardian_phone ?? null;
+      payload.guardian_relationship = data.guardian_relationship ?? null;
+    }
     // El estado Suspendido no se toca desde aquí
     if (!isSuspended) payload.status = data.status === 'Inactivo' ? 'Inactivo' : 'Activo';
     if (!isEdit) {
@@ -248,6 +262,37 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
                 />
               </Field>
             </Section>
+
+            {isMinorMember && (
+              <Section icon={Baby} title="Representante (menor de edad)">
+                <p className="text-sm text-muted-foreground sm:col-span-2">
+                  Tiene {birthAge} años. Los datos del padre, madre o tutor son obligatorios y su entrenador verá que debe supervisarlo.
+                </p>
+                <Field label="Nombre del representante" required error={errors.guardian_name?.message} className="sm:col-span-2">
+                  <Input {...register('guardian_name')} placeholder="Nombre y apellido" autoComplete="off" data-testid="input-guardian-name" />
+                </Field>
+                <Field label="Cédula" required error={errors.guardian_cedula?.message}>
+                  <Input {...register('guardian_cedula')} inputMode="numeric" placeholder="V-12345678" autoComplete="off" data-testid="input-guardian-cedula" />
+                </Field>
+                <Field label="Teléfono" required error={errors.guardian_phone?.message}>
+                  <Input {...register('guardian_phone')} inputMode="tel" placeholder="0414-1234567" autoComplete="off" data-testid="input-guardian-phone" />
+                </Field>
+                <Field label="Parentesco" required error={errors.guardian_relationship?.message} className="sm:col-span-2">
+                  <Controller
+                    control={control}
+                    name="guardian_relationship"
+                    render={({ field }) => (
+                      <Segmented
+                        options={GUARDIAN_RELATIONSHIPS.map((r) => ({ value: r, label: r }))}
+                        value={(field.value as string | undefined) ?? ''}
+                        onChange={field.onChange}
+                        ariaLabel="Parentesco"
+                      />
+                    )}
+                  />
+                </Field>
+              </Section>
+            )}
 
             <Section icon={Phone} title="Contacto">
               <Field label="Teléfono" required error={errors.phone?.message}>
@@ -505,7 +550,7 @@ function Segmented({ options, value, onChange, ariaLabel }: {
   options: { value: string; label: string }[]; value: string; onChange: (v: string) => void; ariaLabel: string;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-border p-0.5" role="radiogroup" aria-label={ariaLabel}>
+    <div className="inline-flex flex-wrap rounded-lg border border-border p-0.5" role="radiogroup" aria-label={ariaLabel}>
       {options.map((o) => (
         <button
           key={o.value}

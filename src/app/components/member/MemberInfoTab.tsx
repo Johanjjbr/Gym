@@ -3,10 +3,11 @@
  * datos faltantes (p. ej. contacto de emergencia) y acceso directo a Editar.
  */
 import type { ReactNode } from 'react';
-import { AlertCircle, ChevronRight, Dumbbell, HeartPulse, IdCard, Pencil, Phone, StickyNote, UserRound } from 'lucide-react';
+import { AlertCircle, Baby, ChevronRight, Dumbbell, HeartPulse, IdCard, Pencil, Phone, StickyNote, UserRound } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { fmtDate } from '../../lib/billing';
+import { isMinor, missingGuardian } from '../../lib/minors';
 
 interface Props {
   user: any;
@@ -36,7 +37,9 @@ const IMPORTANT_FIELDS: [string, string][] = [
 ];
 
 export function MemberInfoTab({ user, routines, loadingRoutines, onEdit, onAssignTrainer, onRemoveTrainer, onOpenRoutines }: Props) {
+  const minor = isMinor(user.birth_date) === true;
   const missing = IMPORTANT_FIELDS.filter(([k]) => !user[k]).map(([, label]) => label);
+  if (missingGuardian(user)) missing.unshift('datos del representante (es menor de edad)');
   const years = age(user.birth_date);
   const imc = user.imc ? Number(user.imc) : user.weight && user.height ? Number(user.weight) / (Number(user.height) / 100) ** 2 : null;
   const activeRoutine = routines?.find((r: any) => r.is_active) ?? routines?.[0];
@@ -56,6 +59,17 @@ export function MemberInfoTab({ user, routines, loadingRoutines, onEdit, onAssig
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {minor && (
+          <Section icon={Baby} title="Menor de edad · Representante">
+            <p className="col-span-2 text-xs text-muted-foreground">Debe entrenar bajo la supervisión de su entrenador.</p>
+            <Field label="Nombre" value={user.guardian_name} />
+            <Field label="Parentesco" value={user.guardian_relationship} />
+            <Field label="Cédula" value={user.guardian_cedula} mono />
+            <Field label="Teléfono" value={user.guardian_phone} href={user.guardian_phone ? `tel:${user.guardian_phone}` : undefined} />
+            <Field label="Autorizó" value={user.guardian_consent_at ? fmtDate(String(user.guardian_consent_at).slice(0, 10)) : null} />
+          </Section>
+        )}
+
         <Section icon={Phone} title="Contacto">
           <Field label="Teléfono" value={user.phone} href={user.phone ? `tel:${user.phone}` : undefined} />
           <Field label="Email" value={user.email} href={user.email ? `mailto:${user.email}` : undefined} />

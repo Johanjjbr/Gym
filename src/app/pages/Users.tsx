@@ -40,6 +40,7 @@ import {
 } from '../lib/billing';
 import { formatMoney, toDateOnly } from '../lib/dashboardHelpers';
 import { lastVisitInWords } from '../lib/attendanceStats';
+import { MinorBadge } from '../components/member/MinorBadge';
 
 const PAGE_SIZE = 25;
 
@@ -240,7 +241,10 @@ export function Users() {
                               {u.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
                             </span>
                             <span className="min-w-0">
-                              <span className="block truncate font-medium">{u.name}</span>
+                              <span className="flex items-center gap-2">
+                                <span className="truncate font-medium">{u.name}</span>
+                                <MinorBadge user={u} />
+                              </span>
                               <span className="block text-xs text-muted-foreground">
                                 {[u.member_number, u.cedula && `CI ${u.cedula}`].filter(Boolean).join(' · ')}
                               </span>

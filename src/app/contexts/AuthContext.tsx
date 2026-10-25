@@ -22,6 +22,8 @@ interface AuthUser {
   is_super_admin?: boolean;
   /** Socio sin gimnasio (entrena en casa): organization_id vacío. */
   isIndependent?: boolean;
+  /** AAAA-MM-DD (solo socios) */
+  birth_date?: string | null;
 }
 
 interface AuthContextType {
@@ -69,7 +71,7 @@ async function loadProfile(session: Session): Promise<AuthUser | null> {
   const selectMember = () =>
     supabase
       .from('users')
-      .select('id, name, email, phone, member_number, status, gym_id, organization_id')
+      .select('id, name, email, phone, member_number, status, gym_id, organization_id, birth_date')
       .eq('auth_user_id', authUserId)
       .maybeSingle();
 
@@ -100,6 +102,7 @@ async function loadProfile(session: Session): Promise<AuthUser | null> {
       organization_id: member.organization_id,
       is_super_admin: false,
       isIndependent: !member.organization_id,
+      birth_date: member.birth_date ?? null,
     };
   }
 

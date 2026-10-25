@@ -8,6 +8,7 @@ import {
   birthDateError, cedulaError, cleanText, formatPhone, nameError, normalizeCedula, normalizeEmail,
   firstDueError, normalizeHeight, parseDateInput, phoneError, startDateError,
 } from './memberFields';
+import { isMinor } from './minors';
 
 const todayStr = () => {
   const d = new Date();
@@ -142,6 +143,23 @@ plan: z.string()
 
   /** Exento de pago: no se le generan facturas ni se le suspende por deuda. */
   is_free_user: z.boolean().optional(),
+
+  // Representante: obligatorio si el socio es menor de edad (ver superRefine)
+  guardian_name: z.string().optional().transform((v) => cleanText(v) || undefined),
+  guardian_cedula: z.string().optional().transform((v) => (v && v.trim() ? normalizeCedula(v) : undefined)),
+  guardian_phone: z.string().optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
+  guardian_relationship: z.string().max(40, 'Demasiado largo').optional().transform((v) => cleanText(v) || undefined),
+}).superRefine((data, ctx) => {
+  if (isMinor(data.birth_date, todayStr()) !== true) return;
+  const issue = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+  if (!data.guardian_name) issue('guardian_name', 'Es menor de edad: escribe el nombre del representante');
+  else if (nameError(data.guardian_name)) issue('guardian_name', nameError(data.guardian_name)!);
+  if (!data.guardian_cedula) issue('guardian_cedula', 'La cédula del representante es requerida');
+  else if (cedulaError(data.guardian_cedula)) issue('guardian_cedula', cedulaError(data.guardian_cedula)!);
+  if (!data.guardian_phone) issue('guardian_phone', 'El teléfono del representante es requerido');
+  else if (phoneError(data.guardian_phone)) issue('guardian_phone', phoneError(data.guardian_phone)!);
+  else data.guardian_phone = formatPhone(data.guardian_phone);
+  if (!data.guardian_relationship) issue('guardian_relationship', 'Indica el parentesco');
 });
 
 export type UserFormData = z.infer<typeof userSchema>;

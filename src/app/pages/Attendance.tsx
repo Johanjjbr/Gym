@@ -22,6 +22,7 @@ import {
 } from '../lib/attendanceDay';
 import { formatDuration } from '../lib/attendanceStats';
 import { addDays, toDateOnly } from '../lib/dashboardHelpers';
+import { MinorBadge } from '../components/member/MinorBadge';
 
 const LONG_STAY_MIN = 4 * 60;
 
@@ -134,7 +135,10 @@ export function Attendance() {
                       <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => navigate(`/usuarios/${s.userId}`)}>
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#10f94e]/15 text-xs font-semibold text-[#10f94e]">{initials(s.name)}</span>
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium">{s.name}</span>
+                          <span className="flex items-center gap-2">
+                            <span className="truncate text-sm font-medium">{s.name}</span>
+                            {s.member && <MinorBadge user={s.member} />}
+                          </span>
                           <span className={`block text-xs ${long ? 'text-[#eab308]' : 'text-muted-foreground'}`}>
                             {time12(s.checkIn)} · {formatDuration(mins) === '—' ? 'recién' : formatDuration(mins)}
                             {long && ' · ¿olvidó marcar salida?'}
@@ -277,6 +281,7 @@ function DayHistory({ today, todaySessions, todayRecords }: { today: string; tod
                   <tr key={s.key} className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/40" onClick={() => navigate(`/usuarios/${s.userId}`)}>
                     <td className="px-3 py-2.5">
                       <span className="font-medium">{s.name}</span>
+                      {s.member && <MinorBadge user={s.member} className="ml-2" />}
                       {s.memberNumber && <span className="ml-2 text-xs text-muted-foreground">{s.memberNumber}</span>}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums">{time12(s.checkIn)}</td>

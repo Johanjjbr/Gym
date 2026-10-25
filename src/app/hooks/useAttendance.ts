@@ -135,7 +135,7 @@ export function useAttendanceDay(date: string) {
     queryFn: async () => {
       const { data, error } = await scopeToBranch(supabase
         .from('attendance')
-        .select('id, user_id, date, time, type, source, users(name, member_number)'))
+        .select('id, user_id, date, time, type, source, users(name, member_number, birth_date, guardian_name, guardian_cedula, guardian_phone, guardian_relationship)'))
         .eq('date', date)
         .order('time', { ascending: true });
       if (error) throw new Error(error.message);
