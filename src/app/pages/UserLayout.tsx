@@ -5,19 +5,18 @@ import { useAuth } from '../contexts/AuthContext';
 import { ModuleGuard, ProtectedRoute } from '../components/ProtectedRoute';
 import { useState } from 'react';
 
-type MenuItem = { icon: typeof User; label: string; path: string; gymOnly?: boolean; independentOnly?: boolean };
+type MenuItem = { icon: typeof User; label: string; path: string; gymOnly?: boolean };
 
 const menuItems: MenuItem[] = [
-  { icon: Home, label: 'Hoy', path: '/usuario/hoy', independentOnly: true },
-  { icon: Play, label: 'Entrenar', path: '/usuario/entrenar', independentOnly: true },
-  { icon: Dumbbell, label: 'Mi Entrenamiento', path: '/usuario/mi-entrenamiento', gymOnly: true },
+  { icon: Home, label: 'Hoy', path: '/usuario/hoy' },
+  { icon: Play, label: 'Entrenar', path: '/usuario/entrenar' },
   { icon: User, label: 'Mi Perfil', path: '/usuario/mi-perfil' },
   { icon: TrendingUp, label: 'Progreso Físico', path: '/usuario/progreso' },
   { icon: Calendar, label: 'Asistencia', path: '/usuario/asistencia', gymOnly: true },
   { icon: CreditCard, label: 'Mis Pagos', path: '/usuario/pagos', gymOnly: true },
 ];
 
-/** Barra inferior en el teléfono (quien entrena por su cuenta). */
+/** Barra inferior en el teléfono. */
 const bottomItems: MenuItem[] = [
   { icon: Home, label: 'Hoy', path: '/usuario/hoy' },
   { icon: Play, label: 'Entrenar', path: '/usuario/entrenar' },
@@ -28,7 +27,7 @@ const bottomItems: MenuItem[] = [
 /** /usuario -> la pantalla de inicio que corresponde. */
 export function UserHome() {
   const { user } = useAuth();
-  return <Navigate to={user?.isIndependent ? '/usuario/hoy' : '/usuario/mi-entrenamiento'} replace />;
+  return <Navigate to="/usuario/hoy" replace />;
 }
 
 export function UserLayout() {
@@ -38,11 +37,11 @@ export function UserLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   // Usuario independiente (sin gimnasio): sin asistencia ni pagos
   const isIndependent = user?.isIndependent === true;
-  const visibleItems = menuItems.filter((item) => (isIndependent ? !item.gymOnly : !item.independentOnly));
+  const visibleItems = menuItems.filter((item) => !(isIndependent && item.gymOnly));
   // En el entrenamiento y el cuestionario la barra inferior estorba
-  const showBottomNav = isIndependent && !['/usuario/entrenar', '/usuario/bienvenida'].includes(location.pathname);
-  const brandName = isIndependent ? 'GymStars' : 'GYM Lagunetica';
-  const brandSubtitle = isIndependent ? 'Entrena en casa' : 'Los Teques';
+  const showBottomNav = !['/usuario/entrenar', '/usuario/bienvenida'].includes(location.pathname);
+  const brandName = 'GymStars';
+  const brandSubtitle = isIndependent ? 'Entrena en casa' : 'Socio del gimnasio';
 
   const handleLogout = async () => {
     await logout();

@@ -20,6 +20,7 @@ import { MemberPaymentsTab } from '../components/member/MemberPaymentsTab';
 import { MemberProfileHeader, type ProfileTab } from '../components/member/MemberProfileHeader';
 import { MemberInfoTab } from '../components/member/MemberInfoTab';
 import { MemberAttendanceTab } from '../components/member/MemberAttendanceTab';
+import { MemberTrainingTab } from '../components/member/MemberTrainingTab';
 import { CollectPaymentDialog } from '../components/billing/CollectPaymentDialog';
 import { UserFormDialog } from '../components/UserFormDialog';
 import { useMemberAccount } from '../hooks/useMemberAccount';
@@ -82,7 +83,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
   
   // Pestaña activa en la URL (?tab=pagos) para poder enlazar y volver con "atrás"
   const [params, setParams] = useSearchParams();
-  const TABS: ProfileTab[] = ['info', 'pagos', 'asistencia', 'rutinas', 'progreso'];
+  const TABS: ProfileTab[] = ['info', 'pagos', 'asistencia', 'entrenamientos', 'rutinas', 'progreso'];
   const tab: ProfileTab = TABS.includes(params.get('tab') as ProfileTab) ? (params.get('tab') as ProfileTab) : 'info';
   const setTab = (t: ProfileTab) => {
     const next = new URLSearchParams(params);
@@ -274,6 +275,7 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
             {account.state === 'due-soon' && <span className="h-2 w-2 rounded-full bg-[#eab308]" aria-label="vence pronto" />}
           </TabsTrigger>
           <TabsTrigger value="asistencia">Asistencia</TabsTrigger>
+          <TabsTrigger value="entrenamientos">Entrenamientos</TabsTrigger>
           <TabsTrigger value="rutinas">Rutinas</TabsTrigger>
           <TabsTrigger value="progreso">Progreso físico</TabsTrigger>
         </TabsList>
@@ -296,6 +298,10 @@ const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0
 
         <TabsContent value="asistencia">
           <MemberAttendanceTab visits={visits} summary={attendanceSummary} loading={loadingVisits} today={account.today} />
+        </TabsContent>
+
+        <TabsContent value="entrenamientos">
+          <MemberTrainingTab userId={user.id} />
         </TabsContent>
 
         <TabsContent value="rutinas" className="space-y-6">

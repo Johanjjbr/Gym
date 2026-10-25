@@ -182,3 +182,44 @@ export function greeting(name: string | undefined, d = new Date()): string {
   const first = name?.trim().split(/\s+/)[0];
   return first ? `${part}, ${first}` : part;
 }
+
+// ---------------------------------------------------------------------------
+// Registro de series con peso
+// ---------------------------------------------------------------------------
+
+/** Equipos con los que no se anota peso. */
+const NO_WEIGHT_EQUIPMENT = ['body weight', 'assisted', 'stability ball', 'roller', 'wheel roller', 'band', 'resistance band', 'bosu ball'];
+
+/** ¿Se anota peso y repeticiones? (con pesas o máquinas y por repeticiones, no por tiempo). */
+export function isWeighted(equipment: string | null | undefined, reps: string | null | undefined): boolean {
+  if (!equipment || timedSeconds(reps) !== null) return false;
+  return !NO_WEIGHT_EQUIPMENT.includes(equipment.trim().toLowerCase());
+}
+
+/** "10" -> 10, "8-12" -> 8, "8 por lado" -> 8; sin número -> null */
+export function repsNumber(reps: string | null | undefined): number | null {
+  const m = (reps ?? '').match(/\d+/);
+  return m ? Number(m[0]) : null;
+}
+
+export interface SetValues {
+  reps: number | null;
+  weight: number | null;
+}
+
+/**
+ * Valores propuestos para la serie `n` (1..): los de esa misma serie la última
+ * vez; si no, los de la última serie anterior; si no, las repeticiones indicadas.
+ */
+export function suggestedSet(n: number, last: { set_number: number; reps: number | null; weight: number | null }[] | undefined, prescribed: string): SetValues {
+  const same = last?.find((s) => s.set_number === n);
+  const prev = last && last.length ? [...last].sort((a, b) => b.set_number - a.set_number).find((s) => s.set_number <= n) ?? last[last.length - 1] : undefined;
+  const src = same ?? prev;
+  return { reps: src?.reps ?? repsNumber(prescribed), weight: src?.weight ?? null };
+}
+
+/** "12,5" -> 12.5; vacío o inválido -> null; fuera de rango -> null */
+export function parseWeight(text: string): number | null {
+  const n = Number(text.trim().replace(',', '.'));
+  return text.trim() !== '' && Number.isFinite(n) && n >= 0 && n <= 1000 ? Math.round(n * 100) / 100 : null;
+}

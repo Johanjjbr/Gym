@@ -32,6 +32,8 @@ export function Today() {
   }
 
   const doneToday = stats.today_session?.completed === true;
+  const checkedIn = stats.checked_in_today === true;
+  const restDay = !!stats.routine && !!exercises && exercises.length === 0;
   const started = !!stats.today_session && !doneToday;
 
   return (
@@ -39,7 +41,7 @@ export function Today() {
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">{greeting(user?.name)}</h2>
         <p className="text-sm text-muted-foreground">
-          {doneToday ? 'Ya entrenaste hoy. ¡Bien hecho!' : 'Esto es lo que toca hoy.'}
+          {doneToday ? 'Ya entrenaste hoy. ¡Bien hecho!' : restDay ? 'Hoy toca descansar.' : 'Esto es lo que toca hoy.'}
         </p>
       </div>
 
@@ -48,6 +50,12 @@ export function Today() {
           {user?.isIndependent
             ? 'Eres menor de edad: entrena acompañado de un adulto y con permiso de tu representante.'
             : 'Eres menor de edad: entrena siempre con la supervisión de tu entrenador.'}
+        </p>
+      )}
+
+      {checkedIn && (
+        <p className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary" data-testid="checked-in">
+          Marcaste entrada en el gimnasio hoy: ya cuenta para tu meta semanal.
         </p>
       )}
 
@@ -61,6 +69,11 @@ export function Today() {
                   {stats.routine.schedule_mode === 'sequence' ? `Día ${day} de ${stats.routine.days}` : 'Rutina de hoy'}
                 </p>
                 <h3 className="mt-1 truncate text-lg font-semibold">{stats.routine.name}</h3>
+                {stats.routine.source === 'trainer' && (
+                  <p className="text-xs text-muted-foreground">
+                    Asignada por {stats.routine.trainer_name ?? 'tu entrenador'}
+                  </p>
+                )}
                 <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                   {stats.routine.minutes && (
                     <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> ~{stats.routine.minutes} min</span>
@@ -85,7 +98,11 @@ export function Today() {
               </ul>
             )}
 
-            {!doneToday && (
+            {restDay && (
+              <p className="mt-4 text-sm text-muted-foreground" data-testid="rest-day">Tu rutina no tiene ejercicios hoy. Descansa y vuelve mañana.</p>
+            )}
+
+            {!doneToday && !restDay && (
               <Button asChild size="lg" className="mt-5 w-full" data-testid="start-workout">
                 <Link to="/usuario/entrenar">
                   <Play className="mr-2 h-4 w-4" /> {started ? 'Continuar entrenamiento' : 'Empezar'}
@@ -98,11 +115,10 @@ export function Today() {
         <Card>
           <CardContent className="p-5 text-sm">
             <p className="font-medium">Todavía no tienes una rutina.</p>
-            {user?.isIndependent ? (
-              <Button asChild className="mt-3"><Link to="/usuario/bienvenida">Armar mi plan</Link></Button>
-            ) : (
-              <p className="mt-1 text-muted-foreground">Tu entrenador te asignará una pronto.</p>
-            )}
+            <p className="mt-1 text-muted-foreground">
+              {stats.is_gym_member ? 'Tu entrenador puede asignarte una, o elige un plan para empezar ya.' : 'Responde unas preguntas y te armamos uno.'}
+            </p>
+            <Button asChild className="mt-3"><Link to="/usuario/bienvenida">Armar mi plan</Link></Button>
           </CardContent>
         </Card>
       )}
@@ -155,8 +171,8 @@ export function Today() {
           <Trophy className="h-5 w-5 text-primary" />
           <span>
             {stats.total_sessions === 0
-              ? 'Tu primer entrenamiento suma 50 XP.'
-              : `${stats.total_sessions} ${stats.total_sessions === 1 ? 'entrenamiento completado' : 'entrenamientos completados'} · ${stats.xp} XP`}
+              ? 'Cada día que entrenas (en la app o en el gym) suma 50 XP.'
+              : `${stats.total_sessions} ${stats.total_sessions === 1 ? 'día entrenado' : 'días entrenados'} · ${stats.xp} XP`}
           </span>
         </CardContent>
       </Card>

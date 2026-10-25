@@ -7,14 +7,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { CheckCircle2, ChevronLeft, Dumbbell, Flame, Loader2, Pause, Play, SkipForward, Star, Timer, X } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Card, CardContent } from '../components/ui/card';
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  todaysDay, useDayExercises, useFinishWorkout, useLogExercise, useMyStats, useSessionLogs, useStartSession,
-  type DayExercise, type FinishResult,
+  todaysDay, useDayExercises, useFinishWorkout, useLastSets, useLogExercise, useMyStats, useSessionLogs, useStartSession,
+  type DayExercise, type FinishResult, type SetEntry,
 } from '../hooks/useHomeWorkout';
-import { formatClock, minExercisesToComplete, percent, prescription, timedSeconds } from '../lib/homeWorkout';
+import {
+  formatClock, isWeighted, minExercisesToComplete, parseWeight, percent, prescription, suggestedSet, timedSeconds,
+} from '../lib/homeWorkout';
 
 /** Cuenta regresiva basada en la hora real (sigue bien si el teléfono se bloquea un momento). */
 function useCountdown(onDone: () => void) {
@@ -83,6 +86,9 @@ export function HomeWorkout() {
   const [index, setIndex] = useState<number | null>(null);
   const [setsDone, setSetsDone] = useState(0);
   const [phase, setPhase] = useState<'work' | 'rest'>('work');
+  // Series registradas del ejercicio actual (con peso) y lo que está escribiendo
+  const [doneSets, setDoneSets] = useState<SetEntry[]>([]);
+  const [setInput, setSetInput] = useState({ reps: '', weight: '' });
 
   const logByExercise = useMemo(() => new Map((logs ?? []).map((l) => [l.exercise_id, l])), [logs]);
   const list = exercises ?? [];
@@ -91,6 +97,19 @@ export function HomeWorkout() {
   const firstPending = list.findIndex((e) => !logByExercise.has(e.id));
   const current = index !== null ? list[index] : undefined;
   const timed = timedSeconds(current?.reps);
+  const weighted = !!current && isWeighted(current.exercise?.equipment, current.reps);
+  const exerciseIds = useMemo(() => list.map((e) => e.id), [list]);
+  const { data: lastSets } = useLastSets(exerciseIds, activeSessionId);
+
+  // Proponer peso y repeticiones de la serie que sigue
+  useEffect(() => {
+    if (!current || !weighted) return;
+    const n = setsDone + 1;
+    const fromThisSession = logByExercise.get(current.id)?.set_logs;
+    const v = suggestedSet(n, doneSets.length ? doneSets : fromThisSession?.length ? fromThisSession : lastSets?.[current.id], current.reps);
+    setSetInput({ reps: v.reps != null ? String(v.reps) : '', weight: v.weight != null ? String(v.weight) : '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, setsDone, weighted, lastSets]);
 
   const timer = useCountdown(() => {
     if (phase === 'rest') {
@@ -111,6 +130,7 @@ export function HomeWorkout() {
     timer.stop();
     setIndex(i);
     setSetsDone(0);
+    setDoneSets([]);
     setPhase('work');
   };
 
@@ -120,19 +140,25 @@ export function HomeWorkout() {
     return list.length;
   };
 
-  const saveExercise = async (skipped: boolean) => {
+  const saveExercise = async (skipped: boolean, sets?: SetEntry[]) => {
     if (!current || day === null) return;
     const i = index!;
-    await logExercise.mutateAsync({ exercise: current, day, skipped, existingId: logByExercise.get(current.id)?.id });
+    await logExercise.mutateAsync({ exercise: current, day, skipped, existingId: logByExercise.get(current.id)?.id, sets });
     goTo(nextPendingAfter(i));
   };
 
   function completeSet() {
     if (!current) return;
     const n = setsDone + 1;
+    let sets = doneSets;
+    if (weighted) {
+      const reps = Number.parseInt(setInput.reps, 10);
+      sets = [...doneSets, { set_number: n, reps: Number.isFinite(reps) && reps > 0 ? reps : null, weight: parseWeight(setInput.weight) }];
+      setDoneSets(sets);
+    }
     setSetsDone(n);
     if (n >= current.sets) {
-      void saveExercise(false);
+      void saveExercise(false, weighted ? sets : undefined);
     } else {
       setPhase('rest');
       timer.start(current.rest_seconds || 30);
@@ -157,11 +183,22 @@ export function HomeWorkout() {
     return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   }
 
+  if (stats?.routine && day !== null && list.length === 0) {
+    return (
+      <div className="mx-auto max-w-md space-y-3 text-center" data-testid="rest-day">
+        <CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
+        <h2 className="text-xl font-semibold">Hoy es día de descanso</h2>
+        <p className="text-sm text-muted-foreground">Tu rutina {stats.routine.name} no tiene ejercicios para hoy.</p>
+        <Button asChild><Link to="/usuario/hoy">Volver a Hoy</Link></Button>
+      </div>
+    );
+  }
+
   if (!stats?.routine || day === null) {
     return (
       <div className="mx-auto max-w-md space-y-3 text-center">
         <p className="font-medium">No tienes una rutina asignada.</p>
-        <Button asChild><Link to={user?.isIndependent ? '/usuario/bienvenida' : '/usuario/hoy'}>Armar mi plan</Link></Button>
+        <Button asChild><Link to="/usuario/bienvenida">Armar mi plan</Link></Button>
       </div>
     );
   }
@@ -312,10 +349,43 @@ export function HomeWorkout() {
           </CardContent>
         </Card>
       ) : (
+        <>
+        {weighted && (
+          <div className="grid grid-cols-2 gap-3" data-testid="set-inputs">
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Peso (kg)
+              <Input
+                inputMode="decimal"
+                value={setInput.weight}
+                onChange={(e) => setSetInput((v) => ({ ...v, weight: e.target.value }))}
+                placeholder="—"
+                className="h-12 text-center text-lg"
+                data-testid="input-weight"
+              />
+            </label>
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Repeticiones
+              <Input
+                inputMode="numeric"
+                value={setInput.reps}
+                onChange={(e) => setSetInput((v) => ({ ...v, reps: e.target.value.replace(/\D/g, '') }))}
+                placeholder="—"
+                className="h-12 text-center text-lg"
+                data-testid="input-reps"
+              />
+            </label>
+            {lastSets?.[current.id]?.length ? (
+              <p className="col-span-2 text-xs text-muted-foreground">
+                La vez anterior: {lastSets[current.id].map((x) => `${x.weight ?? '—'} kg × ${x.reps ?? '—'}`).join(' · ')}
+              </p>
+            ) : null}
+          </div>
+        )}
         <Button size="lg" className="h-14 w-full text-base" onClick={completeSet} disabled={logExercise.isPending} data-testid="set-done">
           {logExercise.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-5 w-5" />}
           Serie {Math.min(setsDone + 1, current.sets)} de {current.sets} hecha
         </Button>
+        </>
       )}
 
       <div className="flex items-center justify-between text-sm">

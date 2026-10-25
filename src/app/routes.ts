@@ -1,4 +1,5 @@
-import { createBrowserRouter } from 'react-router';
+import { createElement } from 'react';
+import { createBrowserRouter, Navigate } from 'react-router';
 import { Layout } from './pages/Layout';
 import { UserLayout, UserHome } from './pages/UserLayout';
 import { Today } from './pages/Today';
@@ -14,7 +15,6 @@ import { Reports } from './pages/Reports';
 import { Routines } from './pages/Routines';
 import { RoutineBuilder } from './pages/RoutineBuilder';
 import { MyProfile } from './pages/MyProfile';
-import { MyTraining } from './pages/MyTraining';
 import { MyProgress } from './pages/MyProgress';
 import { MyAttendance } from './pages/MyAttendance';
 import { MyPayments } from './pages/MyPayments';
@@ -58,7 +58,8 @@ export const router = createBrowserRouter([
       { path: 'hoy', Component: Today },
       { path: 'entrenar', Component: HomeWorkout },
       { path: 'bienvenida', Component: Onboarding },
-      { path: 'mi-entrenamiento', Component: MyTraining },
+      // Pantalla anterior del socio: ahora todo está en Hoy / Entrenar
+      { path: 'mi-entrenamiento', Component: () => createElement(Navigate, { to: '/usuario/hoy', replace: true }) },
       { path: 'mi-perfil', Component: MyProfile },
       { path: 'progreso', Component: MyProgress },
       { path: 'asistencia', Component: MyAttendance },

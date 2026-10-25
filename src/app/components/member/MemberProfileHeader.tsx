@@ -23,7 +23,7 @@ import { lastVisitInWords, type AttendanceSummary, type Visit } from '../../lib/
 import { addDays } from '../../lib/dashboardHelpers';
 import { MinorBadge } from './MinorBadge';
 
-export type ProfileTab = 'info' | 'pagos' | 'asistencia' | 'rutinas' | 'progreso';
+export type ProfileTab = 'info' | 'pagos' | 'asistencia' | 'entrenamientos' | 'rutinas' | 'progreso';
 
 interface Props {
   user: any;
